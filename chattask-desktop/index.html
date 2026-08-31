@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatTask</title>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script>
+      window.addEventListener("error", function (event) {
+        var root = document.getElementById("root");
+        if (root && !root.children.length) {
+          root.innerHTML = '<main style="font-family:sans-serif;padding:32px;color:#991b1b"><h2>ChatTaskの読み込みに失敗しました</h2><pre style="white-space:pre-wrap">' + String(event.message || "JavaScriptを読み込めませんでした") + '</pre></main>';
+        }
+      });
+      window.setTimeout(function () {
+        var root = document.getElementById("root");
+        if (root && !root.children.length) {
+          root.innerHTML = '<main style="font-family:sans-serif;padding:32px;color:#475569"><h2>ChatTaskを読み込めませんでした</h2><p>アプリを完全に終了してから、もう一度起動してください。</p></main>';
+        }
+      }, 3000);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

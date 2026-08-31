@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatTask</title>
+    <!-- Tailwind CSSにtypographyプラグインを追加 -->
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <!-- Markdownパーサーとサニタイザー(XSS対策)を追加 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-100 h-screen w-full overflow-hidden flex flex-col text-gray-800">
+
+    <header class="relative bg-slate-800 text-white px-4 py-3 flex flex-wrap justify-between items-center gap-3 shadow-md z-40 shrink-0 overflow-visible">
+        <h1 class="text-xl font-bold flex items-center gap-2">
+            <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+            ChatTask
+        </h1>
+        <div class="flex flex-wrap justify-end gap-2">
+            <button onclick="openGanttChart()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-sm transition-colors flex items-center gap-1">
+                ガントチャート
+            </button>
+            <button onclick="openReportExport()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm transition-colors flex items-center gap-1">
+                まとめ出力
+            </button>
+            <div id="headerSettingsMenu" class="relative z-50">
+                <button id="headerSettingsButton" type="button" onclick="toggleHeaderMenu()" aria-expanded="false" aria-controls="headerSettingsPanel" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-sm transition-colors flex items-center gap-1">設定 <span class="text-xs">▼</span></button>
+                <div id="headerSettingsPanel" class="hidden absolute right-0 top-full mt-2 w-52 rounded-lg bg-white text-gray-700 shadow-xl border border-gray-200 overflow-hidden z-[70]">
+                    <button type="button" onclick="closeHeaderMenu(); openNonWorkingSettings()" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50">休暇・祝日設定</button>
+                    <button type="button" onclick="closeHeaderMenu(); openTagSettings()" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50">案件タグ設定</button>
+                    <label class="flex items-center gap-2 w-full px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer border-t border-gray-100">
+                        <input id="hideRecurringTasksCheck" type="checkbox" onchange="setRecurringTasksHidden(this.checked)" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        定期タスクを一覧で非表示
+                    </label>
+                    <label class="flex items-center gap-2 w-full px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer">
+                        <input id="openTodayOnStartupCheck" type="checkbox" onchange="setOpenTodayOnStartup(this.checked)" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        起動時に今日を開く
+                    </label>
+                    <button type="button" onclick="closeHeaderMenu(); openHelp()" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 border-b border-gray-100">ヘルプ</button>
+                    <button type="button" onclick="closeHeaderMenu(); exportData()" class="block w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50">データをエクスポート</button>
+                    <label class="block w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 cursor-pointer">データをインポート
+                        <input type="file" id="importFile" class="hidden" accept=".json" onchange="closeHeaderMenu(); importData(event)">
+                    </label>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- 左側：タスク一覧エリア -->
+        <aside id="taskListAside" class="w-full md:w-1/3 lg:w-96 bg-white border-r border-gray-200 flex flex-col h-full shrink-0 transition-[width]">
+            <!-- フィルター＆検索 -->
+            <div class="p-3 border-b border-gray-200 bg-gray-50 flex flex-col gap-3 shrink-0">
+                <div class="flex items-center justify-between gap-3">
+                    <button id="toggleSearchFiltersBtn" type="button" onclick="toggleSearchFilters()" aria-expanded="true" aria-controls="searchFiltersPanel" class="flex flex-1 items-center justify-between text-xs font-medium text-gray-600 hover:text-blue-700 transition-colors">
+                        <span>検索・絞り込みを隠す</span>
+                        <svg class="w-4 h-4 transition-transform" data-toggle-icon fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button id="taskCardDensityBtn" type="button" onclick="toggleTaskCardDensity()" class="text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap">縦幅: 標準</button>
+                        <button id="taskListWidthBtn" type="button" onclick="toggleTaskListWidth()" class="text-xs font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap">横幅: 標準</button>
+                    </div>
+                </div>
+                <div id="searchFiltersPanel" class="flex flex-col gap-3">
+                    <input type="text" id="searchInput" placeholder="タスク名や履歴を検索..." class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div class="flex flex-wrap gap-1" id="filterContainer">
+                        <!-- JSでフィルターボタンを生成 -->
+                    </div>
+                    <select id="tagFilterSelect" onchange="setTagFilter(this.value)" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="all">すべての案件タグ</option>
+                    </select>
+                </div>
+                <button onclick="openTodayPage()" class="w-full py-2 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 font-medium rounded-md text-sm transition-colors flex justify-center items-center gap-1">
+                    今日のページ
+                </button>
+                <button onclick="createNewTask()" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md text-sm transition-colors shadow-sm flex justify-center items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    新規タスク追加
+                </button>
+            </div>
+            
+            <!-- リスト -->
+            <div id="taskList" class="flex-1 overflow-y-auto p-2 space-y-2 bg-gray-100/50">
+                <!-- JSでタスクリストを生成 -->
+            </div>
+        </aside>
+
+        <section class="flex-1 flex flex-col h-full bg-white relative hidden md:flex" id="taskDetailSection">
+            
+            <!-- 非選択時のプレースホルダー -->
+            <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 z-20">
+                <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                <p class="text-gray-500 font-medium">左のリストからタスクを選択してください</p>
+            </div>
+
+            <!-- タスク詳細ヘッダー -->
+            <div class="px-4 py-3 border-b border-gray-200 flex flex-wrap gap-2 justify-between items-start bg-white shrink-0 z-10">
+                <div class="flex-1 mr-4">
+                    <input type="text" id="taskTitleInput" class="w-full text-lg font-bold text-gray-800 border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded px-1 -ml-1" placeholder="タスク名を入力...">
+                </div>
+                <div class="flex flex-wrap items-center gap-3 shrink-0 pt-1">
+                    <button onclick="openTaskDocuments()" class="text-sm text-violet-600 hover:text-violet-800 hover:underline font-medium">
+                        ドキュメント
+                    </button>
+                    <button onclick="createSubtask()" class="text-sm text-green-600 hover:text-green-800 hover:underline font-medium">
+                        子タスク追加
+                    </button>
+                    <button id="toggleDetailsBtn" onclick="toggleDetails()" class="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium">
+                        詳細情報を隠す
+                    </button>
+                    <button onclick="deleteCurrentTask()" class="text-sm text-red-600 hover:text-red-800 hover:underline font-medium" aria-label="選択中のタスクを削除">
+                        削除
+                    </button>
+                </div>
+            </div>
+
+            <div id="taskQuickLinksBar" class="hidden px-4 py-2 border-b border-gray-200 bg-white shrink-0">
+                <div class="flex items-center gap-2 overflow-x-auto">
+                    <span class="text-[11px] font-semibold text-gray-500 shrink-0">クイックリンク</span>
+                    <div id="taskQuickLinks" class="flex items-center gap-2"></div>
+                </div>
+            </div>
+
+            <!-- タスク属性パネル（折りたたみ対象） -->
+            <div id="taskAttributesPanel" class="p-4 border-b border-gray-200 bg-slate-50 shrink-0 max-h-[55vh] overflow-y-auto overscroll-contain">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button type="button" onclick="toggleAttributeGroup('basic')" aria-expanded="true" class="col-span-2 lg:col-span-4 flex items-center gap-3 text-left"><span class="text-sm font-bold text-gray-700">基本情報</span><span class="h-px flex-1 bg-gray-200" aria-hidden="true">&nbsp;</span><span data-attribute-icon="basic" class="text-xs text-gray-400">▼</span></button>
+                    <!-- ステータス -->
+                    <div data-attribute-group="basic">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">ステータス</label>
+                        <select id="statusSelect" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5 font-medium"></select>
+                    </div>
+                    <!-- 優先度 -->
+                    <div data-attribute-group="basic">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">優先度</label>
+                        <select id="prioritySelect" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5">
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="D">D</option>
+                        </select>
+                    </div>
+                    <!-- 案件タグ -->
+                    <div data-attribute-group="basic">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1" for="projectTagSelect">案件タグ</label>
+                        <select id="projectTagSelect" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5"></select>
+                    </div>
+                    <!-- 親タスク -->
+                    <div data-attribute-group="basic">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1" for="parentTaskSelect">親タスク</label>
+                        <select id="parentTaskSelect" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5"></select>
+                    </div>
+                    <button type="button" onclick="toggleAttributeGroup('schedule')" aria-expanded="true" class="col-span-2 lg:col-span-4 flex items-center gap-3 text-left mt-1"><span class="text-sm font-bold text-gray-700">スケジュール</span><span class="h-px flex-1 bg-gray-200" aria-hidden="true">&nbsp;</span><span data-attribute-icon="schedule" class="text-xs text-gray-400">▼</span></button>
+                    <!-- リマインド日 -->
+                    <div data-attribute-group="schedule">
+                        <label class="block text-xs font-semibold text-gray-500 mb-1">リマインド日</label>
+                        <input type="date" id="reminderDateInput" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5">
+                        <p class="text-[10px] text-gray-400 mt-1">確認や通知が必要な日です。</p>
+                    </div>
+                    <!-- 予定日（複数指定可能） -->
+                    <details id="plannedDatesField" data-attribute-group="schedule" open class="col-span-2 lg:col-span-4 border border-gray-200 bg-white rounded-lg">
+                        <summary class="px-3 py-2 text-sm font-semibold text-gray-700 cursor-pointer select-none">やる日</summary>
+                        <div class="px-3 pb-3">
+                        <div class="flex gap-2">
+                            <input type="date" id="plannedDateInput" aria-label="開始日" class="flex-1 min-w-0 bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 p-1.5">
+                            <span class="self-center text-xs text-gray-400">〜</span>
+                            <input type="date" id="plannedEndDateInput" aria-label="終了日（単日の場合は省略）" class="flex-1 min-w-0 bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 p-1.5">
+                            <button type="button" onclick="addPlannedDateRange()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded shrink-0">追加</button>
+                            <button type="button" onclick="addTodayAsPlannedDate()" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs rounded shrink-0">今日</button>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-1">実際に作業する日です。終了日を省略すると単日予定になります。</p>
+                        <div id="plannedDatesList" class="flex flex-wrap gap-1.5 mt-2"></div>
+                        </div>
+                    </details>
+                    <!-- 日別計画 -->
+                    <details id="dailyPlansPanel" data-attribute-group="schedule" class="col-span-2 lg:col-span-4 border border-blue-100 bg-blue-50/40 rounded-lg">
+                        <summary class="px-3 py-2 text-sm font-semibold text-blue-800 cursor-pointer select-none">日別計画</summary>
+                        <div id="dailyPlansList" class="px-3 pb-3 space-y-2 max-h-72 overflow-y-auto"></div>
+                    </details>
+                    <!-- 定期タスク設定 -->
+                    <div id="recurringSettingsPanel" data-attribute-group="schedule" class="hidden col-span-2 lg:col-span-4 border border-cyan-200 bg-cyan-50/60 rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 class="text-sm font-bold text-cyan-800">定期タスク設定</h3>
+                                <p class="text-[11px] text-cyan-700 mt-0.5">予定日は自動判定され、各回の実施結果だけを記録します。</p>
+                            </div>
+                            <label class="inline-flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                                <input id="recurrencePausedCheck" type="checkbox" class="rounded border-gray-300 text-cyan-600 focus:ring-cyan-500">
+                                一時停止
+                            </label>
+                        </div>
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-1" for="recurrenceFrequencySelect">繰り返し</label>
+                                <select id="recurrenceFrequencySelect" class="w-full bg-white border border-gray-300 text-sm rounded p-1.5">
+                                    <option value="daily">毎日</option>
+                                    <option value="weekly">毎週</option>
+                                    <option value="monthly">毎月</option>
+                                </select>
+                            </div>
+                            <div id="recurrenceWeekdayField">
+                                <label class="block text-xs font-semibold text-gray-500 mb-1" for="recurrenceWeekdaySelect">曜日</label>
+                                <select id="recurrenceWeekdaySelect" class="w-full bg-white border border-gray-300 text-sm rounded p-1.5">
+                                    <option value="0">日曜日</option><option value="1">月曜日</option><option value="2">火曜日</option><option value="3">水曜日</option><option value="4">木曜日</option><option value="5">金曜日</option><option value="6">土曜日</option>
+                                </select>
+                            </div>
+                            <div id="recurrenceMonthDayField" class="hidden">
+                                <label class="block text-xs font-semibold text-gray-500 mb-1" for="recurrenceMonthDayInput">毎月の日付</label>
+                                <input id="recurrenceMonthDayInput" type="number" min="1" max="31" class="w-full bg-white border border-gray-300 text-sm rounded p-1.5">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-1" for="recurrenceStartDateInput">開始日</label>
+                                <input id="recurrenceStartDateInput" type="date" class="w-full bg-white border border-gray-300 text-sm rounded p-1.5">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 mb-1" for="recurrenceEndDateInput">終了日（任意）</label>
+                                <input id="recurrenceEndDateInput" type="date" class="w-full bg-white border border-gray-300 text-sm rounded p-1.5">
+                            </div>
+                        </div>
+                        <div id="recurrenceRecordSummary" class="text-xs text-gray-500 mt-3"></div>
+                    </div>
+                    <button type="button" onclick="toggleAttributeGroup('records')" aria-expanded="true" class="col-span-2 lg:col-span-4 flex items-center gap-3 text-left mt-1"><span class="text-sm font-bold text-gray-700">資料・記録</span><span class="h-px flex-1 bg-gray-200" aria-hidden="true">&nbsp;</span><span data-attribute-icon="records" class="text-xs text-gray-400">▼</span></button>
+                    <!-- 説明 -->
+                    <details data-attribute-group="records" open class="col-span-2 lg:col-span-4 border border-gray-200 bg-white rounded-lg">
+                        <summary class="px-3 py-2 text-sm font-semibold text-gray-700 cursor-pointer select-none">説明 <span class="text-[10px] font-normal text-gray-400">目的や背景</span></summary>
+                        <div class="px-3 pb-3"><textarea id="taskDescriptionInput" rows="3" aria-label="説明" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-2 resize-y" placeholder="タスクの目的や補足情報を入力..."></textarea></div>
+                    </details>
+                    <!-- 関連リンク -->
+                    <details data-attribute-group="records" class="col-span-2 lg:col-span-4 border border-gray-200 bg-white rounded-lg">
+                        <summary class="px-3 py-2 text-sm font-semibold text-gray-700 cursor-pointer select-none">関連リンクの追加・編集</summary>
+                        <div class="px-3 pb-3">
+                        <div id="taskLinksList" class="space-y-1.5 mb-2"></div>
+                        <form onsubmit="addTaskLink(event)" class="flex flex-col sm:flex-row gap-2">
+                            <input id="taskLinkLabelInput" type="text" maxlength="60" placeholder="名前（例: Redmine）" class="sm:w-1/3 bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 p-1.5">
+                            <input id="taskLinkUrlInput" type="text" inputmode="url" required placeholder="URL（例: https://...）" class="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 p-1.5">
+                            <button type="submit" class="px-3 py-1.5 bg-slate-600 hover:bg-slate-700 text-white text-sm rounded shrink-0">リンク追加</button>
+                        </form>
+                        </div>
+                    </details>
+                    <!-- 次に動く条件 -->
+                    <details data-attribute-group="records" class="col-span-2 lg:col-span-4 border border-gray-200 bg-white rounded-lg">
+                        <summary class="px-3 py-2 text-sm font-semibold text-gray-700 cursor-pointer select-none">次に動く条件</summary>
+                        <div class="px-3 pb-3"><input type="text" id="nextActionInput" aria-label="次に動く条件" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5" placeholder="例: 先方確認結果が来たら、問題なければ完了扱いにする"></div>
+                    </details>
+                </div>
+            </div>
+
+            <!-- 作業ログエリア -->
+            <div id="chatHistory" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
+                <!-- JSで作業ログと変更履歴を生成 -->
+            </div>
+
+            <!-- 作業ログ入力エリア -->
+            <div class="p-3 border-t border-gray-200 bg-white shrink-0">
+                <div class="mb-2">
+                    <span class="text-sm font-bold text-gray-700">作業ログ</span>
+                    <span class="text-xs text-gray-400 ml-2">実施内容・調査結果・判断理由を時系列で記録</span>
+                </div>
+                <form id="chatForm" onsubmit="submitChat(event)" class="flex gap-2 items-end">
+                    <div class="flex-1 bg-gray-50 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 overflow-hidden">
+                        <textarea id="chatInput" rows="1" class="block w-full min-h-12 max-h-48 px-3 py-3 text-sm text-gray-900 bg-transparent border-0 focus:ring-0 resize-none overflow-y-auto" placeholder="実施内容、調査結果、判断理由など...（⌘ + Enterで記録）"></textarea>
+                    </div>
+                    <button type="submit" class="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex shrink-0 items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                    </button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <!-- 案件タグ設定モーダル -->
+    <div id="tagSettingsModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4" onclick="closeTagSettings(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="tagSettingsTitle" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <div>
+                    <h2 id="tagSettingsTitle" class="text-lg font-bold text-gray-800">案件タグ設定</h2>
+                    <p class="text-xs text-gray-500 mt-1">タグの追加、名称変更、並び替え、表示切り替えができます。</p>
+                </div>
+                <button onclick="closeTagSettings()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="設定を閉じる">&times;</button>
+            </div>
+            <div id="tagSettingsList" class="p-5 space-y-3 overflow-y-auto"></div>
+            <form onsubmit="addProjectTag(event)" class="flex gap-2 px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                <input id="newTagNameInput" type="text" maxlength="40" required placeholder="新しいタグ名" class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium">追加</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- まとめ出力モーダル -->
+    <div id="reportExportModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4" onclick="closeReportExport(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg" role="dialog" aria-modal="true" aria-labelledby="reportExportTitle" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <div>
+                    <h2 id="reportExportTitle" class="text-lg font-bold text-gray-800">まとめ出力</h2>
+                    <p class="text-xs text-gray-500 mt-1">期間内の対応履歴をMarkdownファイルにまとめます。</p>
+                </div>
+                <button onclick="closeReportExport()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="まとめ出力を閉じる">&times;</button>
+            </div>
+            <form onsubmit="exportActivityReport(event)" class="p-5 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1" for="reportPeriodType">集計単位</label>
+                    <select id="reportPeriodType" onchange="updateReportPeriod()" class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="daily">日次</option>
+                        <option value="weekly">週次</option>
+                        <option value="monthly">月次</option>
+                        <option value="custom">任意期間</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1" for="reportStartDate">開始日</label>
+                        <input id="reportStartDate" type="date" required class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-500 mb-1" for="reportEndDate">終了日</label>
+                        <input id="reportEndDate" type="date" required class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1" for="reportTagFilter">案件タグ</label>
+                    <select id="reportTagFilter" class="w-full border border-gray-300 rounded-md p-2 text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="all">すべての案件タグ</option>
+                    </select>
+                </div>
+                <p class="text-xs text-gray-500">完了・対応中・待ちタスク、変更履歴、メモ、関連リンク、次に動く条件を出力します。</p>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeReportExport()" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md">キャンセル</button>
+                    <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md">Markdownを出力</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 休暇・非稼働日設定 -->
+    <div id="nonWorkingSettingsModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4" onclick="closeNonWorkingSettings(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="nonWorkingSettingsTitle" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <div>
+                    <h2 id="nonWorkingSettingsTitle" class="text-lg font-bold text-gray-800">休暇・非稼働日設定</h2>
+                    <p class="text-xs text-gray-500 mt-1">休暇や祝日を単日または期間で登録します。</p>
+                </div>
+                <button onclick="closeNonWorkingSettings()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="休暇設定を閉じる">&times;</button>
+            </div>
+            <div class="flex flex-wrap items-end gap-2 px-5 py-3 bg-indigo-50 border-b border-indigo-100">
+                <label class="text-xs text-gray-600">祝日の年
+                    <input id="holidayImportYear" type="number" min="1955" max="2100" class="block w-28 mt-1 border border-gray-300 rounded-md p-2 text-sm">
+                </label>
+                <button id="holidayImportButton" type="button" onclick="importJapaneseHolidays()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm rounded-md">日本の祝日を取り込む</button>
+                <span id="holidayImportStatus" class="text-xs text-gray-500"></span>
+            </div>
+            <div id="nonWorkingPeriodsList" class="p-5 space-y-2 overflow-y-auto"></div>
+            <form onsubmit="addNonWorkingPeriod(event)" class="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end px-5 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                <input id="nonWorkingEditId" type="hidden">
+                <label class="min-w-0 text-xs text-gray-500">開始日
+                    <input id="nonWorkingStartDate" type="date" required class="block w-full min-w-0 mt-1 border border-gray-300 rounded-md p-2 text-sm">
+                </label>
+                <label class="min-w-0 text-xs text-gray-500">終了日（単日の場合は空欄）
+                    <input id="nonWorkingEndDate" type="date" class="block w-full min-w-0 mt-1 border border-gray-300 rounded-md p-2 text-sm">
+                </label>
+                <select id="nonWorkingType" aria-label="休暇の種類" class="w-full min-w-0 border border-gray-300 rounded-md p-2 text-sm">
+                    <option value="vacation">休暇</option>
+                    <option value="holiday">祝日</option>
+                    <option value="other">その他</option>
+                </select>
+                <input id="nonWorkingNote" type="text" maxlength="80" placeholder="メモ（任意）" class="w-full min-w-0 border border-gray-300 rounded-md p-2 text-sm">
+                <div class="sm:col-span-2 flex flex-wrap justify-end gap-2">
+                    <button id="nonWorkingCancelEditButton" type="button" onclick="resetNonWorkingForm()" class="hidden px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm rounded-md">編集をやめる</button>
+                    <button id="nonWorkingSubmitButton" type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 今日のページ -->
+    <div id="todayPageModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-3" onclick="closeTodayPage(event)">
+        <div class="bg-gray-50 rounded-xl shadow-xl w-full max-w-5xl h-[92vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="todayPageTitle" onclick="event.stopPropagation()">
+            <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 bg-white rounded-t-xl">
+                <div>
+                    <h2 id="todayPageTitle" class="text-xl font-bold text-gray-800">今日のページ</h2>
+                    <p id="todayPageDateLabel" class="text-xs text-gray-500 mt-1"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="moveTodayPageDate(-1)" class="px-2.5 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded" aria-label="前の日">←</button>
+                    <input id="todayPageDate" type="date" onchange="renderTodayPage()" class="border border-gray-300 rounded-md p-1.5 text-sm">
+                    <button type="button" onclick="moveTodayPageDate(1)" class="px-2.5 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded" aria-label="次の日">→</button>
+                    <button type="button" onclick="setTodayPageToToday()" class="px-3 py-1.5 text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 rounded">今日</button>
+                    <button onclick="closeTodayPage()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none ml-2" aria-label="今日のページを閉じる">&times;</button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 md:p-5">
+                <div id="todayNonWorkingBanner" class="hidden mb-4 px-4 py-3 bg-purple-50 border border-purple-200 text-purple-800 rounded-lg"></div>
+                <div class="flex justify-end mb-3">
+                    <button id="carryOverTasksBtn" type="button" onclick="carryOverTasks()" class="px-3 py-1.5 text-xs text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-md">未完了タスクをこの日に持ち越す</button>
+                </div>
+                <div id="todayPageSections" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+                <section class="mt-4 bg-white border border-gray-200 rounded-lg p-4">
+                    <label class="block text-sm font-bold text-gray-700 mb-2" for="dailyNoteInput">この日のメモ</label>
+                    <textarea id="dailyNoteInput" rows="6" oninput="saveDailyNote()" class="w-full border border-gray-300 rounded-md p-3 text-sm resize-y focus:ring-blue-500 focus:border-blue-500" placeholder="今日の方針、気づき、明日への引き継ぎなど..."></textarea>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- タスクドキュメント -->
+    <div id="taskDocumentsModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-1 md:p-2" onclick="closeTaskDocuments(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full h-[98vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="taskDocumentsTitle" onclick="event.stopPropagation()">
+            <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 shrink-0">
+                <div>
+                    <h2 id="taskDocumentsTitle" class="text-xl font-bold text-gray-800">タスクドキュメント</h2>
+                    <p id="taskDocumentsTaskName" class="text-xs text-gray-500 mt-1"></p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="createTaskDocument()" class="px-3 py-1.5 text-sm text-white bg-violet-600 hover:bg-violet-700 rounded-md">＋ 新規ドキュメント</button>
+                    <button type="button" onclick="closeTaskDocuments()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none ml-2" aria-label="ドキュメントを閉じる">&times;</button>
+                </div>
+            </div>
+            <div class="flex flex-1 min-h-0">
+                <aside class="w-56 md:w-64 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col min-h-0">
+                    <div class="px-3 py-2 text-xs font-bold text-gray-500 border-b border-gray-200">ドキュメント一覧</div>
+                    <div id="taskDocumentsList" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+                </aside>
+                <section class="flex-1 min-w-0 flex flex-col">
+                    <div id="taskDocumentEmpty" class="flex-1 flex items-center justify-center text-sm text-gray-400">ドキュメントを選択または作成してください。</div>
+                    <div id="taskDocumentEditor" class="hidden flex-1 min-h-0 flex flex-col">
+                        <div class="flex flex-wrap items-center gap-2 p-3 border-b border-gray-200 bg-white shrink-0">
+                            <input id="taskDocumentTitleInput" type="text" maxlength="100" placeholder="ドキュメント名" class="flex-1 min-w-48 text-lg font-bold border border-transparent hover:border-gray-200 focus:border-violet-400 rounded px-2 py-1">
+                            <button type="button" onclick="appendTaskDocumentBlock('paragraph')" class="px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded">＋ テキスト</button>
+                            <button type="button" onclick="appendTaskDocumentBlock('heading2')" class="px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded">見出し</button>
+                            <button type="button" onclick="appendTaskDocumentBlock('bullet')" class="px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded">箇条書き</button>
+                            <button type="button" onclick="appendTaskDocumentBlock('checklist')" class="px-2.5 py-1.5 text-xs text-violet-700 hover:bg-violet-50 rounded">☐ チェック</button>
+                            <button type="button" onclick="saveCurrentTaskDocument()" class="px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded">保存</button>
+                            <button type="button" onclick="deleteCurrentTaskDocument()" class="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded">削除</button>
+                        </div>
+                        <div id="taskDocumentBlockEditor" class="task-document-block-editor flex-1 min-h-0 overflow-y-auto px-6 md:px-12 py-8" aria-label="ドキュメント本文"></div>
+                        <textarea id="taskDocumentContentInput" class="hidden"></textarea>
+                        <div class="px-4 py-2 border-t border-gray-200 text-[11px] text-gray-400 shrink-0">入力変換（全角は空白なしでも可）: # 見出し / - または ・ 箇条書き / 1. 番号 / &gt; 引用 / - [ ] チェック　・　Tab / Shift+Tabで字下げ</div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- 定期タスク移動日選択 -->
+    <div id="recurrenceMoveModal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/50 p-4" onclick="closeRecurrenceMoveCalendar(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md" role="dialog" aria-modal="true" aria-labelledby="recurrenceMoveTitle" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                <div>
+                    <h2 id="recurrenceMoveTitle" class="text-lg font-bold text-gray-800">定期タスクを別日に移動</h2>
+                    <p id="recurrenceMoveDescription" class="text-xs text-gray-500 mt-1"></p>
+                </div>
+                <button type="button" onclick="closeRecurrenceMoveCalendar()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="日付選択を閉じる">&times;</button>
+            </div>
+            <form onsubmit="submitRecurringOccurrenceMove(event)" class="p-5 space-y-4">
+                <input id="recurrenceMoveTaskId" type="hidden">
+                <input id="recurrenceMoveOccurrenceDate" type="hidden">
+                <label class="block text-sm font-medium text-gray-700">移動先の日付
+                    <input id="recurrenceMoveDate" type="date" required onchange="updateRecurrenceMoveDateInfo()" class="block w-full mt-2 border border-gray-300 rounded-md p-3 text-base focus:ring-blue-500 focus:border-blue-500">
+                </label>
+                <p id="recurrenceMoveDateInfo" class="text-xs text-gray-500"></p>
+                <label class="block text-sm font-medium text-gray-700">移動理由
+                    <textarea id="recurrenceMoveReason" rows="3" maxlength="200" placeholder="例：急ぎの対応が入ったため、翌日に変更" class="block w-full mt-2 border border-gray-300 rounded-md p-3 text-sm resize-y focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </label>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="closeRecurrenceMoveCalendar()" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md">キャンセル</button>
+                    <button type="submit" class="px-4 py-2 text-sm text-white bg-orange-600 hover:bg-orange-700 rounded-md">この日に移動</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ヘルプ -->
+    <div id="helpModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-3" onclick="closeHelp(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="helpTitle" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 shrink-0">
+                <div>
+                    <h2 id="helpTitle" class="text-xl font-bold text-gray-800">ChatTask ヘルプ</h2>
+                    <p class="text-xs text-gray-500 mt-1">項目を選ぶと詳しい使い方を確認できます。</p>
+                </div>
+                <button onclick="closeHelp()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none" aria-label="ヘルプを閉じる">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto space-y-3 text-sm text-gray-700">
+                <details open class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">まず始めに</summary>
+                    <ol class="list-decimal pl-5 mt-3 space-y-1"><li>「新規タスク追加」でタスクを作成します。</li><li>ステータス・優先度・案件タグを設定します。</li><li>「やる日」に単日または期間を追加します。</li><li>必要に応じて説明、関連リンク、日付ごとの対応内容を入力します。</li></ol>
+                    <p class="mt-3 text-xs text-gray-500">「未完了」は完了以外、「進行中」は進行中・定期・待機、「すべて」は完了を含む全タスクを表示します。</p>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">今日のページと持ち越し</summary>
+                    <div class="mt-3 space-y-2"><p>今日のページでは、指定日の予定・待ち・期限・定期タスク・完了内容をまとめて確認できます。</p><p>「持ち越す」を押すと、表示日に予定された未完了タスクを翌日へ追加します。元の日付は履歴として残ります。</p><p>日付ごとの対応内容には、達成チェックを付けられます。</p></div>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">親タスクと子タスク</summary>
+                    <div class="mt-3 space-y-2"><p>タスク詳細の「親タスク」から関係を設定できます。親タスクの一覧には「完了数 / 総数」が表示されます。</p><p>子タスクは親タスクの直下に表示され、親タスクのボタンから折りたためます。</p></div>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">ステータスと定期タスク</summary>
+                    <div class="mt-3 space-y-2"><p>ステータスは未着手・進行中・待機・完了のカテゴリに分かれています。「待ち」は申請待ちや回答待ちに利用できます。</p><p>定期タスクはマスターを完了にせず、今日のページで各回を「実施済み」「スキップ」「別日に移動」として記録します。</p><p>通常の一覧から隠したい場合は、設定の「定期タスクを一覧で非表示」を利用します。今日のページの定期タスクは引き続き表示されます。</p></div>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">休暇・土日・祝日</summary>
+                    <div class="mt-3 space-y-2"><p>土曜日と日曜日は自動的に休暇扱いになります。有給は「休暇設定」から単日または期間で登録します。</p><p>日本の祝日は、年を指定して取り込めます。再取り込み時の重複日はスキップされます。</p><p>休暇日は持ち越し判定、今日のページ、まとめ出力、ガントチャートへ反映されます。</p></div>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">案件タグとガントチャート</summary>
+                    <div class="mt-3 space-y-2"><p>案件タグは設定画面で追加・名称変更・並び替え・表示切り替えができます。</p><p>ガントチャートでは予定期間、親子関係、優先度、休暇日を確認できます。タグでの絞り込みや日・週・月表示にも対応しています。</p><p>ガント上のタスク名を選ぶと詳細画面を開きます。日程変更はタスク詳細から行います。</p></div>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">メモ・リンク・まとめ出力</summary>
+                    <div class="mt-3 space-y-2"><p>作業ログは改行できます。記録は Command + Enter（Windowsでは Ctrl + Enter）です。</p><p>関連リンクは複数登録でき、クリックすると別タブで開きます。</p><p>タスクごとの「ドキュメント」では、チェックリストや長めのメモを複数の文書に分けて管理できます。</p><p>「まとめ出力」から日次・週次・月次・任意期間のMarkdownファイルを作成できます。</p></div>
+                </details>
+                <details class="border border-gray-200 rounded-lg p-4">
+                    <summary class="font-bold cursor-pointer text-gray-800">データの保存</summary>
+                    <div class="mt-3 space-y-2"><p>データはこのブラウザ内に保存されます。別のブラウザや端末には自動同期されません。</p><p>定期的に「エクスポート」でバックアップし、復元するときは「インポート」を利用してください。</p></div>
+                </details>
+            </div>
+        </div>
+    </div>
+
+    <!-- ガントチャート -->
+    <div id="ganttChartModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-3" onclick="closeGanttChart(event)">
+        <div class="bg-white rounded-xl shadow-xl w-full h-[92vh] flex flex-col" role="dialog" aria-modal="true" aria-labelledby="ganttChartTitle" onclick="event.stopPropagation()">
+            <div class="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-gray-200 shrink-0">
+                <div>
+                    <h2 id="ganttChartTitle" class="text-xl font-bold text-gray-800">ガントチャート</h2>
+                    <p class="text-xs text-gray-500 mt-1">予定期間を閲覧できます。タスクを選ぶと詳細を開きます。</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <select id="ganttTagFilter" onchange="renderGanttChart()" aria-label="案件タグで絞り込み" class="border border-gray-300 rounded-md p-1.5 text-sm"></select>
+                    <label class="inline-flex items-center gap-1.5 text-xs text-gray-600"><input id="ganttShowCompleted" type="checkbox" onchange="renderGanttChart()" class="rounded border-gray-300">完了を表示</label>
+                    <select id="ganttScale" onchange="changeGanttScale()" aria-label="表示単位" class="border border-gray-300 rounded-md p-1.5 text-sm">
+                        <option value="day">日</option><option value="week">週</option><option value="month">月</option>
+                    </select>
+                    <button type="button" onclick="moveGanttPeriod(-1)" class="px-2.5 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded" aria-label="前の期間">←</button>
+                    <button type="button" onclick="resetGanttPeriod()" class="px-3 py-1.5 text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded">今日</button>
+                    <button type="button" onclick="moveGanttPeriod(1)" class="px-2.5 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded" aria-label="次の期間">→</button>
+                    <button onclick="closeGanttChart()" class="text-gray-400 hover:text-gray-700 text-2xl leading-none ml-1" aria-label="ガントチャートを閉じる">&times;</button>
+                </div>
+            </div>
+            <div id="ganttChartContent" class="flex-1 min-h-0 overflow-auto"></div>
+            <div class="flex flex-wrap gap-4 px-5 py-2 border-t text-xs text-gray-500 shrink-0">
+                <span><i class="inline-block w-3 h-3 rounded bg-red-400 mr-1"></i>A</span><span><i class="inline-block w-3 h-3 rounded bg-green-500 mr-1"></i>B</span><span><i class="inline-block w-3 h-3 rounded bg-blue-500 mr-1"></i>C</span><span><i class="inline-block w-3 h-3 rounded bg-purple-500 mr-1"></i>D</span><span><i class="inline-block w-3 h-3 bg-purple-100 border border-purple-200 mr-1"></i>休暇</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
