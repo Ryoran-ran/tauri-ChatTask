@@ -12,6 +12,7 @@ import { addAttachment, listAttachments, openAttachment, removeAttachment, type 
 import { UserAvatar } from "./UserAvatar";
 import { Modal } from "./Modal";
 import { RelatedTasksModal } from "./RelatedTasksModal";
+import { TaskBranchesModal } from "./TaskBranchesModal";
 import { WorkDatePicker } from "./WorkDatePicker";
 
 interface Props {
@@ -28,6 +29,7 @@ interface Props {
   onDocuments: () => void;
   onSharedDocuments: (projectId: string, documentId?: string) => void;
   onTagDocuments: () => void;
+  onOpenTagSettings: () => void;
   onPromote: () => void;
   onSaveTemplate: () => void;
   onOpenProject: (id: string) => void;
@@ -108,7 +110,7 @@ function CollapsibleMemo({ text }: { text: string }) {
   </div>;
 }
 
-export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onDocuments, onSharedDocuments, onTagDocuments, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
+export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
   const [rangeStart, setRangeStart] = useState(todayValue());
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeTitle, setRangeTitle] = useState("");
@@ -158,6 +160,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const [tagResourcesVisible, setTagResourcesVisible] = useState(() => localStorage.getItem("chatTaskTagResourcesVisible") !== "false");
   const [scheduleQuickOpen, setScheduleQuickOpen] = useState(false);
   const [relatedTasksOpen, setRelatedTasksOpen] = useState(false);
+  const [branchesOpen, setBranchesOpen] = useState(false);
   const [quickScheduleAdding, setQuickScheduleAdding] = useState(false);
   const [linkImportItems, setLinkImportItems] = useState<{ url: string; label: string; selected: boolean }[] | null>(null);
   useEffect(() => {
@@ -246,6 +249,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   });
   const currentTag = tags.find((tag) => tag.id === task.projectTagId);
   const projectContexts = taskProjectContexts(projects, task.id);
+  const branchCount = task.repositoryBranches.reduce((total, group) => total + group.branchNames.length, 0);
   const sharedProjects = projectContexts.reduce<Goal[]>((items, context) => {
     const project = projects.find((candidate) => candidate.id === context.projectId);
     return project && !items.some((item) => item.id === project.id) ? [...items, project] : items;
@@ -714,6 +718,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       <div className="quick-link-scroll">{task.links.map((link) => link.kind === "file" || link.attachmentId ? <button type="button" className="quick-file-link" key={link.id} title={`${link.label || "ファイル"}を開く`} onClick={() => link.attachmentId && void openAttachment(link.attachmentId)}><i aria-hidden="true">▧</i>{link.label || "ファイル"}</button> : <a key={link.id} href={link.url} target="_blank" rel="noreferrer">{link.label || new URL(link.url).hostname}</a>)}{inheritedParentLinks.map((link) => link.kind === "file" || link.attachmentId ? <button type="button" className="quick-file-link inherited-parent-link" key={`parent:${parentTask?.id}:${link.id}`} title={`${parentTask?.title || "親タスク"}から継承・${link.label || "ファイル"}を開く`} onClick={() => link.attachmentId && void openAttachment(link.attachmentId)}><i aria-hidden="true">↳</i><b aria-hidden="true">▧</b>{link.label || "ファイル"}</button> : <a className="inherited-parent-link" key={`parent:${parentTask?.id}:${link.id}`} href={link.url} target="_blank" rel="noreferrer" title={`${parentTask?.title || "親タスク"}から継承`} aria-label={`${link.label || new URL(link.url).hostname}（${parentTask?.title || "親タスク"}から継承）`}><i aria-hidden="true">↳</i>{link.label || new URL(link.url).hostname}</a>)}</div>
       <div className="quick-toggle-actions">
         <button type="button" className="quick-details-toggle quick-document-button" aria-label="ドキュメントを開く" title={`タスク専用ドキュメントを開く（${task.documents.length}件）`} onClick={onDocuments}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20H6z" /><path d="M14 3.5V8h4M9 12h6M9 15h6" /></svg></button>
+        <button type="button" className="quick-details-toggle quick-branch-button" aria-label="関連ブランチを開く" title={`関連ブランチを開く（${branchCount}件）`} onClick={() => setBranchesOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="5" r="2" /><circle cx="7" cy="19" r="2" /><circle cx="17" cy="8" r="2" /><path d="M7 7v10M9 15c5 0 8-2 8-5" /></svg>{branchCount > 0 && <small>{branchCount}</small>}</button>
         <button type="button" className="quick-details-toggle quick-schedule-button" aria-label="予定を開く" title={`未完了の予定を開く（${incompleteScheduleCount}件／全${task.plannedRanges.length}件）`} onClick={() => { setScheduleQuickOpen(true); setQuickScheduleAdding(false); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5h14V20H5zM8 3.5v5M16 3.5v5M5 10h14" /></svg>{incompleteScheduleCount > 0 && <small>{incompleteScheduleCount}</small>}</button>
         <button type="button" className="quick-details-toggle quick-related-task-button" aria-label="関連タスクを開く" title={`関連タスクを開く（${task.relatedTasks.length}件）`} onClick={() => setRelatedTasksOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 14.5l5-5M7.5 17.5l-1 1a3.5 3.5 0 01-5-5l3-3a3.5 3.5 0 015 0M16.5 6.5l1-1a3.5 3.5 0 015 5l-3 3a3.5 3.5 0 01-5 0" /></svg>{task.relatedTasks.length > 0 && <small>{task.relatedTasks.length}</small>}</button>
         {(parentTask || currentTag || sharedProject) && <button type="button" className={`quick-details-toggle quick-resources-toggle ${tagResourcesVisible ? "active" : ""}`} aria-label={tagResourcesVisible ? "共有・継承資料を非表示" : "共有・継承資料を表示"} title={tagResourcesVisible ? "共有・継承資料を非表示" : "共有・継承資料を表示"} aria-pressed={tagResourcesVisible} onClick={() => { const visible = !tagResourcesVisible; setTagResourcesVisible(visible); localStorage.setItem("chatTaskTagResourcesVisible", String(visible)); }}>▤</button>}
@@ -783,6 +788,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       {attachmentError && <div className="memo-attachment-error">{attachmentError}</div>}
     </div>
     {relatedTasksOpen && <RelatedTasksModal task={task} allTasks={allTasks} onUpdate={(relatedTasks) => onUpdate({ relatedTasks }, "関連タスクを更新しました。")} onOpen={onOpenTask} onClose={() => setRelatedTasksOpen(false)} />}
+    {branchesOpen && <TaskBranchesModal taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
     {deletingRange && <Modal title="予定を削除" onClose={() => setDeletingRange(null)}>
       <div className="task-ending-dialog">
         <p>予定「{scheduleTitle(deletingRange)}」を削除しますか？</p>

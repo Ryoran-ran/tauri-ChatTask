@@ -61,6 +61,28 @@ export const normalizeUrl = (value: string) => {
   }
 };
 
+export const normalizeGithubRepositoryUrl = (value: string) => {
+  if (!value.trim()) return "";
+  const normalized = normalizeUrl(value);
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    const [owner, rawRepository] = url.pathname.split("/").filter(Boolean);
+    const repository = rawRepository?.replace(/\.git$/i, "");
+    if (url.hostname.toLowerCase() !== "github.com" || !owner || !repository) return null;
+    return `https://github.com/${owner}/${repository}`;
+  } catch {
+    return null;
+  }
+};
+
+export const githubPullRequestUrl = (repositoryUrl: string, branchName: string) => {
+  const repository = normalizeGithubRepositoryUrl(repositoryUrl);
+  if (!repository || !branchName.trim()) return null;
+  const branchPath = branchName.trim().split("/").map(encodeURIComponent).join("/");
+  return `${repository}/compare/${branchPath}?expand=1`;
+};
+
 export const mergeRanges = (ranges: PlannedRange[]) => {
   const sorted = [...ranges].sort((a, b) => a.startDate.localeCompare(b.startDate)
     || (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER));

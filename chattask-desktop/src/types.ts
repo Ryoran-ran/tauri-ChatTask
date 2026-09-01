@@ -34,6 +34,12 @@ export interface WaitingHistoryEntry {
   reason: "status-change" | "go";
 }
 
+export interface GithubRepository {
+  id: string;
+  name: string;
+  url: string;
+}
+
 export interface ProjectTag {
   id: string;
   name: string;
@@ -42,6 +48,9 @@ export interface ProjectTag {
   iconType?: "color" | "image";
   logoAttachmentId?: string;
   logoUpdatedAt?: string;
+  githubRepositories?: GithubRepository[];
+  /** 複数リポジトリ対応前のデータ移行用。 */
+  githubRepositoryUrl?: string;
   sharedLinks?: TaskLink[];
   sharedDocuments?: TaskDocument[];
 }
@@ -129,6 +138,11 @@ export interface RecurrenceRecord {
   timestamp: string;
 }
 
+export interface TaskRepositoryBranches {
+  repositoryId: string;
+  branchNames: string[];
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -145,6 +159,8 @@ export interface Task {
   taskKind: TaskKind;
   projectTagId: string;
   parentTaskId: string;
+  /** リポジトリごとに記録したGitブランチ名。 */
+  repositoryBranches: TaskRepositoryBranches[];
   links: TaskLink[];
   relatedTasks: RelatedTaskLink[];
   nextAction: string;

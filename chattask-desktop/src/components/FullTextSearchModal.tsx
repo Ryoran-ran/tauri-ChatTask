@@ -56,6 +56,7 @@ export function FullTextSearchModal({ tasks, projects, tags, onOpen, onClose }: 
     tasks.forEach((task) => {
       const fields = [
         { source: "タスク名", text: task.title },
+        { source: "関連ブランチ", text: task.repositoryBranches.flatMap((group) => group.branchNames).join("\n") },
         { source: "メモ・説明", text: [task.description, task.nextAction, task.recurrenceMemoTemplate, ...Object.values(task.dailyPlans)].filter(Boolean).join("\n") },
         ...task.history.map((history) => ({ source: history.type === "comment" ? "メモ履歴" : "操作履歴", text: history.text })),
       ];

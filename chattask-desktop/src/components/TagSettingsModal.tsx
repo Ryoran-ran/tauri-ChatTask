@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ProjectTag, TaskLink } from "../types";
 import { randomTagColor, TAG_COLOR_PALETTE } from "../tagColors";
-import { generateId, normalizeUrl } from "../utils";
+import { generateId, normalizeGithubRepositoryUrl, normalizeUrl } from "../utils";
 import { addAttachment, removeAttachment } from "../services/attachments";
 import { AttachmentsSection } from "./AttachmentsSection";
 import { DocumentsModal } from "./DocumentsModal";
 import { ImageCropModal } from "./ImageCropModal";
 import { Modal } from "./Modal";
 import { TagIcon } from "./TagIcon";
+import { TagRepositoriesModal } from "./TagRepositoriesModal";
 
 const tagAttachmentId = (tagId: string) => `project-tag:${tagId}`;
 const EXTENDED_TAG_COLORS = [
@@ -26,9 +27,10 @@ const EXTENDED_TAG_COLORS = [
 ];
 
 export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]; onSave: (tags: ProjectTag[]) => void; onClose: () => void }) {
-  const [items, setItems] = useState<ProjectTag[]>(tags.map((tag) => ({ ...tag, color: tag.color || randomTagColor(), sharedLinks: tag.sharedLinks || [], sharedDocuments: tag.sharedDocuments || [] })));
+  const [items, setItems] = useState<ProjectTag[]>(tags.map((tag) => ({ ...tag, color: tag.color || randomTagColor(), githubRepositories: tag.githubRepositories?.length ? tag.githubRepositories : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: tag.githubRepositoryUrl }] : [], githubRepositoryUrl: undefined, sharedLinks: tag.sharedLinks || [], sharedDocuments: tag.sharedDocuments || [] })));
   const [selectedId, setSelectedId] = useState(tags[0]?.id || "");
   const [documentsTagId, setDocumentsTagId] = useState("");
+  const [repositoriesTagId, setRepositoriesTagId] = useState("");
   const [name, setName] = useState("");
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
@@ -60,7 +62,7 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
   };
   const addTag = () => {
     if (!name.trim()) return;
-    const tag: ProjectTag = { id: generateId(), name: name.trim(), visible: true, color: randomTagColor(), sharedLinks: [], sharedDocuments: [] };
+    const tag: ProjectTag = { id: generateId(), name: name.trim(), visible: true, color: randomTagColor(), githubRepositories: [], sharedLinks: [], sharedDocuments: [] };
     setItems((current) => [...current, tag]);
     setSelectedId(tag.id);
     setName("");
@@ -128,6 +130,12 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
     setError("");
   };
   const save = async () => {
+    const invalidRepositoryTag = items.find((tag) => tag.githubRepositories?.some((repository) => !normalizeGithubRepositoryUrl(repository.url)));
+    if (invalidRepositoryTag) {
+      setSelectedId(invalidRepositoryTag.id);
+      setError("GitHubリポジトリは https://github.com/所有者/リポジトリ の形式で入力してください。");
+      return;
+    }
     setBusy(true); setError("");
     try {
       const removedTags = tags.filter((original) => !items.some((item) => item.id === original.id));
@@ -140,7 +148,8 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
           if (original?.logoAttachmentId) await removeAttachment(original.logoAttachmentId).catch(() => undefined);
           logoAttachmentId = (await addAttachment(`project-tag-logo:${tag.id}`, logoFiles[tag.id])).id;
         }
-        saved.push({ ...tag, logoAttachmentId, logoUpdatedAt: logoFiles[tag.id] ? new Date().toISOString() : tag.logoUpdatedAt });
+        const githubRepositories = (tag.githubRepositories || []).map((repository) => ({ ...repository, name: repository.name.trim() || new URL(normalizeGithubRepositoryUrl(repository.url)!).pathname.split("/").filter(Boolean).pop() || "GitHub", url: normalizeGithubRepositoryUrl(repository.url)! }));
+        saved.push({ ...tag, githubRepositories, githubRepositoryUrl: undefined, logoAttachmentId, logoUpdatedAt: logoFiles[tag.id] ? new Date().toISOString() : tag.logoUpdatedAt });
       }
       onSave(saved);
       onClose();
@@ -148,6 +157,7 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
     finally { setBusy(false); }
   };
   const documentsTag = items.find((tag) => tag.id === documentsTagId);
+  const repositoriesTag = items.find((tag) => tag.id === repositoriesTagId);
   const visibleItems = items.filter((tag) => tag.visible);
   const hiddenItems = items.filter((tag) => !tag.visible);
   const tagRow = (tag: ProjectTag, groupItems: ProjectTag[]) => {
@@ -170,6 +180,7 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
     <main className="tag-resources">{selected ? <>
       <header><div><small>案件タグの共通資料</small><h3>{logoPreviews[selected.id] ? <span className="tag-visual-icon tag-visual-logo" style={{ backgroundColor: selected.color }}><img src={logoPreviews[selected.id]} alt="" /></span> : <TagIcon tag={selected} />}{selected.name}</h3></div><p>このタグを設定したすべてのタスクから参照できます。</p></header>
       <section className="tag-icon-settings"><h4>タグアイコン</h4><div className="tag-icon-mode"><button type="button" className={selected.iconType !== "image" ? "active" : ""} onClick={() => updateSelected({ iconType: "color" })}>単色</button><button type="button" className={selected.iconType === "image" ? "active" : ""} onClick={() => { updateSelected({ iconType: "image" }); if (!selected.logoAttachmentId && !logoFiles[selected.id]) logoInputRef.current?.click(); }}>画像</button></div><div className="tag-color-control"><span>背景色</span><div className="tag-color-palette">{TAG_COLOR_PALETTE.map((color) => <button type="button" key={color} className={selected.color === color ? "active" : ""} style={{ backgroundColor: color }} aria-label={`背景色 ${color}`} aria-pressed={selected.color === color} onClick={() => updateSelected({ color })} />)}<div className="tag-custom-color"><button type="button" className={extendedColorsOpen ? "active" : ""} title="その他の背景色" aria-label="その他の背景色" aria-expanded={extendedColorsOpen} onClick={() => setExtendedColorsOpen((open) => !open)}>＋</button>{extendedColorsOpen && <div className="tag-extended-palette">{EXTENDED_TAG_COLORS.map((color) => <button type="button" key={color} className={selected.color === color ? "active" : ""} style={{ backgroundColor: color }} aria-label={`背景色 ${color}`} onClick={() => { updateSelected({ color }); setExtendedColorsOpen(false); }} />)}</div>}</div></div><div className="tag-color-code"><input value={colorCode} maxLength={7} spellCheck={false} aria-label="背景色のカラーコード" placeholder="#3b82f6" onChange={(event) => setColorCode(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") applyColorCode(); }} /><button type="button" onClick={applyColorCode}>適用</button></div><button type="button" onClick={() => logoInputRef.current?.click()}>画像を変更</button></div><small>背景色を変更しても画像は保持されます。画像の透明部分には、選択した背景色が表示されます。</small><input ref={logoInputRef} hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseLogo} /></section>
+      <section className="tag-shared-documents tag-github-launcher"><div><h4>GitHubリポジトリ</h4><p>ブランチの登録先として使用するリポジトリを別画面で管理します。</p></div><button type="button" onClick={() => setRepositoriesTagId(selected.id)}>編集 <small>{selected.githubRepositories?.length || 0}件</small></button></section>
       <section><h4>共通URL</h4><div className="inline-form tag-link-form"><input value={linkLabel} onChange={(event) => setLinkLabel(event.target.value)} placeholder="表示名（任意）" /><input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://..." /><button className="primary" onClick={addLink}>追加</button></div>
         <div className="tag-shared-links">{(selected.sharedLinks || []).map((link) => editingLinkId === link.id
           ? <div className="tag-shared-link-editor" key={link.id}><label>表示名<input autoFocus value={editingLinkLabel} onChange={(event) => setEditingLinkLabel(event.target.value)} /></label><label>URL<input value={editingLinkUrl} onChange={(event) => setEditingLinkUrl(event.target.value)} /></label><div><button type="button" onClick={() => setEditingLinkId("")}>キャンセル</button><button type="button" className="primary" disabled={!editingLinkUrl.trim()} onClick={saveEditedLink}>保存</button></div></div>
@@ -178,5 +189,5 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
       <section className="tag-shared-documents"><div><h4>共通ドキュメント</h4><p>手順書やチェックリストを、この案件タグのタスクで共有できます。</p></div><button type="button" onClick={() => setDocumentsTagId(selected.id)}>ドキュメントを開く <small>{(selected.sharedDocuments || []).length}件</small></button></section>
       <section><h4>共通ファイル</h4><AttachmentsSection taskId={tagAttachmentId(selected.id)} title="ファイル一覧" /></section>
     </> : <div className="empty-list">案件タグを追加してください。</div>}</main>
-  </div>{error && <p className="attachment-error">{error}</p>}<div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button></div></Modal>{documentsTag && <DocumentsModal title={`${documentsTag.name}・共通資料`} documents={documentsTag.sharedDocuments || []} onSave={(sharedDocuments) => setItems((current) => { const next = current.map((tag) => tag.id === documentsTag.id ? { ...tag, sharedDocuments } : tag); onSave(next); return next; })} onClose={() => setDocumentsTagId("")} />}{cropSource && <ImageCropModal source={cropSource} title="画像を調整" shape="square" onApply={applyLogo} onClose={() => setCropSource("")} />}</>;
+  </div>{error && <p className="attachment-error">{error}</p>}<div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button></div></Modal>{documentsTag && <DocumentsModal title={`${documentsTag.name}・共通資料`} documents={documentsTag.sharedDocuments || []} onSave={(sharedDocuments) => setItems((current) => { const next = current.map((tag) => tag.id === documentsTag.id ? { ...tag, sharedDocuments } : tag); onSave(next); return next; })} onClose={() => setDocumentsTagId("")} />}{repositoriesTag && <TagRepositoriesModal tagName={repositoriesTag.name} repositories={repositoriesTag.githubRepositories || []} onSave={(githubRepositories) => setItems((current) => current.map((tag) => tag.id === repositoriesTag.id ? { ...tag, githubRepositories } : tag))} onClose={() => setRepositoriesTagId("")} />}{cropSource && <ImageCropModal source={cropSource} title="画像を調整" shape="square" onApply={applyLogo} onClose={() => setCropSource("")} />}</>;
 }

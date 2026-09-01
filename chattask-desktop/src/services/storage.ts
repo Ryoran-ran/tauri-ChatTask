@@ -100,6 +100,15 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     }),
   );
   const recurrence = source.recurrence as Task["recurrence"] || (status === "recurring" ? { frequency: "weekly" as const, weekday: new Date().getDay(), monthDay: new Date().getDate(), startDate: todayValue(), endDate: "", paused: false } : null);
+  const legacyBranchNames = Array.isArray(source.branchNames)
+    ? [...new Set(source.branchNames.map((name) => String(name).trim()).filter(Boolean))]
+    : String(source.branchName || "").trim() ? [String(source.branchName).trim()] : [];
+  const repositoryBranches = Array.isArray(source.repositoryBranches)
+    ? source.repositoryBranches.map((group) => {
+      const value = group && typeof group === "object" ? group as unknown as Record<string, unknown> : {};
+      return { repositoryId: String(value.repositoryId || ""), branchNames: Array.isArray(value.branchNames) ? [...new Set(value.branchNames.map((name) => String(name).trim()).filter(Boolean))] : [] };
+    }).filter((group) => group.branchNames.length)
+    : legacyBranchNames.length ? [{ repositoryId: "", branchNames: legacyBranchNames }] : [];
   const task: Task = {
     id: String(source.id || generateId()), title: String(source.title || "無題のタスク"), description: String(source.description || ""),
     priority, status,
@@ -119,6 +128,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     waitingHistory: Array.isArray(source.waitingHistory) ? source.waitingHistory as Task["waitingHistory"] : [],
     taskKind: (source.taskKind as TaskKind) || classification.taskKind,
     projectTagId: String(source.projectTagId || ""), parentTaskId: String(source.parentTaskId || ""),
+    repositoryBranches,
     links: Array.isArray(source.links) ? source.links as Task["links"] : [],
     relatedTasks: Array.isArray(source.relatedTasks) ? source.relatedTasks as Task["relatedTasks"] : [], nextAction: String(source.nextAction || ""),
     reminderDate: String(source.reminderDate || ""), dueDate: String(source.dueDate || ""), isToday: false, plannedRanges: normalizedRanges,
@@ -156,6 +166,10 @@ const historyActivity = (tasks: Task[]): ActivityEvent[] => tasks.flatMap((task)
 
 const normalizeTags = (tags: ProjectTag[]): ProjectTag[] => tags.map((tag) => ({
   ...tag,
+  githubRepositories: Array.isArray(tag.githubRepositories)
+    ? tag.githubRepositories.map((repository) => ({ id: String(repository.id || generateId()), name: String(repository.name || ""), url: String(repository.url || "") }))
+    : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: String(tag.githubRepositoryUrl) }] : [],
+  githubRepositoryUrl: undefined,
   color: /^#[0-9a-f]{6}$/i.test(tag.color || "") ? tag.color : randomTagColor(),
   iconType: tag.iconType === "image" && tag.logoAttachmentId ? "image" : "color",
   sharedLinks: Array.isArray(tag.sharedLinks) ? tag.sharedLinks : [],
