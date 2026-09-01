@@ -341,6 +341,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .daily-plan { display: grid; grid-template-columns: 8.5rem 1fr auto; gap: .5rem; align-items: start; }.daily-plan-date { width: 100%; min-width: 0; font-size: .72rem; }.daily-plan textarea { min-height: 52px; font-size: .78rem; }.check-label { font-size: .72rem; display: flex; gap: .3rem; align-items: center; padding-top: .5rem; }
 .link-row { display: flex; gap: .5rem; align-items: center; border: 1px solid #e2e8f0; border-radius: 7px; padding: .45rem .6rem; }.link-row a { flex: 1; overflow: hidden; text-overflow: ellipsis; color: #2563eb; font-size: .8rem; }
 .link-row-editing { display: grid; grid-template-columns: minmax(120px, .7fr) minmax(180px, 1.3fr) auto auto; }
+.link-row-editing.link-row-file-editing { grid-template-columns: minmax(120px, 1fr) auto auto; }
 .link-row-editing input { min-width: 0; width: 100%; }
 .muted { color: #94a3b8; font-size: .75rem; }
 .history-panel { position: relative; min-height: 0; flex: 1; display: flex; flex-direction: column; }
@@ -2435,11 +2436,11 @@ nav.header-actions .settings-panel input { flex: none; width: 15px; height: 15px
 .advance-schedule-panel > div:not(:last-child) { width: 100%; justify-content: stretch; border-top: 0; padding-top: 0; }
 .advance-schedule-body { display: grid !important; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); align-items: stretch; gap: .75rem; min-height: 0; overflow: hidden; }
 .advance-schedule-picker { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .5rem; min-width: 0; min-height: 0; }
-.advance-schedule-results { display: grid; align-content: start; gap: .35rem; min-height: 0; height: 100%; max-height: none; overflow-x: hidden; overflow-y: scroll; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid #dbe4ef; border-radius: 8px; padding: .4rem; background: #f8fafc; }
+.advance-schedule-results { display: grid; grid-auto-rows: minmax(58px, max-content); align-content: start; gap: .35rem; min-height: 0; height: 100%; max-height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid #dbe4ef; border-radius: 8px; padding: .4rem; background: #f8fafc; }
 .advance-schedule-results::-webkit-scrollbar { width: 10px; }
 .advance-schedule-results::-webkit-scrollbar-track { border-radius: 999px; background: #e2e8f0; }
 .advance-schedule-results::-webkit-scrollbar-thumb { border: 2px solid #e2e8f0; border-radius: 999px; background: #94a3b8; }
-.advance-schedule-results > button { display: grid; grid-template-columns: 88px minmax(0, 1fr) 58px; align-items: center; gap: .55rem; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; border-color: #e2e8f0; padding: .55rem .6rem; background: white; text-align: left; }
+.advance-schedule-results > button { display: grid; grid-template-columns: 88px minmax(0, 1fr) 58px; align-items: center; gap: .55rem; width: 100%; min-width: 0; min-height: 58px; max-width: 100%; overflow: hidden; border-color: #e2e8f0; padding: .55rem .6rem; background: white; text-align: left; }
 .advance-schedule-results > button:hover { border-color: #86efac; background: #f0fdf4; }
 .advance-schedule-results > button.selected { border-color: #22c55e; box-shadow: 0 0 0 2px #bbf7d0; background: #f0fdf4; }
 .advance-schedule-results time { display: grid; color: #64748b; font-size: .64rem; white-space: nowrap; }
