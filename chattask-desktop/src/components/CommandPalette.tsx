@@ -59,7 +59,7 @@ export function CommandPalette({ tasks, tags, initialTaskId, position, onCreate,
 
     const normalized = query.trim().toLowerCase();
     const matchingTasks = tasks
-      .filter((task) => !normalized || [task.title, task.description, tags.find((tag) => tag.id === task.projectTagId)?.name || ""].join(" ").toLowerCase().includes(normalized))
+      .filter((task) => !normalized || [task.title, task.description, ...task.repositoryBranches.flatMap((group) => group.branchNames), tags.find((tag) => tag.id === task.projectTagId)?.name || ""].join(" ").toLowerCase().includes(normalized))
       .slice(0, 12);
     const result: Command[] = [];
     if (query.trim()) {

@@ -25,6 +25,7 @@ type ProjectSortKey = "priority" | "dueDate" | "status" | "progress" | "updatedA
 type ProjectSortRule = { id: string; key: ProjectSortKey; direction: "asc" | "desc" };
 const blankProjectFilter = (): ProjectFilterCondition => ({ id: generateId(), field: "status", operator: "is", value: "in-progress" });
 const PROJECT_SORT_LABELS: Record<ProjectSortKey, string> = { priority: "優先度", dueDate: "期限", status: "ステータス", progress: "進捗率", updatedAt: "更新日", title: "プロジェクト名" };
+const LAST_SELECTED_PROJECT_KEY = "chatTaskLastSelectedProjectId";
 
 function ProjectSortModal({ rules, onChange, onClose }: { rules: ProjectSortRule[]; onChange: (rules: ProjectSortRule[]) => void; onClose: () => void }) {
   const move = (index: number, direction: -1 | 1) => {
@@ -393,7 +394,7 @@ function ProjectResources({ project, onLinks }: { project: Goal; onLinks: (links
 }
 export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onSave: (projects: Goal[]) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
   const [items, setItems] = useState(() => projects.map(normalizeProject));
-  const [selectedId, setSelectedId] = useState(initialProjectId || projects[0]?.id || "");
+  const [selectedId, setSelectedId] = useState(() => initialProjectId || localStorage.getItem(LAST_SELECTED_PROJECT_KEY) || "");
   const [filter, setFilter] = useState(() => localStorage.getItem("chatTaskProjectFilter") || "active");
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
   const [sortEditorOpen, setSortEditorOpen] = useState(false);
@@ -605,6 +606,19 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       return a.id.localeCompare(b.id);
     });
   }, [items, filter, search, advancedFilter, sortRules, tags]);
+  useEffect(() => {
+    const explicitlyOpenedProjectExists = Boolean(initialProjectId && items.some((item) => item.id === initialProjectId));
+    if (explicitlyOpenedProjectExists && selectedId === initialProjectId) return;
+    if (visible.some((item) => item.id === selectedId)) return;
+    const lastSelectedId = localStorage.getItem(LAST_SELECTED_PROJECT_KEY) || "";
+    const nextSelectedId = visible.find((item) => item.id === lastSelectedId)?.id || visible[0]?.id || "";
+    if (nextSelectedId !== selectedId) setSelectedId(nextSelectedId);
+  }, [initialProjectId, items, selectedId, visible]);
+  useEffect(() => {
+    if (selectedId && items.some((item) => item.id === selectedId)) {
+      localStorage.setItem(LAST_SELECTED_PROJECT_KEY, selectedId);
+    }
+  }, [items, selectedId]);
   const update = (changes: Partial<Goal>) => setItems((current) => current.map((item) => item.id === selectedId ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item));
   const add = () => { const next = blankProject(); setItems((current) => [next, ...current]); setSelectedId(next.id); };
   const remove = () => {
@@ -620,7 +634,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     const next = items.filter((item) => item.id !== selectedId);
     setItems(next);
     onSave(next);
-    setSelectedId(next[0]?.id || "");
+    setSelectedId(visible.find((item) => item.id !== selectedId)?.id || "");
     setDeleteConfirm(false);
   };
   const addMilestone = (position?: unknown) => {
