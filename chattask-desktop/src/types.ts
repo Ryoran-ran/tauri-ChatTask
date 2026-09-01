@@ -40,6 +40,12 @@ export interface GithubRepository {
   url: string;
 }
 
+export interface QuickLinkRule {
+  id: string;
+  name: string;
+  urlPrefix: string;
+}
+
 export interface ProjectTag {
   id: string;
   name: string;
@@ -51,6 +57,7 @@ export interface ProjectTag {
   githubRepositories?: GithubRepository[];
   /** 複数リポジトリ対応前のデータ移行用。 */
   githubRepositoryUrl?: string;
+  quickLinkRules?: QuickLinkRule[];
   sharedLinks?: TaskLink[];
   sharedDocuments?: TaskDocument[];
 }

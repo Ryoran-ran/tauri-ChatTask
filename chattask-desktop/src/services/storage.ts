@@ -170,6 +170,7 @@ const normalizeTags = (tags: ProjectTag[]): ProjectTag[] => tags.map((tag) => ({
     ? tag.githubRepositories.map((repository) => ({ id: String(repository.id || generateId()), name: String(repository.name || ""), url: String(repository.url || "") }))
     : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: String(tag.githubRepositoryUrl) }] : [],
   githubRepositoryUrl: undefined,
+  quickLinkRules: Array.isArray(tag.quickLinkRules) ? tag.quickLinkRules.map((rule) => ({ id: String(rule.id || generateId()), name: String(rule.name || ""), urlPrefix: String(rule.urlPrefix || "") })) : [],
   color: /^#[0-9a-f]{6}$/i.test(tag.color || "") ? tag.color : randomTagColor(),
   iconType: tag.iconType === "image" && tag.logoAttachmentId ? "image" : "color",
   sharedLinks: Array.isArray(tag.sharedLinks) ? tag.sharedLinks : [],

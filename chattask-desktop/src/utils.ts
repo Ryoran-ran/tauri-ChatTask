@@ -1,4 +1,4 @@
-import type { NonWorkingPeriod, PlannedRange, Task } from "./types";
+import type { NonWorkingPeriod, PlannedRange, QuickLinkRule, Task } from "./types";
 
 export const generateId = () => crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
 
@@ -74,6 +74,26 @@ export const normalizeGithubRepositoryUrl = (value: string) => {
   } catch {
     return null;
   }
+};
+
+export const normalizeQuickLinkPrefix = (value: string) => {
+  const normalized = normalizeUrl(value);
+  if (!normalized) return null;
+  try {
+    const url = new URL(normalized);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return null;
+  }
+};
+
+export const quickLinkNameForUrl = (rules: QuickLinkRule[], value: string) => {
+  const candidate = normalizeQuickLinkPrefix(value);
+  if (!candidate) return "";
+  return [...rules]
+    .map((rule) => ({ rule, prefix: normalizeQuickLinkPrefix(rule.urlPrefix) }))
+    .filter((item): item is { rule: QuickLinkRule; prefix: string } => Boolean(item.prefix && candidate.startsWith(item.prefix)))
+    .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.rule.name || "";
 };
 
 export const githubPullRequestUrl = (repositoryUrl: string, branchName: string) => {

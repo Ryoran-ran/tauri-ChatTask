@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
 import { taskProjectContexts } from "../projectContext";
 import type { Goal, HistoryEntry, PlannedRange, ProjectTag, Task, TaskLink, UserProfile } from "../types";
-import { formatDateTime, generateId, localDateValue, mergeRanges, normalizeUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
+import { formatDateTime, generateId, localDateValue, mergeRanges, normalizeUrl, quickLinkNameForUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
 import { MarkdownText } from "./MarkdownText";
 import { RecurrenceSettingsEditor } from "./RecurrenceSettingsEditor";
 import { AttachmentsSection } from "./AttachmentsSection";
@@ -130,6 +130,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   }, [detailsHidden, onToggleDetails]);
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [linkLabelEdited, setLinkLabelEdited] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const [editingLinkLabel, setEditingLinkLabel] = useState("");
   const [editingLinkUrl, setEditingLinkUrl] = useState("");
@@ -170,7 +171,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     input.style.height = `${Math.min(Math.max(input.scrollHeight, 66), 192)}px`;
     input.style.overflowY = input.scrollHeight > 192 ? "auto" : "hidden";
   }, [memo]);
-  useEffect(() => { setDeleteConfirm(false); setPendingWaitingStatus(null); setPendingLeavingWaitingStatus(null); setEndingStatus(null); setEndingReason(""); }, [task?.id]);
+  useEffect(() => { setDeleteConfirm(false); setPendingWaitingStatus(null); setPendingLeavingWaitingStatus(null); setEndingStatus(null); setEndingReason(""); setLinkLabel(""); setLinkUrl(""); setLinkLabelEdited(false); }, [task?.id]);
   useEffect(() => {
     if (task?.title !== "新規タスク") return;
     requestAnimationFrame(() => {
@@ -344,7 +345,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     if (!url) return alert("正しいURLを入力してください。");
     const link: TaskLink = { id: generateId(), label: linkLabel.trim(), url };
     update("links", [...task.links, link], "関連リンクを追加しました。");
-    setLinkLabel(""); setLinkUrl("");
+    setLinkLabel(""); setLinkUrl(""); setLinkLabelEdited(false);
   };
   const addFileLink = async (file: File) => {
     setAttachmentBusy(true);
@@ -383,8 +384,11 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     const urls = memoUrls(text).filter((url) => !registered.has(url));
     if (!urls.length) return;
     setLinkImportItems(urls.map((url) => {
-      let label = url;
-      try { label = new URL(url).hostname; } catch { /* URLはnormalizeUrlで検証済み */ }
+      const matchedLabel = quickLinkNameForUrl(currentTag?.quickLinkRules || [], url);
+      let label = matchedLabel || url;
+      if (!matchedLabel) {
+        try { label = new URL(url).hostname; } catch { /* URLはnormalizeUrlで検証済み */ }
+      }
       return { url, label, selected: true };
     }));
   };
@@ -775,7 +779,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       {task.status !== "recurring" && <details><summary>その日のメモ</summary><div className="daily-plans">{scheduleDates.length ? scheduleDates.map((date) => <div className="daily-plan" key={date}><WorkDatePicker className="daily-plan-date" ariaLabel="メモの日付" value={date} onChange={(nextDate) => changeDailyPlanDate(date, nextDate)} allowClear={false} /><textarea className={task.dailyPlanCompleted[date] ? "plan-completed" : ""} value={task.dailyPlans[date] || ""} placeholder="その日の対応メモ・確認事項・申し送りなど" onChange={(event) => update("dailyPlans", { ...task.dailyPlans, [date]: event.target.value })} /><div><label className="check-label"><input type="checkbox" checked={Boolean(task.dailyPlanCompleted[date])} onChange={(event) => update("dailyPlanCompleted", { ...task.dailyPlanCompleted, [date]: event.target.checked })} />達成</label><button type="button" className="danger-text" onClick={() => onDeleteDailyPlan(date)}>削除</button></div></div>) : <p className="muted">予定日を追加すると、その日ごとのメモを入力できます。</p>}</div></details>}
       <details open><summary>内容</summary><div className="stack-fields"><label>説明<textarea rows={5} value={task.description} onChange={(event) => update("description", event.target.value)} onBlur={() => onUpdate({}, "説明を更新しました。")} placeholder="背景や完了条件など" /></label></div></details>
       <details><summary>関連リンク</summary><div className="links-editor">
-        <div className="inline-form"><input value={linkLabel} onChange={(event) => setLinkLabel(event.target.value)} placeholder="表示名（Redmineなど）" /><input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="URL" /><button className="primary" onClick={addLink}>追加</button><label className="quick-file-picker">ファイルを追加<input type="file" disabled={attachmentBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void addFileLink(file); event.target.value = ""; }} /></label></div>
+        <div className="inline-form"><input value={linkLabel} onChange={(event) => { setLinkLabel(event.target.value); setLinkLabelEdited(true); }} placeholder="表示名（URLから自動入力）" /><input value={linkUrl} onChange={(event) => { const url = event.target.value; setLinkUrl(url); if (!linkLabelEdited) setLinkLabel(quickLinkNameForUrl(currentTag?.quickLinkRules || [], url)); }} placeholder="URL" /><button className="primary" onClick={addLink}>追加</button><label className="quick-file-picker">ファイルを追加<input type="file" disabled={attachmentBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void addFileLink(file); event.target.value = ""; }} /></label></div>
         {task.links.map((link) => editingLinkId === link.id
           ? <div className={`link-row link-row-editing ${link.kind === "file" || link.attachmentId ? "link-row-file-editing" : ""}`} key={link.id}><input value={editingLinkLabel} onChange={(event) => setEditingLinkLabel(event.target.value)} placeholder="表示名" />{!(link.kind === "file" || link.attachmentId) && <input value={editingLinkUrl} onChange={(event) => setEditingLinkUrl(event.target.value)} placeholder="URL" />}<button onClick={() => setEditingLinkId(null)}>キャンセル</button><button className="primary" onClick={saveEditingLink}>保存</button></div>
           : <div className="link-row" key={link.id}>{link.kind === "file" || link.attachmentId ? <button type="button" className="link-file-open" onClick={() => link.attachmentId && void openAttachment(link.attachmentId)}>▧ {link.label || "ファイル"}</button> : <a href={link.url} target="_blank" rel="noreferrer">{link.label || link.url}</a>}<button onClick={() => startEditingLink(link)}>編集</button><button className="danger-text" onClick={() => update("links", task.links.filter((item) => item.id !== link.id))}>削除</button></div>)}

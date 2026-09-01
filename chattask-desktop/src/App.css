@@ -3908,6 +3908,8 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .tag-shared-documents > button small { margin-left: .25rem; color: #64748b; }
 .tag-github-launcher { border-color: #bbf7d0 !important; background: #f0fdf4; }
 .tag-github-launcher > button { border-color: #86efac; background: white; color: #15803d; }
+.tag-quick-link-launcher { border-color: #c4b5fd !important; background: #f5f3ff; }
+.tag-quick-link-launcher > button { border-color: #c4b5fd; background: white; color: #6d28d9; }
 .tag-repository-manager { display: grid; gap: 1rem; min-height: 0; }
 .tag-repository-manager > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid #bbf7d0; border-radius: 9px; padding: .75rem .85rem; background: #f0fdf4; }
 .tag-repository-manager > header > div { display: grid; gap: .1rem; }
@@ -3915,6 +3917,14 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .tag-repository-manager > header strong { color: #1e293b; font-size: .88rem; }
 .tag-repository-manager > header b { color: #15803d; font-size: .74rem; }
 .tag-repository-manager-list { max-height: min(52vh, 480px); overflow-y: auto; padding-right: .2rem; }
+.tag-quick-link-form { display: grid; grid-template-columns: minmax(150px, .55fr) minmax(300px, 1.45fr) auto; gap: .45rem; }
+.tag-quick-link-form input { min-width: 0; }
+.tag-quick-link-note { margin: -.35rem 0 0; color: #64748b; font-size: .68rem; }
+.tag-quick-link-rules { display: grid; max-height: min(50vh, 460px); gap: .4rem; overflow-y: auto; }
+.tag-quick-link-rules > div { display: grid; grid-template-columns: minmax(140px, .55fr) minmax(280px, 1.45fr) auto; align-items: center; gap: .4rem; }
+.tag-quick-link-rules input { min-width: 0; width: 100%; font-size: .75rem; }
+.tag-quick-link-rules > p { margin: 0; padding: 1rem; color: #94a3b8; text-align: center; font-size: .72rem; }
+@media (max-width: 700px) { .tag-quick-link-form, .tag-quick-link-rules > div { grid-template-columns: 1fr; } }
 .tag-link-form { grid-template-columns: minmax(120px, .6fr) minmax(180px, 1.4fr) auto; }
 .tag-shared-links { display: grid; gap: .4rem; margin-top: .6rem; }
 .tag-shared-links > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .15rem .5rem; align-items: center; border-radius: 6px; padding: .45rem .55rem; background: #f8fafc; }
