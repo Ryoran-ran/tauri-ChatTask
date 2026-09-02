@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ClipboardE
 import { createPortal } from "react-dom";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
 import { taskProjectContexts } from "../projectContext";
-import type { Goal, HistoryEntry, PlannedRange, ProjectTag, Task, TaskLink, UserProfile } from "../types";
+import type { GithubRepository, Goal, HistoryEntry, PlannedRange, ProjectTag, Task, TaskLink, UserProfile } from "../types";
 import { formatDateTime, generateId, localDateValue, mergeRanges, normalizeUrl, quickLinkNameForUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
 import { MarkdownText } from "./MarkdownText";
 import { RecurrenceSettingsEditor } from "./RecurrenceSettingsEditor";
@@ -30,6 +30,7 @@ interface Props {
   onSharedDocuments: (projectId: string, documentId?: string) => void;
   onTagDocuments: () => void;
   onOpenTagSettings: () => void;
+  onUpdateTagRepositories: (tagId: string, repositories: GithubRepository[]) => void;
   onPromote: () => void;
   onSaveTemplate: () => void;
   onOpenProject: (id: string) => void;
@@ -110,7 +111,7 @@ function CollapsibleMemo({ text }: { text: string }) {
   </div>;
 }
 
-export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
+export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
   const [rangeStart, setRangeStart] = useState(todayValue());
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeTitle, setRangeTitle] = useState("");
@@ -792,7 +793,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       {attachmentError && <div className="memo-attachment-error">{attachmentError}</div>}
     </div>
     {relatedTasksOpen && <RelatedTasksModal task={task} allTasks={allTasks} onUpdate={(relatedTasks) => onUpdate({ relatedTasks }, "関連タスクを更新しました。")} onOpen={onOpenTask} onClose={() => setRelatedTasksOpen(false)} />}
-    {branchesOpen && <TaskBranchesModal taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
+    {branchesOpen && <TaskBranchesModal taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onSaveRepositories={(repositories) => currentTag && onUpdateTagRepositories(currentTag.id, repositories)} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
     {deletingRange && <Modal title="予定を削除" onClose={() => setDeletingRange(null)}>
       <div className="task-ending-dialog">
         <p>予定「{scheduleTitle(deletingRange)}」を削除しますか？</p>

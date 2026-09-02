@@ -10,6 +10,15 @@ import { TagIcon } from "./TagIcon";
 type Occurrence = { task: Task; occurrenceDate: string };
 type ScheduledItem = { task: Task; range: PlannedRange; planKey: string; completionEvent?: ActivityEvent; carriedForward?: boolean };
 type ExecutionItem = { kind: "scheduled"; scheduled: ScheduledItem } | { kind: "recurring"; occurrence: Occurrence };
+const executionBatchStorageKey = (date: string) => `chatTaskTodayActiveBatch:${date}`;
+const readExecutionBatch = (date: string) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(executionBatchStorageKey(date)) || "[]");
+    return Array.isArray(stored) ? stored.filter((key): key is string => typeof key === "string") : [];
+  } catch {
+    return [];
+  }
+};
 export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTodayOrder, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { tasks: Task[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
   const [moveTarget, setMoveTarget] = useState<Occurrence | null>(null); const [moveDate, setMoveDate] = useState(""); const [moveReason, setMoveReason] = useState("");
   const [actualDrafts, setActualDrafts] = useState<Record<string, string>>({});
@@ -23,6 +32,8 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   const [carrySelectionMode, setCarrySelectionMode] = useState(false);
   const [groupByTag, setGroupByTag] = useState(() => localStorage.getItem("chatTaskTodayGroupByTag") === "true");
   const [todayView, setTodayView] = useState<"board" | "order">(() => localStorage.getItem("chatTaskTodayView") === "order" ? "order" : "board");
+  const [activeExecutionBatch, setActiveExecutionBatch] = useState(() => ({ date, keys: readExecutionBatch(date) }));
+  const [executionLaterOpen, setExecutionLaterOpen] = useState(false);
   const [dragOrderKey, setDragOrderKey] = useState("");
   const [copiedCalendarKey, setCopiedCalendarKey] = useState("");
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Set<string>>(() => new Set());
@@ -286,6 +297,8 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     setCarryHistoryTarget(null);
     setRecurrenceDetailTarget(null);
     setExpandedTaskKeys(new Set());
+    setActiveExecutionBatch({ date, keys: readExecutionBatch(date) });
+    setExecutionLaterOpen(false);
     setAdvanceDialogOpen(false);
     setAdvanceTargetKey("");
     setAdvanceSearch("");
@@ -481,11 +494,11 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
       } : item),
     }, `予定「${range.title || task.title}」の前倒しを取り消しました。`);
   };
-  const carryTasks = (selectedOnly = false) => {
+  const carryTasks = (selectedOnly = false, explicitTargets?: ScheduledItem[]) => {
     if (finalized) return;
     const destination = carryDestination;
-    const targets = carryCandidates.filter((item) => !selectedOnly || selectedCarryTaskIds.has(carryItemKey(item)));
-    if (selectedOnly && !selectedCarryTaskIds.size) return alert("次の営業日に回すタスクを選択してください。");
+    const targets = explicitTargets || carryCandidates.filter((item) => !selectedOnly || selectedCarryTaskIds.has(carryItemKey(item)));
+    if (!explicitTargets && selectedOnly && !selectedCarryTaskIds.size) return alert("次の営業日に回すタスクを選択してください。");
     if (!targets.length) return alert("持ち越す未完了タスクはありません。");
     const targetsByTask = new Map<string, ScheduledItem[]>();
     targets.forEach((item) => targetsByTask.set(item.task.id, [...(targetsByTask.get(item.task.id) || []), item]));
@@ -550,13 +563,16 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
         dailyPlanStatuses,
       }, `${date}の予定${items.length > 1 ? `${items.length}件` : `「${items[0].range.title || items[0].task.title}」`}を${integrations.size ? `${destination}の既存予定へ統合` : `残して${destination}へ持ち越し`}しました。`);
     };
-    if (selectedOnly) {
+    if (!explicitTargets && selectedOnly) {
       targetsByTask.forEach((items) => carryTaskItems(items[0].task, items));
       setSelectedCarryTaskIds(new Set());
       setCarrySelectionMode(false);
       return;
     }
-    if (!confirm(`${targets.length}件を${destination}へ持ち越しますか？`)) return;
+    const confirmation = explicitTargets?.length === 1
+      ? `「${explicitTargets[0].range.title || explicitTargets[0].task.title}」を${destination}へ持ち越しますか？\n\n前倒しと当日の作業記録は履歴に残ります。`
+      : `${targets.length}件を${destination}へ持ち越しますか？`;
+    if (!confirm(confirmation)) return;
     targetsByTask.forEach((items) => carryTaskItems(items[0].task, items));
   };
   const updateDailyActual = (task: Task, value: number, planKey = date) => {
@@ -653,6 +669,16 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     });
     return <article key={cardKey} className={`today-card ${expanded ? "is-expanded" : "is-compact"} ${dailyAchieved ? "today-card-achieved" : ""} ${taskDone ? "today-card-completed" : ""} ${historicalCarry ? "today-card-carried-history" : ""} ${carryChoiceVisible ? "is-carry-selectable" : ""} ${carrySelected ? "is-carry-selected" : ""}`}>
       <div className="today-card-summary">
+        {range.advancedFromStartDate && !finalized && !historicalCarry && !taskDone && !dailyAchieved && <details className="today-advance-menu">
+          <summary aria-label="前倒しした予定の操作" title="前倒しした予定の操作">…</summary>
+          <div>
+            <strong>前倒しした予定</strong>
+            <button type="button" onClick={() => {
+              if (confirm(`この予定を元の日付（${range.advancedFromStartDate}${range.advancedFromEndDate !== range.advancedFromStartDate ? `〜${range.advancedFromEndDate}` : ""}）へ戻しますか？\n\n当日の作業記録は残ります。`)) cancelAdvance(task, range);
+            }}><span aria-hidden="true">↩</span><span>元の日付へ戻す<small>{range.advancedFromStartDate}{range.advancedFromEndDate !== range.advancedFromStartDate ? `〜${range.advancedFromEndDate}` : ""}</small></span></button>
+            <button type="button" onClick={() => carryTasks(false, [item])}><span aria-hidden="true">→</span><span>次の営業日へ持ち越す<small>{carryDestination}</small></span></button>
+          </div>
+        </details>}
         {carryChoiceVisible && <label className="today-carry-select today-carry-select-summary"><input type="checkbox" checked={carrySelected} disabled={finalized} onChange={(event) => toggleCarrySelection(event.target.checked)} /><span>次の営業日に回す</span></label>}
         <button className="today-task-title" onClick={() => openTask(task)}>{scheduleTitle(task, range)}</button>
         {scheduleTitle(task, range) !== task.title && <small className="today-source-task" title={task.title}>関連Task：{task.title}</small>}
@@ -673,7 +699,6 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
       {dailyAchieved && <span className="achievement-badge">✓ この日の対応済み</span>}
       {range.originalEndDate && date > range.originalEndDate && <span className="carryover-badge">期限 {range.originalEndDate}から遅延</span>}
       {range.advancedFromStartDate && <span className="advance-badge">← {range.advancedFromStartDate}{range.advancedFromEndDate !== range.advancedFromStartDate ? `〜${range.advancedFromEndDate}` : ""}から前倒し</span>}
-      {range.advancedFromStartDate && !finalized && <button type="button" className="advance-cancel-button" onClick={() => cancelAdvance(task, range)}>前倒しを取り消す</button>}
       {carriedToTomorrow && <span className="carryover-badge">→ {carryDestination}へ持ち越し済み</span>}
       {!finalized && completionEvent && (confirmingCancel ? <span className="completion-cancel-confirm"><button type="button" onClick={() => setCompletionCancelConfirmId("")}>やめる</button><button type="button" className="danger" onClick={() => { onCancelCompletion(task.id, completionEvent.id); setCompletionCancelConfirmId(""); }}>取り消しを実行</button></span> : <button type="button" className="completion-cancel-button" onClick={() => setCompletionCancelConfirmId(completionEvent.id)}>完了を取り消す</button>)}
       {actualInput(task, item)}
@@ -762,12 +787,20 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   };
   const moveExecutionItem = (key: string, targetIndex: number) => {
     if (finalized) return;
-    const currentIndex = executionQueue.findIndex((item) => executionItemKey(item) === key);
+    // グループは見やすさのための区切りであり、並び順自体は全体で一続きに扱う。
+    const displayedQueue = [
+      ...executionQueue.filter((item) => activeExecutionKeySet.has(executionItemKey(item))),
+      ...executionQueue.filter((item) => !activeExecutionKeySet.has(executionItemKey(item))),
+    ];
+    const currentIndex = displayedQueue.findIndex((item) => executionItemKey(item) === key);
     if (currentIndex < 0) return;
-    const next = [...executionQueue];
+    const next = [...displayedQueue];
     const [moving] = next.splice(currentIndex, 1);
     next.splice(Math.max(0, Math.min(targetIndex, next.length)), 0, moving);
     persistExecutionOrder(next);
+    // 境界を越えて移動した場合は、先頭の作業セット件数を維持したまま
+    // 「今すること」のメンバーを新しい順番に合わせる。
+    saveActiveExecutionBatch(next.slice(0, activeExecutionItems.length).map(executionItemKey));
   };
   const removeFromExecutionOrder = (item: ExecutionItem) => {
     if (finalized) return;
@@ -777,47 +810,83 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     if (finalized) return;
     persistExecutionOrder([...executionQueue, item], executionUnset.filter((candidate) => executionItemKey(candidate) !== executionItemKey(item)));
   };
+  const saveActiveExecutionBatch = (keys: string[]) => {
+    const uniqueKeys = [...new Set(keys)].slice(0, 5);
+    setActiveExecutionBatch({ date, keys: uniqueKeys });
+    localStorage.setItem(executionBatchStorageKey(date), JSON.stringify(uniqueKeys));
+  };
+  const addParallelExecutionItem = () => {
+    if (finalized || activeExecutionItems.length >= 5 || !queuedExecutionItems.length) return;
+    saveActiveExecutionBatch([...resolvedActiveExecutionKeys, executionItemKey(queuedExecutionItems[0])]);
+  };
+  const removeParallelExecutionItem = () => {
+    if (finalized || resolvedActiveExecutionKeys.length <= 1) return;
+    saveActiveExecutionBatch(resolvedActiveExecutionKeys.slice(0, -1));
+  };
+  const executionOrderRow = (item: ExecutionItem, index: number, tier: "active" | "next" | "later") => {
+    const key = executionItemKey(item);
+    const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task;
+    const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title;
+    const plannedHours = item.kind === "scheduled" ? plannedRangeHoursForDate(item.scheduled.range, date, periods, workingDateOverrides) : Number(task.plannedHours) || 0;
+    const kindLabel = item.kind === "recurring" ? "定期" : WAITING_STATUSES.includes(itemStatus(item.scheduled)) ? "待ち" : "作業";
+    return <li key={key} className={`${dragOrderKey === key ? "is-dragging" : ""} execution-tier-${tier}`} draggable={!finalized}
+      onDragStart={() => { setDragOrderKey(key); if (laterExecutionItems.length) setExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => { event.preventDefault(); if (dragOrderKey && dragOrderKey !== key) moveExecutionItem(dragOrderKey, index); setDragOrderKey(""); }}>
+      <span className="execution-order-number">{index + 1}</span>
+      <span className={`priority priority-${task.priority}`}>{task.priority}</span>
+      <button type="button" className="execution-order-main" onClick={() => openTask(task)}>
+        <strong>{title}</strong>
+        {item.kind === "scheduled" && <small className="execution-order-related">関連Task：{task.title}</small>}
+        <small><b>{kindLabel}</b> · {tags.find((tag) => tag.id === task.projectTagId)?.name || "タグなし"} · 予定 {formatHours(plannedHours)}h</small>
+      </button>
+      {item.kind === "scheduled" ? statusBadge(task, item.scheduled) : <span className="today-status-badge todo">未実施</span>}
+      <div className="execution-order-task-actions">
+        <button type="button" className={`today-timer-start ${activeTimerTaskId === task.id ? "is-running" : ""}`} disabled={finalized || activeTimerTaskId === task.id} onClick={() => chooseTimer(task, item.kind === "scheduled" ? item.scheduled.planKey : date, plannedHours)}>{activeTimerTaskId === task.id ? "計測中" : "開始"}</button>
+        {calendarCopyButton(`order:${key}`, task, item.kind === "scheduled" ? item.scheduled.range : undefined)}
+        {item.kind === "scheduled"
+          ? <button type="button" className="today-card-expand" onClick={() => setEntryTarget(item.scheduled)}>記録</button>
+          : <><button type="button" className="today-card-move" disabled={finalized} onClick={() => { setMoveTarget(item.occurrence); setMoveDate(addDays(date, 1)); setMoveReason(""); }}>別日に対応</button><button type="button" className="today-card-documents" onClick={() => onOpenDocuments(task.id)}><span aria-hidden="true">▤</span>文書{task.documents.length > 0 && <small>{task.documents.length}</small>}</button><button type="button" className="today-card-expand" onClick={() => { setRecurrenceMemoDraft(task.recurrenceRecords.find((record) => record.date === item.occurrence.occurrenceDate)?.memo ?? task.recurrenceMemoTemplate); setRecurrenceDetailTarget(item.occurrence); }}>詳細</button></>}
+      </div>
+      <div className="execution-order-controls" aria-label={`${title}の順番操作`}>
+        <button type="button" title="先頭へ" disabled={finalized || index === 0} onClick={() => moveExecutionItem(key, 0)}>⇤</button>
+        <button type="button" title="一つ上へ" disabled={finalized || index === 0} onClick={() => moveExecutionItem(key, index - 1)}>↑</button>
+        <button type="button" title="一つ下へ" disabled={finalized || index === executionQueue.length - 1} onClick={() => moveExecutionItem(key, index + 1)}>↓</button>
+        <button type="button" title="最後へ" disabled={finalized || index === executionQueue.length - 1} onClick={() => moveExecutionItem(key, executionQueue.length - 1)}>⇥</button>
+        <button type="button" title="順番から外す" disabled={finalized} onClick={() => removeFromExecutionOrder(item)}>×</button>
+      </div>
+    </li>;
+  };
+  const storedActiveExecutionKeys = activeExecutionBatch.date === date ? activeExecutionBatch.keys : [];
+  const liveActiveExecutionKeys = storedActiveExecutionKeys.filter((key) => activeOrderKeys.has(key));
+  const resolvedActiveExecutionKeys = liveActiveExecutionKeys.length
+    ? liveActiveExecutionKeys
+    : executionQueue.slice(0, 1).map(executionItemKey);
+  const activeExecutionKeySet = new Set(resolvedActiveExecutionKeys);
+  const activeExecutionItems = executionQueue.filter((item) => activeExecutionKeySet.has(executionItemKey(item)));
+  const queuedExecutionItems = executionQueue.filter((item) => !activeExecutionKeySet.has(executionItemKey(item)));
+  const nextExecutionItems = queuedExecutionItems.slice(0, 3);
+  const laterExecutionItems = queuedExecutionItems.slice(3);
+  const executionQueueSignature = executionQueue.map(executionItemKey).join("|");
+  useEffect(() => {
+    if (activeExecutionBatch.date !== date) return;
+    if (storedActiveExecutionKeys.length === resolvedActiveExecutionKeys.length
+      && storedActiveExecutionKeys.every((key, index) => key === resolvedActiveExecutionKeys[index])) return;
+    saveActiveExecutionBatch(resolvedActiveExecutionKeys);
+  }, [date, executionQueueSignature, activeExecutionBatch]);
   const executionOrderSection = () => <section className="today-section execution-order-section">
     <div className="execution-order-heading">
       {sectionHeading("今日の対応順", executionQueue.length)}
       <small>ドラッグまたは矢印で順番を変更できます</small>
     </div>
-    {executionQueue.length ? <ol className="execution-order-list">
-      {executionQueue.map((item, index) => {
-        const key = executionItemKey(item);
-        const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task;
-        const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title;
-        const plannedHours = item.kind === "scheduled" ? plannedRangeHoursForDate(item.scheduled.range, date, periods, workingDateOverrides) : Number(task.plannedHours) || 0;
-        const kindLabel = item.kind === "recurring" ? "定期" : WAITING_STATUSES.includes(itemStatus(item.scheduled)) ? "待ち" : "作業";
-        return <li key={key} className={dragOrderKey === key ? "is-dragging" : ""} draggable={!finalized}
-          onDragStart={() => setDragOrderKey(key)} onDragEnd={() => setDragOrderKey("")}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => { event.preventDefault(); if (dragOrderKey && dragOrderKey !== key) moveExecutionItem(dragOrderKey, index); setDragOrderKey(""); }}>
-          <span className="execution-order-number">{index + 1}</span>
-          <span className={`priority priority-${task.priority}`}>{task.priority}</span>
-          <button type="button" className="execution-order-main" onClick={() => openTask(task)}>
-            <strong>{title}</strong>
-            {item.kind === "scheduled" && <small className="execution-order-related">関連Task：{task.title}</small>}
-            <small><b>{kindLabel}</b> · {tags.find((tag) => tag.id === task.projectTagId)?.name || "タグなし"} · 予定 {formatHours(plannedHours)}h</small>
-          </button>
-          {item.kind === "scheduled" ? statusBadge(task, item.scheduled) : <span className="today-status-badge todo">未実施</span>}
-          <div className="execution-order-task-actions">
-            <button type="button" className={`today-timer-start ${activeTimerTaskId === task.id ? "is-running" : ""}`} disabled={finalized || activeTimerTaskId === task.id} onClick={() => chooseTimer(task, item.kind === "scheduled" ? item.scheduled.planKey : date, plannedHours)}>{activeTimerTaskId === task.id ? "計測中" : "開始"}</button>
-            {calendarCopyButton(`order:${key}`, task, item.kind === "scheduled" ? item.scheduled.range : undefined)}
-            {item.kind === "scheduled"
-              ? <button type="button" className="today-card-expand" onClick={() => setEntryTarget(item.scheduled)}>記録</button>
-              : <><button type="button" className="today-card-move" disabled={finalized} onClick={() => { setMoveTarget(item.occurrence); setMoveDate(addDays(date, 1)); setMoveReason(""); }}>別日に対応</button><button type="button" className="today-card-documents" onClick={() => onOpenDocuments(task.id)}><span aria-hidden="true">▤</span>文書{task.documents.length > 0 && <small>{task.documents.length}</small>}</button><button type="button" className="today-card-expand" onClick={() => { setRecurrenceMemoDraft(task.recurrenceRecords.find((record) => record.date === item.occurrence.occurrenceDate)?.memo ?? task.recurrenceMemoTemplate); setRecurrenceDetailTarget(item.occurrence); }}>詳細</button></>}
-          </div>
-          <div className="execution-order-controls" aria-label={`${title}の順番操作`}>
-            <button type="button" title="先頭へ" disabled={finalized || index === 0} onClick={() => moveExecutionItem(key, 0)}>⇤</button>
-            <button type="button" title="一つ上へ" disabled={finalized || index === 0} onClick={() => moveExecutionItem(key, index - 1)}>↑</button>
-            <button type="button" title="一つ下へ" disabled={finalized || index === executionQueue.length - 1} onClick={() => moveExecutionItem(key, index + 1)}>↓</button>
-            <button type="button" title="最後へ" disabled={finalized || index === executionQueue.length - 1} onClick={() => moveExecutionItem(key, executionQueue.length - 1)}>⇥</button>
-            <button type="button" title="順番から外す" disabled={finalized} onClick={() => removeFromExecutionOrder(item)}>×</button>
-          </div>
-        </li>;
-      })}
-    </ol> : <p className="muted">順番を設定できる作業はありません。</p>}
+    {executionQueue.length ? <div className="execution-priority-groups">
+      <section className="execution-focus-group">
+        <header><div><strong>今すること <small>{activeExecutionItems.length}件</small></strong><span>{activeExecutionItems.length > 1 ? "この作業セットの完了後に次へ進みます" : "最優先の作業"}</span></div><div><button type="button" disabled={finalized || activeExecutionItems.length <= 1} onClick={removeParallelExecutionItem}>− 1件減らす</button><button type="button" disabled={finalized || activeExecutionItems.length >= 5 || !queuedExecutionItems.length} onClick={addParallelExecutionItem}>＋ 並行対応</button></div></header>
+        <ol className="execution-order-list">{activeExecutionItems.map((item, index) => executionOrderRow(item, index, "active"))}</ol>
+      </section>
+      {nextExecutionItems.length > 0 && <section className="execution-next-group"><header><strong>次にすること <small>{nextExecutionItems.length}件</small></strong><span>今の作業セットがすべて終わったら着手</span></header><ol className="execution-order-list" start={activeExecutionItems.length + 1}>{nextExecutionItems.map((item, offset) => executionOrderRow(item, activeExecutionItems.length + offset, "next"))}</ol></section>}
+      {laterExecutionItems.length > 0 && <section className="execution-later-group"><button type="button" className="execution-later-toggle" aria-expanded={executionLaterOpen} onClick={() => setExecutionLaterOpen((current) => !current)}><span><strong>今日中にすること</strong><small>{laterExecutionItems.length}件</small></span><b>{executionLaterOpen ? "折りたたむ ▲" : "一覧を表示 ▼"}</b></button>{executionLaterOpen && <ol className="execution-order-list" start={activeExecutionItems.length + nextExecutionItems.length + 1}>{laterExecutionItems.map((item, offset) => executionOrderRow(item, activeExecutionItems.length + nextExecutionItems.length + offset, "later"))}</ol>}</section>}
+    </div> : <p className="muted">順番を設定できる作業はありません。</p>}
     {executionUnset.length > 0 && <div className="execution-order-unset"><h4>順番未設定 <small>{executionUnset.length}件</small></h4>{executionUnset.map((item) => { const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task; const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title; return <button type="button" key={executionItemKey(item)} disabled={finalized} onClick={() => addToExecutionOrder(item)}><span>＋</span><strong>{title}</strong><small>順番の最後へ追加</small></button>; })}</div>}
   </section>;
   const grouped = <T,>(list: T[], taskFor: (item: T) => Task) => {
@@ -981,7 +1050,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
               return <button type="button" role="option" aria-selected={selected} className={selected ? "selected" : ""} key={key} onClick={() => { setAdvanceTargetKey(key); setAdvanceHours(Number(range.plannedHours) > 0 ? String(range.plannedHours) : ""); }}>
                 <time><b>{range.startDate}</b>{range.endDate !== range.startDate && <small>〜 {range.endDate}</small>}</time>
                 <span><strong>{range.title || range.note || task.title}{range.sourceType === "project-work" && <em className="advance-project-work-badge">プロジェクト作業</em>}</strong>{(range.title || range.note) && <small>{task.title}</small>}</span>
-                <span className="advance-result-side">{Number(range.plannedHours) > 0 && <b>{formatHours(Number(range.plannedHours))}h</b>}{selected && <i>選択中</i>}</span>
+                <span className="advance-result-side">{Number(range.plannedHours) > 0 && <b>{formatHours(Number(range.plannedHours))}h</b>}{selected && <i><span aria-hidden="true">✓</span>選択中</i>}</span>
               </button>;
             })}
             {!visibleAdvanceCandidates.length && <p>一致する未来の予定はありません。</p>}
@@ -989,7 +1058,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
         </div>
         {(() => { const selected = advanceCandidates.find(({ task, range }) => `${task.id}:${range.id}` === advanceTargetKey); return selected ? <div className="advance-schedule-settings"><div className="advance-schedule-source"><span>選択中</span><strong>{selected.range.title || selected.range.note || selected.task.title}</strong><small>関連Task：{selected.task.title}</small></div><div className="advance-schedule-fields"><label>前倒し先の日付<WorkDatePicker ariaLabel="前倒し先の日付" value={advanceDate} max={addDays(selected.range.startDate, -1)} onChange={setAdvanceDate} allowClear={false} /><small>{selected.range.startDate}より前の日を指定</small></label>{Number(selected.range.plannedHours) > 0 && <label>前倒しする工数<input type="number" min=".25" step=".25" max={selected.range.plannedHours} value={advanceHours} onChange={(event) => setAdvanceHours(event.target.value)} /><small>全体 {formatHours(Number(selected.range.plannedHours))}h。一部なら元予定を残します。</small></label>}<label>理由（任意）<select value={advanceReason} onChange={(event) => setAdvanceReason(event.target.value)}><option value="">未選択</option><option>余裕ができた</option><option>優先度が上がった</option><option>後続作業を早めるため</option><option>期限変更</option><option>その他</option></select></label></div><p className="advance-schedule-note">当初の予定日は履歴に残ります。プロジェクト作業は、変更後の期間・工数を作業項目へ反映します。</p></div> : null; })()}
       </div>
-      <div className="advance-schedule-actions"><span>前倒し先：<strong>{advanceDate || "未指定"}</strong></span><button type="button" onClick={() => setAdvanceDialogOpen(false)}>キャンセル</button><button type="button" className="primary" disabled={!advanceTargetKey || !advanceDate} onClick={advanceSchedule}>前倒しを実行</button></div>
+      <div className="advance-schedule-actions"><span>前倒し先：<strong>{advanceDate || "未指定"}</strong></span><button type="button" className="advance-action-cancel" onClick={() => setAdvanceDialogOpen(false)}>キャンセル</button><button type="button" className="primary advance-action-submit" disabled={!advanceTargetKey || !advanceDate} onClick={advanceSchedule}><span aria-hidden="true">←</span>前倒しを実行</button></div>
     </section></div>}
     {!finalized && moveTarget && <div className="move-dialog-backdrop" onPointerDown={() => setMoveTarget(null)}><section className="move-panel" role="dialog" aria-modal="true" aria-label="定期タスクを別日に移動" onPointerDown={(event) => event.stopPropagation()}><h3>「{moveTarget.task.title}」の{moveTarget.occurrenceDate}分を別日に対応</h3><label>対応日<WorkDatePicker ariaLabel="定期タスクの移動先" value={moveDate} onChange={setMoveDate} allowClear={false} /></label><label>移動理由<textarea value={moveReason} onChange={(event) => setMoveReason(event.target.value)} placeholder="移動理由（任意）" /></label><div><button onClick={() => setMoveTarget(null)}>キャンセル</button><button className="primary" onClick={submitMove}>この日に移動</button></div></section></div>}
     {recurrenceDetailTarget && recurrenceDetail(recurrenceDetailTarget)}

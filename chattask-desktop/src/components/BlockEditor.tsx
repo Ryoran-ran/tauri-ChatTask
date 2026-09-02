@@ -209,7 +209,7 @@ export function BlockEditor({ documentId, documentTitle, value, initialSearchQue
   }, [searchIndex, searchMatches, searchOpen, searchQuery, value]);
   useEffect(() => setSearchIndex(0), [searchQuery]);
 
-  const updateActiveLine = (textarea: HTMLTextAreaElement) => {
+  const measureCaret = (textarea: HTMLTextAreaElement, caret = textarea.selectionStart) => {
     const computed = window.getComputedStyle(textarea);
     const lineHeight = Number.parseFloat(computed.lineHeight) || Number.parseFloat(computed.fontSize) * 1.65;
     const mirror = document.createElement("div");
@@ -228,12 +228,18 @@ export function BlockEditor({ documentId, documentTitle, value, initialSearchQue
     mirror.style.whiteSpace = "pre-wrap";
     mirror.style.overflowWrap = "break-word";
     mirror.style.tabSize = computed.tabSize;
-    mirror.textContent = textarea.value.slice(0, textarea.selectionStart);
+    mirror.textContent = textarea.value.slice(0, caret);
     marker.textContent = "\u200b";
     mirror.appendChild(marker);
     document.body.appendChild(mirror);
-    const top = marker.offsetTop - textarea.scrollTop;
+    const top = marker.offsetTop;
     mirror.remove();
+    return { top, lineHeight };
+  };
+
+  const updateActiveLine = (textarea: HTMLTextAreaElement) => {
+    const { top: caretTop, lineHeight } = measureCaret(textarea);
+    const top = caretTop - textarea.scrollTop;
     setActiveLine({
       top,
       height: lineHeight,
@@ -242,14 +248,10 @@ export function BlockEditor({ documentId, documentTitle, value, initialSearchQue
   };
 
   const scrollCaretIntoView = (textarea: HTMLTextAreaElement, source: string, caret: number) => {
-    const computed = window.getComputedStyle(textarea);
-    const lineHeight = Number.parseFloat(computed.lineHeight) || Number.parseFloat(computed.fontSize) * 1.65;
-    const paddingTop = Number.parseFloat(computed.paddingTop) || 0;
-    const line = source.slice(0, caret).split("\n").length - 1;
-    const caretTop = paddingTop + line * lineHeight;
-    const margin = lineHeight * 2;
-    if (caretTop > textarea.scrollTop + textarea.clientHeight - margin) {
-      textarea.scrollTop = Math.max(0, caretTop - textarea.clientHeight + margin);
+    const { top: caretTop, lineHeight } = measureCaret(textarea, Math.min(caret, source.length));
+    const margin = Math.min(lineHeight * 2, textarea.clientHeight / 3);
+    if (caretTop + lineHeight > textarea.scrollTop + textarea.clientHeight - margin) {
+      textarea.scrollTop = Math.max(0, caretTop + lineHeight - textarea.clientHeight + margin);
     } else if (caretTop < textarea.scrollTop + margin) {
       textarea.scrollTop = Math.max(0, caretTop - margin);
     }
@@ -420,6 +422,7 @@ export function BlockEditor({ documentId, documentTitle, value, initialSearchQue
             requestAnimationFrame(() => {
               const textarea = textareaRef.current;
               if (textarea) {
+                scrollCaretIntoView(textarea, next, textarea.selectionEnd);
                 updateActiveLine(textarea);
               }
             });

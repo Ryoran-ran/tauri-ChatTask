@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import type { ProjectTag, TaskLink } from "../types";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import type { GithubRepository, ProjectTag, TaskLink } from "../types";
 import { randomTagColor, TAG_COLOR_PALETTE } from "../tagColors";
 import { generateId, normalizeGithubRepositoryUrl, normalizeUrl } from "../utils";
 import { addAttachment, removeAttachment } from "../services/attachments";
@@ -27,7 +27,7 @@ const EXTENDED_TAG_COLORS = [
   "#fbcfe8", "#f472b6", "#ec4899", "#be185d", "#831843",
 ];
 
-export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]; onSave: (tags: ProjectTag[]) => void; onClose: () => void }) {
+export function TagSettingsModal({ tags, onSave, onUpdateRepositories, onClose }: { tags: ProjectTag[]; onSave: (tags: ProjectTag[]) => void; onUpdateRepositories: (tagId: string, repositories: GithubRepository[]) => void; onClose: () => void }) {
   const [items, setItems] = useState<ProjectTag[]>(tags.map((tag) => ({ ...tag, color: tag.color || randomTagColor(), githubRepositories: tag.githubRepositories?.length ? tag.githubRepositories : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: tag.githubRepositoryUrl }] : [], githubRepositoryUrl: undefined, quickLinkRules: tag.quickLinkRules || [], sharedLinks: tag.sharedLinks || [], sharedDocuments: tag.sharedDocuments || [] })));
   const [selectedId, setSelectedId] = useState(tags[0]?.id || "");
   const [documentsTagId, setDocumentsTagId] = useState("");
@@ -46,6 +46,8 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
   const [colorCode, setColorCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [draggingTagId, setDraggingTagId] = useState("");
+  const [tagDropTarget, setTagDropTarget] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const logoPreviewsRef = useRef<Record<string, string>>({});
   const selected = items.find((tag) => tag.id === selectedId);
@@ -61,6 +63,31 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
     const target = group[groupIndex + delta]?.itemIndex;
     if (target === undefined) return;
     const next = [...items]; [next[index], next[target]] = [next[target], next[index]]; setItems(next);
+  };
+  const dragOverTag = (event: DragEvent<HTMLDivElement>, target: ProjectTag) => {
+    const dragging = items.find((tag) => tag.id === draggingTagId);
+    if (!dragging || dragging.id === target.id || dragging.visible !== target.visible) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setTagDropTarget({ id: target.id, position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after" });
+  };
+  const dropTag = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!draggingTagId || !tagDropTarget || draggingTagId === tagDropTarget.id) return;
+    setItems((current) => {
+      const moving = current.find((tag) => tag.id === draggingTagId);
+      const target = current.find((tag) => tag.id === tagDropTarget.id);
+      if (!moving || !target || moving.visible !== target.visible) return current;
+      const next = current.filter((tag) => tag.id !== moving.id);
+      let index = next.findIndex((tag) => tag.id === target.id);
+      if (index < 0) return current;
+      if (tagDropTarget.position === "after") index += 1;
+      next.splice(index, 0, moving);
+      return next;
+    });
+    setDraggingTagId("");
+    setTagDropTarget(null);
   };
   const addTag = () => {
     if (!name.trim()) return;
@@ -150,7 +177,7 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
           if (original?.logoAttachmentId) await removeAttachment(original.logoAttachmentId).catch(() => undefined);
           logoAttachmentId = (await addAttachment(`project-tag-logo:${tag.id}`, logoFiles[tag.id])).id;
         }
-        const githubRepositories = (tag.githubRepositories || []).map((repository) => ({ ...repository, name: repository.name.trim() || new URL(normalizeGithubRepositoryUrl(repository.url)!).pathname.split("/").filter(Boolean).pop() || "GitHub", url: normalizeGithubRepositoryUrl(repository.url)! }));
+        const githubRepositories = (tag.githubRepositories || []).map((repository) => ({ ...repository, name: repository.name.trim() || new URL(normalizeGithubRepositoryUrl(repository.url)!).pathname.split("/").filter(Boolean).pop() || "GitHub", url: normalizeGithubRepositoryUrl(repository.url)!, pullRequestTargets: [...new Set((repository.pullRequestTargets || []).map((name) => name.trim()).filter(Boolean))] }));
         saved.push({ ...tag, githubRepositories, githubRepositoryUrl: undefined, logoAttachmentId, logoUpdatedAt: logoFiles[tag.id] ? new Date().toISOString() : tag.logoUpdatedAt });
       }
       onSave(saved);
@@ -165,7 +192,8 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
   const hiddenItems = items.filter((tag) => !tag.visible);
   const tagRow = (tag: ProjectTag, groupItems: ProjectTag[]) => {
     const groupIndex = groupItems.findIndex((item) => item.id === tag.id);
-    return <div className={`tag-setting-row ${tag.id === selectedId ? "active" : ""} ${tag.visible ? "" : "is-hidden"}`} key={tag.id} onClick={() => { setSelectedId(tag.id); setEditingLinkId(""); }}>
+    return <div className={`tag-setting-row ${tag.id === selectedId ? "active" : ""} ${tag.visible ? "" : "is-hidden"} ${draggingTagId === tag.id ? "is-dragging" : ""} ${tagDropTarget?.id === tag.id ? `is-drop-${tagDropTarget.position}` : ""}`} key={tag.id} onDragOver={(event) => dragOverTag(event, tag)} onDrop={dropTag} onClick={() => { setSelectedId(tag.id); setEditingLinkId(""); }}>
+      <button type="button" className="tag-drag-handle" draggable title={`${tag.name}をドラッグして並び替え`} aria-label={`${tag.name}をドラッグして並び替え`} onClick={(event) => event.stopPropagation()} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", tag.id); setDraggingTagId(tag.id); setTagDropTarget(null); }} onDragEnd={() => { setDraggingTagId(""); setTagDropTarget(null); }}>⠿</button>
       {logoPreviews[tag.id] ? <span className="tag-visual-icon tag-visual-logo tag-setting-icon" style={{ backgroundColor: tag.color }}><img src={logoPreviews[tag.id]} alt="" /></span> : <TagIcon tag={tag} className="tag-setting-icon" />}
       <input value={tag.name} aria-label={`${tag.name}のタグ名`} onClick={(event) => event.stopPropagation()} onChange={(event) => setItems(items.map((item) => item.id === tag.id ? { ...item, name: event.target.value } : item))} />
       <button type="button" className={`tag-visibility-button ${tag.visible ? "is-visible" : ""}`} title={tag.visible ? "非表示に移動" : "表示中に戻す"} aria-label={tag.visible ? `${tag.name}を非表示にする` : `${tag.name}を表示する`} aria-pressed={tag.visible} onClick={(event) => { event.stopPropagation(); setItems(items.map((item) => item.id === tag.id ? { ...item, visible: !item.visible } : item)); }}><span aria-hidden="true" /></button>
@@ -193,5 +221,5 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
       <section className="tag-shared-documents"><div><h4>共通ドキュメント</h4><p>手順書やチェックリストを、この案件タグのタスクで共有できます。</p></div><button type="button" onClick={() => setDocumentsTagId(selected.id)}>ドキュメントを開く <small>{(selected.sharedDocuments || []).length}件</small></button></section>
       <section><h4>共通ファイル</h4><AttachmentsSection taskId={tagAttachmentId(selected.id)} title="ファイル一覧" /></section>
     </> : <div className="empty-list">案件タグを追加してください。</div>}</main>
-  </div>{error && <p className="attachment-error">{error}</p>}<div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button></div></Modal>{documentsTag && <DocumentsModal title={`${documentsTag.name}・共通資料`} documents={documentsTag.sharedDocuments || []} onSave={(sharedDocuments) => setItems((current) => { const next = current.map((tag) => tag.id === documentsTag.id ? { ...tag, sharedDocuments } : tag); onSave(next); return next; })} onClose={() => setDocumentsTagId("")} />}{repositoriesTag && <TagRepositoriesModal tagName={repositoriesTag.name} repositories={repositoriesTag.githubRepositories || []} onSave={(githubRepositories) => setItems((current) => current.map((tag) => tag.id === repositoriesTag.id ? { ...tag, githubRepositories } : tag))} onClose={() => setRepositoriesTagId("")} />}{quickLinksTag && <TagQuickLinksModal tagName={quickLinksTag.name} rules={quickLinksTag.quickLinkRules || []} onSave={(quickLinkRules) => setItems((current) => current.map((tag) => tag.id === quickLinksTag.id ? { ...tag, quickLinkRules } : tag))} onClose={() => setQuickLinksTagId("")} />}{cropSource && <ImageCropModal source={cropSource} title="画像を調整" shape="square" onApply={applyLogo} onClose={() => setCropSource("")} />}</>;
+  </div>{error && <p className="attachment-error">{error}</p>}<div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button></div></Modal>{documentsTag && <DocumentsModal title={`${documentsTag.name}・共通資料`} documents={documentsTag.sharedDocuments || []} onSave={(sharedDocuments) => setItems((current) => { const next = current.map((tag) => tag.id === documentsTag.id ? { ...tag, sharedDocuments } : tag); onSave(next); return next; })} onClose={() => setDocumentsTagId("")} />}{repositoriesTag && <TagRepositoriesModal tagName={repositoriesTag.name} repositories={repositoriesTag.githubRepositories || []} onSave={(githubRepositories) => { setItems((current) => current.map((tag) => tag.id === repositoriesTag.id ? { ...tag, githubRepositories } : tag)); onUpdateRepositories(repositoriesTag.id, githubRepositories); }} onClose={() => setRepositoriesTagId("")} />}{quickLinksTag && <TagQuickLinksModal tagName={quickLinksTag.name} rules={quickLinksTag.quickLinkRules || []} onSave={(quickLinkRules) => setItems((current) => current.map((tag) => tag.id === quickLinksTag.id ? { ...tag, quickLinkRules } : tag))} onClose={() => setQuickLinksTagId("")} />}{cropSource && <ImageCropModal source={cropSource} title="画像を調整" shape="square" onApply={applyLogo} onClose={() => setCropSource("")} />}</>;
 }
