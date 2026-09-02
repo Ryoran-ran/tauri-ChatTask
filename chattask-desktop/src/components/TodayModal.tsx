@@ -481,11 +481,11 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
       } : item),
     }, `予定「${range.title || task.title}」の前倒しを取り消しました。`);
   };
-  const carryTasks = (selectedOnly = false) => {
+  const carryTasks = (selectedOnly = false, explicitTargets?: ScheduledItem[]) => {
     if (finalized) return;
     const destination = carryDestination;
-    const targets = carryCandidates.filter((item) => !selectedOnly || selectedCarryTaskIds.has(carryItemKey(item)));
-    if (selectedOnly && !selectedCarryTaskIds.size) return alert("次の営業日に回すタスクを選択してください。");
+    const targets = explicitTargets || carryCandidates.filter((item) => !selectedOnly || selectedCarryTaskIds.has(carryItemKey(item)));
+    if (!explicitTargets && selectedOnly && !selectedCarryTaskIds.size) return alert("次の営業日に回すタスクを選択してください。");
     if (!targets.length) return alert("持ち越す未完了タスクはありません。");
     const targetsByTask = new Map<string, ScheduledItem[]>();
     targets.forEach((item) => targetsByTask.set(item.task.id, [...(targetsByTask.get(item.task.id) || []), item]));
@@ -550,13 +550,16 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
         dailyPlanStatuses,
       }, `${date}の予定${items.length > 1 ? `${items.length}件` : `「${items[0].range.title || items[0].task.title}」`}を${integrations.size ? `${destination}の既存予定へ統合` : `残して${destination}へ持ち越し`}しました。`);
     };
-    if (selectedOnly) {
+    if (!explicitTargets && selectedOnly) {
       targetsByTask.forEach((items) => carryTaskItems(items[0].task, items));
       setSelectedCarryTaskIds(new Set());
       setCarrySelectionMode(false);
       return;
     }
-    if (!confirm(`${targets.length}件を${destination}へ持ち越しますか？`)) return;
+    const confirmation = explicitTargets?.length === 1
+      ? `「${explicitTargets[0].range.title || explicitTargets[0].task.title}」を${destination}へ持ち越しますか？\n\n前倒しと当日の作業記録は履歴に残ります。`
+      : `${targets.length}件を${destination}へ持ち越しますか？`;
+    if (!confirm(confirmation)) return;
     targetsByTask.forEach((items) => carryTaskItems(items[0].task, items));
   };
   const updateDailyActual = (task: Task, value: number, planKey = date) => {
@@ -653,6 +656,16 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     });
     return <article key={cardKey} className={`today-card ${expanded ? "is-expanded" : "is-compact"} ${dailyAchieved ? "today-card-achieved" : ""} ${taskDone ? "today-card-completed" : ""} ${historicalCarry ? "today-card-carried-history" : ""} ${carryChoiceVisible ? "is-carry-selectable" : ""} ${carrySelected ? "is-carry-selected" : ""}`}>
       <div className="today-card-summary">
+        {range.advancedFromStartDate && !finalized && !historicalCarry && !taskDone && !dailyAchieved && <details className="today-advance-menu">
+          <summary aria-label="前倒しした予定の操作" title="前倒しした予定の操作">…</summary>
+          <div>
+            <strong>前倒しした予定</strong>
+            <button type="button" onClick={() => {
+              if (confirm(`この予定を元の日付（${range.advancedFromStartDate}${range.advancedFromEndDate !== range.advancedFromStartDate ? `〜${range.advancedFromEndDate}` : ""}）へ戻しますか？\n\n当日の作業記録は残ります。`)) cancelAdvance(task, range);
+            }}><span aria-hidden="true">↩</span><span>元の日付へ戻す<small>{range.advancedFromStartDate}{range.advancedFromEndDate !== range.advancedFromStartDate ? `〜${range.advancedFromEndDate}` : ""}</small></span></button>
+            <button type="button" onClick={() => carryTasks(false, [item])}><span aria-hidden="true">→</span><span>次の営業日へ持ち越す<small>{carryDestination}</small></span></button>
+          </div>
+        </details>}
         {carryChoiceVisible && <label className="today-carry-select today-carry-select-summary"><input type="checkbox" checked={carrySelected} disabled={finalized} onChange={(event) => toggleCarrySelection(event.target.checked)} /><span>次の営業日に回す</span></label>}
         <button className="today-task-title" onClick={() => openTask(task)}>{scheduleTitle(task, range)}</button>
         {scheduleTitle(task, range) !== task.title && <small className="today-source-task" title={task.title}>関連Task：{task.title}</small>}
@@ -673,7 +686,6 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
       {dailyAchieved && <span className="achievement-badge">✓ この日の対応済み</span>}
       {range.originalEndDate && date > range.originalEndDate && <span className="carryover-badge">期限 {range.originalEndDate}から遅延</span>}
       {range.advancedFromStartDate && <span className="advance-badge">← {range.advancedFromStartDate}{range.advancedFromEndDate !== range.advancedFromStartDate ? `〜${range.advancedFromEndDate}` : ""}から前倒し</span>}
-      {range.advancedFromStartDate && !finalized && <button type="button" className="advance-cancel-button" onClick={() => cancelAdvance(task, range)}>前倒しを取り消す</button>}
       {carriedToTomorrow && <span className="carryover-badge">→ {carryDestination}へ持ち越し済み</span>}
       {!finalized && completionEvent && (confirmingCancel ? <span className="completion-cancel-confirm"><button type="button" onClick={() => setCompletionCancelConfirmId("")}>やめる</button><button type="button" className="danger" onClick={() => { onCancelCompletion(task.id, completionEvent.id); setCompletionCancelConfirmId(""); }}>取り消しを実行</button></span> : <button type="button" className="completion-cancel-button" onClick={() => setCompletionCancelConfirmId(completionEvent.id)}>完了を取り消す</button>)}
       {actualInput(task, item)}
@@ -981,7 +993,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
               return <button type="button" role="option" aria-selected={selected} className={selected ? "selected" : ""} key={key} onClick={() => { setAdvanceTargetKey(key); setAdvanceHours(Number(range.plannedHours) > 0 ? String(range.plannedHours) : ""); }}>
                 <time><b>{range.startDate}</b>{range.endDate !== range.startDate && <small>〜 {range.endDate}</small>}</time>
                 <span><strong>{range.title || range.note || task.title}{range.sourceType === "project-work" && <em className="advance-project-work-badge">プロジェクト作業</em>}</strong>{(range.title || range.note) && <small>{task.title}</small>}</span>
-                <span className="advance-result-side">{Number(range.plannedHours) > 0 && <b>{formatHours(Number(range.plannedHours))}h</b>}{selected && <i>選択中</i>}</span>
+                <span className="advance-result-side">{Number(range.plannedHours) > 0 && <b>{formatHours(Number(range.plannedHours))}h</b>}{selected && <i><span aria-hidden="true">✓</span>選択中</i>}</span>
               </button>;
             })}
             {!visibleAdvanceCandidates.length && <p>一致する未来の予定はありません。</p>}
@@ -989,7 +1001,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
         </div>
         {(() => { const selected = advanceCandidates.find(({ task, range }) => `${task.id}:${range.id}` === advanceTargetKey); return selected ? <div className="advance-schedule-settings"><div className="advance-schedule-source"><span>選択中</span><strong>{selected.range.title || selected.range.note || selected.task.title}</strong><small>関連Task：{selected.task.title}</small></div><div className="advance-schedule-fields"><label>前倒し先の日付<WorkDatePicker ariaLabel="前倒し先の日付" value={advanceDate} max={addDays(selected.range.startDate, -1)} onChange={setAdvanceDate} allowClear={false} /><small>{selected.range.startDate}より前の日を指定</small></label>{Number(selected.range.plannedHours) > 0 && <label>前倒しする工数<input type="number" min=".25" step=".25" max={selected.range.plannedHours} value={advanceHours} onChange={(event) => setAdvanceHours(event.target.value)} /><small>全体 {formatHours(Number(selected.range.plannedHours))}h。一部なら元予定を残します。</small></label>}<label>理由（任意）<select value={advanceReason} onChange={(event) => setAdvanceReason(event.target.value)}><option value="">未選択</option><option>余裕ができた</option><option>優先度が上がった</option><option>後続作業を早めるため</option><option>期限変更</option><option>その他</option></select></label></div><p className="advance-schedule-note">当初の予定日は履歴に残ります。プロジェクト作業は、変更後の期間・工数を作業項目へ反映します。</p></div> : null; })()}
       </div>
-      <div className="advance-schedule-actions"><span>前倒し先：<strong>{advanceDate || "未指定"}</strong></span><button type="button" onClick={() => setAdvanceDialogOpen(false)}>キャンセル</button><button type="button" className="primary" disabled={!advanceTargetKey || !advanceDate} onClick={advanceSchedule}>前倒しを実行</button></div>
+      <div className="advance-schedule-actions"><span>前倒し先：<strong>{advanceDate || "未指定"}</strong></span><button type="button" className="advance-action-cancel" onClick={() => setAdvanceDialogOpen(false)}>キャンセル</button><button type="button" className="primary advance-action-submit" disabled={!advanceTargetKey || !advanceDate} onClick={advanceSchedule}><span aria-hidden="true">←</span>前倒しを実行</button></div>
     </section></div>}
     {!finalized && moveTarget && <div className="move-dialog-backdrop" onPointerDown={() => setMoveTarget(null)}><section className="move-panel" role="dialog" aria-modal="true" aria-label="定期タスクを別日に移動" onPointerDown={(event) => event.stopPropagation()}><h3>「{moveTarget.task.title}」の{moveTarget.occurrenceDate}分を別日に対応</h3><label>対応日<WorkDatePicker ariaLabel="定期タスクの移動先" value={moveDate} onChange={setMoveDate} allowClear={false} /></label><label>移動理由<textarea value={moveReason} onChange={(event) => setMoveReason(event.target.value)} placeholder="移動理由（任意）" /></label><div><button onClick={() => setMoveTarget(null)}>キャンセル</button><button className="primary" onClick={submitMove}>この日に移動</button></div></section></div>}
     {recurrenceDetailTarget && recurrenceDetail(recurrenceDetailTarget)}

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { GithubRepository, ProjectTag, TaskRepositoryBranches } from "../types";
 import { githubPullRequestUrl, normalizeGithubRepositoryUrl } from "../utils";
 import { Modal } from "./Modal";
@@ -38,8 +38,23 @@ export function TaskBranchesModal({ taskTitle, repositoryBranches, tag, onSave, 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(repositories.length <= 2 ? repositories.map((repository) => repository.id) : repositories.slice(0, 1).map((repository) => repository.id)));
   const [copied, setCopied] = useState("");
   const [moveTargets, setMoveTargets] = useState<Record<string, string>>({});
+  const taskSaveHandler = useRef(onSave);
+  const repositorySaveHandler = useRef(onSaveRepositories);
+  const taskSaveInitialized = useRef(false);
+  const repositorySaveInitialized = useRef(false);
   const orphanIds = [...new Set([...Object.keys(groups), ...Object.keys(taskTargets)])].filter((id) => !repositories.some((repository) => repository.id === id) && ((groups[id]?.length || 0) > 0 || (taskTargets[id]?.length || 0) > 0));
   const totalBranches = Object.values(groups).reduce((total, names) => total + names.length, 0);
+  useEffect(() => { taskSaveHandler.current = onSave; }, [onSave]);
+  useEffect(() => { repositorySaveHandler.current = onSaveRepositories; }, [onSaveRepositories]);
+  useEffect(() => {
+    if (!taskSaveInitialized.current) { taskSaveInitialized.current = true; return; }
+    const repositoryIds = new Set([...Object.keys(groups), ...Object.keys(taskTargets)]);
+    taskSaveHandler.current([...repositoryIds].map((repositoryId) => ({ repositoryId, branchNames: normalizeNames(groups[repositoryId] || []), pullRequestTargets: normalizeNames(taskTargets[repositoryId] || []) })).filter((group) => group.branchNames.length || group.pullRequestTargets.length));
+  }, [groups, taskTargets]);
+  useEffect(() => {
+    if (!repositorySaveInitialized.current) { repositorySaveInitialized.current = true; return; }
+    repositorySaveHandler.current?.(repositories.map((repository) => ({ ...repository, pullRequestTargets: normalizeNames(commonTargets[repository.id] || []) })));
+  }, [commonTargets]);
   const copy = async (value: string, key: string) => {
     await navigator.clipboard.writeText(value);
     setCopied(key);
@@ -61,18 +76,9 @@ export function TaskBranchesModal({ taskTitle, repositoryBranches, tag, onSave, 
     setTaskTargets((current) => { const next = { ...current, [targetId]: normalizeNames([...(current[targetId] || []), ...(current[orphanId] || [])]) }; delete next[orphanId]; return next; });
     setExpanded((current) => new Set(current).add(targetId));
   };
-  const save = () => {
-    const repositoryIds = new Set([...Object.keys(groups), ...Object.keys(taskTargets)]);
-    onSave([...repositoryIds].map((repositoryId) => ({ repositoryId, branchNames: normalizeNames(groups[repositoryId] || []), pullRequestTargets: normalizeNames(taskTargets[repositoryId] || []) })).filter((group) => group.branchNames.length || group.pullRequestTargets.length));
-    onSaveRepositories?.(repositories.map((repository) => ({ ...repository, pullRequestTargets: normalizeNames(commonTargets[repository.id] || []) })));
-    onClose();
-  };
   const savePullRequestTargets = (repositoryId: string, common: string[], local: string[]) => {
     setCommonTargets((current) => ({ ...current, [repositoryId]: common }));
     setTaskTargets((current) => ({ ...current, [repositoryId]: local }));
-    const repositoryIds = new Set([...Object.keys(groups), ...Object.keys(taskTargets), repositoryId]);
-    onSave([...repositoryIds].map((id) => ({ repositoryId: id, branchNames: normalizeNames(groups[id] || []), pullRequestTargets: normalizeNames(id === repositoryId ? local : taskTargets[id] || []) })).filter((group) => group.branchNames.length || group.pullRequestTargets.length));
-    onSaveRepositories?.(repositories.map((repository) => ({ ...repository, pullRequestTargets: normalizeNames(repository.id === repositoryId ? common : commonTargets[repository.id] || []) })));
   };
   const branchRows = (repository: GithubRepository, names: string[]) => names.length ? <div className="task-repository-branch-links">{names.map((name) => {
     const key = `${repository.id}:${name}`;
@@ -96,6 +102,6 @@ export function TaskBranchesModal({ taskTitle, repositoryBranches, tag, onSave, 
       return <section className={`task-repository-branch-card ${isExpanded ? "expanded" : "collapsed"}`} key={repository.id}><header><button type="button" className="task-repository-toggle" aria-expanded={isExpanded} onClick={() => toggleRepository(repository.id)}><span aria-hidden="true">{isExpanded ? "⌄" : "›"}</span><div><strong>{repository.name || "GitHubリポジトリ"}</strong><small>{repository.url}</small></div></button><span>{names.length}件</span><button type="button" className="task-pr-target-header-button" title={availableTargets.length ? `PR作成先: ${availableTargets.join("、")}` : "PR作成先は未設定です"} onClick={() => setTargetEditorRepositoryId(repository.id)}>PR作成先 <b>{availableTargets.length}件</b></button><a href={repository.url} target="_blank" rel="noreferrer">リポジトリを開く ↗</a></header>{isExpanded && <div className="task-repository-branch-body"><form className="task-branch-add-form" onSubmit={(event) => addBranch(event, repository.id)}><input autoFocus={repositories[0]?.id === repository.id} value={inputs[repository.id] || ""} onChange={(event) => setInputs((current) => ({ ...current, [repository.id]: event.target.value }))} placeholder="ブランチ名を入力" spellCheck={false} /><button type="submit" className="primary" disabled={!inputs[repository.id]?.trim()}>追加</button></form>{branchRows(repository, names)}</div>}</section>;
     })}{!repositories.length && <section className="task-repository-branch-empty"><strong>GitHubリポジトリが登録されていません</strong><span>案件タグ設定でリポジトリを登録すると、リポジトリごとの入力欄が表示されます。</span><button type="button" className="primary" onClick={() => { onClose(); onOpenTagSettings(); }}>案件タグ設定を開く</button></section>}</div>
     {orphanIds.map((orphanId) => <section className="task-branch-orphan" key={orphanId || "unassigned"}><div><strong>{orphanId ? "削除済みリポジトリの記録" : "リポジトリ未指定の記録"}</strong><span>{[...(groups[orphanId] || []), ...(taskTargets[orphanId] || []).map((target) => `PR→${target}`)].join("、")}</span></div>{repositories.length > 0 && <div><select aria-label="記録の移動先リポジトリ" value={moveTargets[orphanId] || repositories[0].id} onChange={(event) => setMoveTargets((current) => ({ ...current, [orphanId]: event.target.value }))}>{repositories.map((repository) => <option key={repository.id} value={repository.id}>{repository.name}</option>)}</select><button type="button" onClick={() => moveOrphan(orphanId)}>このリポジトリへ移す</button></div>}</section>)}
-    <div className="modal-actions"><button type="button" onClick={onClose}>キャンセル</button><button type="button" className="primary" onClick={save}>保存</button></div>
+    <div className="task-branches-autosave"><span>追加・削除・移動は自動保存されます</span><button type="button" className="primary" onClick={onClose}>閉じる</button></div>
   </div></Modal>{targetEditorRepository && <PullRequestTargetsModal repositoryName={targetEditorRepository.name} commonTargets={commonTargets[targetEditorRepository.id] || []} taskTargets={taskTargets[targetEditorRepository.id] || []} allowTaskTargets onSave={(common, local) => savePullRequestTargets(targetEditorRepository.id, common, local)} onClose={() => setTargetEditorRepositoryId("")} />}{pullRequestTarget && <Modal title={`PR作成先・${pullRequestTarget.branchName}`} onClose={() => setPullRequestTarget(null)}><div className="task-pr-destination-dialog"><header><small>作成元ブランチ</small><code>{pullRequestTarget.branchName}</code><span>プルリクエストの作成先を選択してください。</span></header><div>{pullRequestTargets.map((target) => <a key={target} href={githubPullRequestUrl(pullRequestTarget.repository.url, pullRequestTarget.branchName, target) || undefined} target="_blank" rel="noreferrer" onClick={() => setPullRequestTarget(null)}><code>{target}</code><span>へPRを作成 ↗</span></a>)}</div><label><span>今回だけ別の作成先を使用</span><input value={directTarget} onChange={(event) => setDirectTargets((current) => ({ ...current, [pullRequestKey]: event.target.value }))} placeholder="例：release/2026-09" spellCheck={false} /></label><div className="modal-actions"><button type="button" onClick={() => setPullRequestTarget(null)}>キャンセル</button><a className={`button-link primary${directTarget.trim() ? "" : " disabled"}`} href={directTarget.trim() ? githubPullRequestUrl(pullRequestTarget.repository.url, pullRequestTarget.branchName, directTarget) || undefined : undefined} target="_blank" rel="noreferrer" onClick={() => directTarget.trim() && setPullRequestTarget(null)}>入力した作成先へ</a></div></div></Modal>}</>;
 }

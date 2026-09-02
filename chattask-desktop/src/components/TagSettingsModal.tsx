@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import type { GithubRepository, ProjectTag, TaskLink } from "../types";
 import { randomTagColor, TAG_COLOR_PALETTE } from "../tagColors";
 import { generateId, normalizeGithubRepositoryUrl, normalizeUrl } from "../utils";
@@ -46,6 +46,8 @@ export function TagSettingsModal({ tags, onSave, onUpdateRepositories, onClose }
   const [colorCode, setColorCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [draggingTagId, setDraggingTagId] = useState("");
+  const [tagDropTarget, setTagDropTarget] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const logoPreviewsRef = useRef<Record<string, string>>({});
   const selected = items.find((tag) => tag.id === selectedId);
@@ -61,6 +63,31 @@ export function TagSettingsModal({ tags, onSave, onUpdateRepositories, onClose }
     const target = group[groupIndex + delta]?.itemIndex;
     if (target === undefined) return;
     const next = [...items]; [next[index], next[target]] = [next[target], next[index]]; setItems(next);
+  };
+  const dragOverTag = (event: DragEvent<HTMLDivElement>, target: ProjectTag) => {
+    const dragging = items.find((tag) => tag.id === draggingTagId);
+    if (!dragging || dragging.id === target.id || dragging.visible !== target.visible) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setTagDropTarget({ id: target.id, position: event.clientY < bounds.top + bounds.height / 2 ? "before" : "after" });
+  };
+  const dropTag = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!draggingTagId || !tagDropTarget || draggingTagId === tagDropTarget.id) return;
+    setItems((current) => {
+      const moving = current.find((tag) => tag.id === draggingTagId);
+      const target = current.find((tag) => tag.id === tagDropTarget.id);
+      if (!moving || !target || moving.visible !== target.visible) return current;
+      const next = current.filter((tag) => tag.id !== moving.id);
+      let index = next.findIndex((tag) => tag.id === target.id);
+      if (index < 0) return current;
+      if (tagDropTarget.position === "after") index += 1;
+      next.splice(index, 0, moving);
+      return next;
+    });
+    setDraggingTagId("");
+    setTagDropTarget(null);
   };
   const addTag = () => {
     if (!name.trim()) return;
@@ -165,7 +192,8 @@ export function TagSettingsModal({ tags, onSave, onUpdateRepositories, onClose }
   const hiddenItems = items.filter((tag) => !tag.visible);
   const tagRow = (tag: ProjectTag, groupItems: ProjectTag[]) => {
     const groupIndex = groupItems.findIndex((item) => item.id === tag.id);
-    return <div className={`tag-setting-row ${tag.id === selectedId ? "active" : ""} ${tag.visible ? "" : "is-hidden"}`} key={tag.id} onClick={() => { setSelectedId(tag.id); setEditingLinkId(""); }}>
+    return <div className={`tag-setting-row ${tag.id === selectedId ? "active" : ""} ${tag.visible ? "" : "is-hidden"} ${draggingTagId === tag.id ? "is-dragging" : ""} ${tagDropTarget?.id === tag.id ? `is-drop-${tagDropTarget.position}` : ""}`} key={tag.id} onDragOver={(event) => dragOverTag(event, tag)} onDrop={dropTag} onClick={() => { setSelectedId(tag.id); setEditingLinkId(""); }}>
+      <button type="button" className="tag-drag-handle" draggable title={`${tag.name}をドラッグして並び替え`} aria-label={`${tag.name}をドラッグして並び替え`} onClick={(event) => event.stopPropagation()} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", tag.id); setDraggingTagId(tag.id); setTagDropTarget(null); }} onDragEnd={() => { setDraggingTagId(""); setTagDropTarget(null); }}>⠿</button>
       {logoPreviews[tag.id] ? <span className="tag-visual-icon tag-visual-logo tag-setting-icon" style={{ backgroundColor: tag.color }}><img src={logoPreviews[tag.id]} alt="" /></span> : <TagIcon tag={tag} className="tag-setting-icon" />}
       <input value={tag.name} aria-label={`${tag.name}のタグ名`} onClick={(event) => event.stopPropagation()} onChange={(event) => setItems(items.map((item) => item.id === tag.id ? { ...item, name: event.target.value } : item))} />
       <button type="button" className={`tag-visibility-button ${tag.visible ? "is-visible" : ""}`} title={tag.visible ? "非表示に移動" : "表示中に戻す"} aria-label={tag.visible ? `${tag.name}を非表示にする` : `${tag.name}を表示する`} aria-pressed={tag.visible} onClick={(event) => { event.stopPropagation(); setItems(items.map((item) => item.id === tag.id ? { ...item, visible: !item.visible } : item)); }}><span aria-hidden="true" /></button>
