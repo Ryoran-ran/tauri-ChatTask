@@ -96,11 +96,12 @@ export const quickLinkNameForUrl = (rules: QuickLinkRule[], value: string) => {
     .sort((a, b) => b.prefix.length - a.prefix.length)[0]?.rule.name || "";
 };
 
-export const githubPullRequestUrl = (repositoryUrl: string, branchName: string) => {
+export const githubPullRequestUrl = (repositoryUrl: string, branchName: string, targetBranch = "") => {
   const repository = normalizeGithubRepositoryUrl(repositoryUrl);
   if (!repository || !branchName.trim()) return null;
   const branchPath = branchName.trim().split("/").map(encodeURIComponent).join("/");
-  return `${repository}/compare/${branchPath}?expand=1`;
+  const targetPath = targetBranch.trim().split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  return `${repository}/compare/${targetPath ? `${targetPath}...` : ""}${branchPath}?expand=1`;
 };
 
 export const mergeRanges = (ranges: PlannedRange[]) => {

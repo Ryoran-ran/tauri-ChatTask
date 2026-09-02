@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import type { ProjectTag, TaskLink } from "../types";
+import type { GithubRepository, ProjectTag, TaskLink } from "../types";
 import { randomTagColor, TAG_COLOR_PALETTE } from "../tagColors";
 import { generateId, normalizeGithubRepositoryUrl, normalizeUrl } from "../utils";
 import { addAttachment, removeAttachment } from "../services/attachments";
@@ -27,7 +27,7 @@ const EXTENDED_TAG_COLORS = [
   "#fbcfe8", "#f472b6", "#ec4899", "#be185d", "#831843",
 ];
 
-export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]; onSave: (tags: ProjectTag[]) => void; onClose: () => void }) {
+export function TagSettingsModal({ tags, onSave, onUpdateRepositories, onClose }: { tags: ProjectTag[]; onSave: (tags: ProjectTag[]) => void; onUpdateRepositories: (tagId: string, repositories: GithubRepository[]) => void; onClose: () => void }) {
   const [items, setItems] = useState<ProjectTag[]>(tags.map((tag) => ({ ...tag, color: tag.color || randomTagColor(), githubRepositories: tag.githubRepositories?.length ? tag.githubRepositories : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: tag.githubRepositoryUrl }] : [], githubRepositoryUrl: undefined, quickLinkRules: tag.quickLinkRules || [], sharedLinks: tag.sharedLinks || [], sharedDocuments: tag.sharedDocuments || [] })));
   const [selectedId, setSelectedId] = useState(tags[0]?.id || "");
   const [documentsTagId, setDocumentsTagId] = useState("");
@@ -150,7 +150,7 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
           if (original?.logoAttachmentId) await removeAttachment(original.logoAttachmentId).catch(() => undefined);
           logoAttachmentId = (await addAttachment(`project-tag-logo:${tag.id}`, logoFiles[tag.id])).id;
         }
-        const githubRepositories = (tag.githubRepositories || []).map((repository) => ({ ...repository, name: repository.name.trim() || new URL(normalizeGithubRepositoryUrl(repository.url)!).pathname.split("/").filter(Boolean).pop() || "GitHub", url: normalizeGithubRepositoryUrl(repository.url)! }));
+        const githubRepositories = (tag.githubRepositories || []).map((repository) => ({ ...repository, name: repository.name.trim() || new URL(normalizeGithubRepositoryUrl(repository.url)!).pathname.split("/").filter(Boolean).pop() || "GitHub", url: normalizeGithubRepositoryUrl(repository.url)!, pullRequestTargets: [...new Set((repository.pullRequestTargets || []).map((name) => name.trim()).filter(Boolean))] }));
         saved.push({ ...tag, githubRepositories, githubRepositoryUrl: undefined, logoAttachmentId, logoUpdatedAt: logoFiles[tag.id] ? new Date().toISOString() : tag.logoUpdatedAt });
       }
       onSave(saved);
@@ -193,5 +193,5 @@ export function TagSettingsModal({ tags, onSave, onClose }: { tags: ProjectTag[]
       <section className="tag-shared-documents"><div><h4>共通ドキュメント</h4><p>手順書やチェックリストを、この案件タグのタスクで共有できます。</p></div><button type="button" onClick={() => setDocumentsTagId(selected.id)}>ドキュメントを開く <small>{(selected.sharedDocuments || []).length}件</small></button></section>
       <section><h4>共通ファイル</h4><AttachmentsSection taskId={tagAttachmentId(selected.id)} title="ファイル一覧" /></section>
     </> : <div className="empty-list">案件タグを追加してください。</div>}</main>
-  </div>{error && <p className="attachment-error">{error}</p>}<div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button></div></Modal>{documentsTag && <DocumentsModal title={`${documentsTag.name}・共通資料`} documents={documentsTag.sharedDocuments || []} onSave={(sharedDocuments) => setItems((current) => { const next = current.map((tag) => tag.id === documentsTag.id ? { ...tag, sharedDocuments } : tag); onSave(next); return next; })} onClose={() => setDocumentsTagId("")} />}{repositoriesTag && <TagRepositoriesModal tagName={repositoriesTag.name} repositories={repositoriesTag.githubRepositories || []} onSave={(githubRepositories) => setItems((current) => current.map((tag) => tag.id === repositoriesTag.id ? { ...tag, githubRepositories } : tag))} onClose={() => setRepositoriesTagId("")} />}{quickLinksTag && <TagQuickLinksModal tagName={quickLinksTag.name} rules={quickLinksTag.quickLinkRules || []} onSave={(quickLinkRules) => setItems((current) => current.map((tag) => tag.id === quickLinksTag.id ? { ...tag, quickLinkRules } : tag))} onClose={() => setQuickLinksTagId("")} />}{cropSource && <ImageCropModal source={cropSource} title="画像を調整" shape="square" onApply={applyLogo} onClose={() => setCropSource("")} />}</>;
+  </div>{error && <p className="attachment-error">{error}</p>}<div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "保存中..." : "保存"}</button></div></Modal>{documentsTag && <DocumentsModal title={`${documentsTag.name}・共通資料`} documents={documentsTag.sharedDocuments || []} onSave={(sharedDocuments) => setItems((current) => { const next = current.map((tag) => tag.id === documentsTag.id ? { ...tag, sharedDocuments } : tag); onSave(next); return next; })} onClose={() => setDocumentsTagId("")} />}{repositoriesTag && <TagRepositoriesModal tagName={repositoriesTag.name} repositories={repositoriesTag.githubRepositories || []} onSave={(githubRepositories) => { setItems((current) => current.map((tag) => tag.id === repositoriesTag.id ? { ...tag, githubRepositories } : tag)); onUpdateRepositories(repositoriesTag.id, githubRepositories); }} onClose={() => setRepositoriesTagId("")} />}{quickLinksTag && <TagQuickLinksModal tagName={quickLinksTag.name} rules={quickLinksTag.quickLinkRules || []} onSave={(quickLinkRules) => setItems((current) => current.map((tag) => tag.id === quickLinksTag.id ? { ...tag, quickLinkRules } : tag))} onClose={() => setQuickLinksTagId("")} />}{cropSource && <ImageCropModal source={cropSource} title="画像を調整" shape="square" onApply={applyLogo} onClose={() => setCropSource("")} />}</>;
 }

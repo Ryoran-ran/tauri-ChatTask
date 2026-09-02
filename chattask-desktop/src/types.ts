@@ -38,6 +38,8 @@ export interface GithubRepository {
   id: string;
   name: string;
   url: string;
+  /** このリポジトリでよく使用するプルリクエストの作成先。 */
+  pullRequestTargets?: string[];
 }
 
 export interface QuickLinkRule {
@@ -148,6 +150,8 @@ export interface RecurrenceRecord {
 export interface TaskRepositoryBranches {
   repositoryId: string;
   branchNames: string[];
+  /** このタスクだけで使用するプルリクエストの作成先。 */
+  pullRequestTargets?: string[];
 }
 
 export interface Task {

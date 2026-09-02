@@ -106,8 +106,10 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
   const repositoryBranches = Array.isArray(source.repositoryBranches)
     ? source.repositoryBranches.map((group) => {
       const value = group && typeof group === "object" ? group as unknown as Record<string, unknown> : {};
-      return { repositoryId: String(value.repositoryId || ""), branchNames: Array.isArray(value.branchNames) ? [...new Set(value.branchNames.map((name) => String(name).trim()).filter(Boolean))] : [] };
-    }).filter((group) => group.branchNames.length)
+      const branchNames = Array.isArray(value.branchNames) ? [...new Set(value.branchNames.map((name) => String(name).trim()).filter(Boolean))] : [];
+      const pullRequestTargets = Array.isArray(value.pullRequestTargets) ? [...new Set(value.pullRequestTargets.map((name) => String(name).trim()).filter(Boolean))] : [];
+      return { repositoryId: String(value.repositoryId || ""), branchNames, pullRequestTargets };
+    }).filter((group) => group.branchNames.length || group.pullRequestTargets.length)
     : legacyBranchNames.length ? [{ repositoryId: "", branchNames: legacyBranchNames }] : [];
   const task: Task = {
     id: String(source.id || generateId()), title: String(source.title || "無題のタスク"), description: String(source.description || ""),
@@ -167,7 +169,7 @@ const historyActivity = (tasks: Task[]): ActivityEvent[] => tasks.flatMap((task)
 const normalizeTags = (tags: ProjectTag[]): ProjectTag[] => tags.map((tag) => ({
   ...tag,
   githubRepositories: Array.isArray(tag.githubRepositories)
-    ? tag.githubRepositories.map((repository) => ({ id: String(repository.id || generateId()), name: String(repository.name || ""), url: String(repository.url || "") }))
+    ? tag.githubRepositories.map((repository) => ({ id: String(repository.id || generateId()), name: String(repository.name || ""), url: String(repository.url || ""), pullRequestTargets: Array.isArray(repository.pullRequestTargets) ? [...new Set(repository.pullRequestTargets.map((name) => String(name).trim()).filter(Boolean))] : [] }))
     : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: String(tag.githubRepositoryUrl) }] : [],
   githubRepositoryUrl: undefined,
   quickLinkRules: Array.isArray(tag.quickLinkRules) ? tag.quickLinkRules.map((rule) => ({ id: String(rule.id || generateId()), name: String(rule.name || ""), urlPrefix: String(rule.urlPrefix || "") })) : [],
