@@ -793,7 +793,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       {attachmentError && <div className="memo-attachment-error">{attachmentError}</div>}
     </div>
     {relatedTasksOpen && <RelatedTasksModal task={task} allTasks={allTasks} onUpdate={(relatedTasks) => onUpdate({ relatedTasks }, "関連タスクを更新しました。")} onOpen={onOpenTask} onClose={() => setRelatedTasksOpen(false)} />}
-    {branchesOpen && <TaskBranchesModal taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onSaveRepositories={(repositories) => currentTag && onUpdateTagRepositories(currentTag.id, repositories)} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
+    {branchesOpen && <TaskBranchesModal taskId={task.id} taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onSaveRepositories={(repositories) => currentTag && onUpdateTagRepositories(currentTag.id, repositories)} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
     {deletingRange && <Modal title="予定を削除" onClose={() => setDeletingRange(null)}>
       <div className="task-ending-dialog">
         <p>予定「{scheduleTitle(deletingRange)}」を削除しますか？</p>
