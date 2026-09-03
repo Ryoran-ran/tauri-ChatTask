@@ -365,12 +365,21 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   const unfinalizeDay = () => {
     onUnfinalize();
   };
-  const withCommentMemo = (task: Task, changes: Partial<Task>, content: string): Partial<Task> => {
+  const withCommentMemo = (task: Task, changes: Partial<Task>, content: string, workTitle?: string, plannedHours?: number, actualHours?: number): Partial<Task> => {
     const text = content.trim();
     if (!text) return changes;
+    const normalizedWorkTitle = workTitle?.trim();
     return {
       ...changes,
-      history: [...task.history, { id: generateId(), type: "comment", text, timestamp: new Date().toISOString() }],
+      history: [...task.history, {
+        id: generateId(),
+        type: "comment",
+        text,
+        timestamp: new Date().toISOString(),
+        ...(normalizedWorkTitle && normalizedWorkTitle !== task.title.trim() ? { workTitle: normalizedWorkTitle } : {}),
+        ...(Number(plannedHours) > 0 ? { workPlannedHours: Number(plannedHours) } : {}),
+        ...(Number(actualHours) > 0 ? { workActualHours: Number(actualHours) } : {}),
+      }],
     };
   };
   const setOccurrence = (task: Task, occurrenceDate: string, status: "done" | "skipped" | "pending", memoOverride?: string) => {
@@ -712,7 +721,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
       {carriedToTomorrow && <span className="carryover-badge">→ {carryDestination}へ持ち越し済み</span>}
       {!finalized && completionEvent && (confirmingCancel ? <span className="completion-cancel-confirm"><button type="button" onClick={() => setCompletionCancelConfirmId("")}>やめる</button><button type="button" className="danger" onClick={() => { onCancelCompletion(task.id, completionEvent.id); setCompletionCancelConfirmId(""); }}>取り消しを実行</button></span> : <button type="button" className="completion-cancel-button" onClick={() => setCompletionCancelConfirmId(completionEvent.id)}>完了を取り消す</button>)}
       {actualInput(task, item)}
-      {!taskDone && <><textarea className={dailyAchieved ? "plan-completed" : ""} value={task.dailyPlans[planKey] || ""} readOnly={finalized} onChange={(event) => onUpdateTask(task.id, { dailyPlans: { ...task.dailyPlans, [planKey]: event.target.value } })} placeholder="この日にすること" /><div className="today-card-checks"><label className="check-label"><input type="checkbox" checked={dailyAchieved} disabled={finalized} onChange={(event) => { const achieved = event.target.checked; const changes = { dailyPlanCompleted: { ...task.dailyPlanCompleted, [planKey]: achieved } }; const title = scheduleTitle(task, range); onUpdateTask(task.id, achieved ? withCommentMemo(task, changes, task.dailyPlans[planKey] || "") : changes, achieved ? `${date}の予定「${title}」を達成しました。` : `${date}の予定「${title}」を未達成へ戻しました。`); }} />{dailyAchieved ? "達成済み" : "達成"}</label></div></>}
+      {!taskDone && <><textarea className={dailyAchieved ? "plan-completed" : ""} value={task.dailyPlans[planKey] || ""} readOnly={finalized} onChange={(event) => onUpdateTask(task.id, { dailyPlans: { ...task.dailyPlans, [planKey]: event.target.value } })} placeholder="この日にすること" /><div className="today-card-checks"><label className="check-label"><input type="checkbox" checked={dailyAchieved} disabled={finalized} onChange={(event) => { const achieved = event.target.checked; const changes = { dailyPlanCompleted: { ...task.dailyPlanCompleted, [planKey]: achieved } }; const title = scheduleTitle(task, range); onUpdateTask(task.id, achieved ? withCommentMemo(task, changes, task.dailyPlans[planKey] || "", title, plannedSummaryHours, actualSummaryHours) : changes, achieved ? `${date}の予定「${title}」を達成しました。` : `${date}の予定「${title}」を未達成へ戻しました。`); }} />{dailyAchieved ? "達成済み" : "達成"}</label></div></>}
       </div>}
     </article>;
   };
@@ -729,7 +738,11 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     setEntryTarget((current) => current ? { ...current, task: { ...current.task, dailyPlanCompleted } } : current);
     const changes = { dailyPlanCompleted };
     const title = scheduleTitle(entryTarget.task, entryTarget.range);
-    onUpdateTask(entryTarget.task.id, achieved ? withCommentMemo(entryTarget.task, changes, entryTarget.task.dailyPlans[entryTarget.planKey] || "") : changes, achieved ? `${date}の予定「${title}」を達成しました。` : `${date}の予定「${title}」を未達成へ戻しました。`);
+    const plannedHours = Number(entryTarget.range.plannedHours) > 0
+      ? plannedRangeHoursForDate(entryTarget.range, date, periods, workingDateOverrides)
+      : plannedHoursForDate(entryTarget.task, date, periods, workingDateOverrides);
+    const actualHours = itemActualHours(entryTarget);
+    onUpdateTask(entryTarget.task.id, achieved ? withCommentMemo(entryTarget.task, changes, entryTarget.task.dailyPlans[entryTarget.planKey] || "", title, plannedHours, actualHours) : changes, achieved ? `${date}の予定「${title}」を達成しました。` : `${date}の予定「${title}」を未達成へ戻しました。`);
   };
   const cancelCarryForward = () => {
     if (!carryHistoryTarget?.carriedForward || finalized) return;

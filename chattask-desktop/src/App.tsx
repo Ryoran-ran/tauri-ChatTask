@@ -969,6 +969,19 @@ function App() {
     const recurringTask = task.taskKind === "recurring" || task.status === "recurring";
     const timerPlanKey = resolveTimerPlanKey(workTimer, task);
     const memoPlanKey = workTimer.planKey;
+    const timerRange = task.plannedRanges.find((range) => memoPlanKey.endsWith(`::${range.id}`));
+    const timerWorkTitle = (() => {
+      if (!timerRange) return "";
+      if (timerRange.sourceType === "project-work" && timerRange.sourceId) {
+        const work = data.goals.flatMap((project) => project.workItems || []).find((item) => item.id === timerRange.sourceId);
+        if (work?.title.trim()) return work.title.trim();
+      }
+      if (timerRange.sourceType === "project-milestone" && timerRange.sourceId) {
+        const milestone = data.goals.flatMap((project) => project.milestones).find((item) => item.id === timerRange.sourceId);
+        if (milestone?.title.trim()) return milestone.title.trim();
+      }
+      return timerRange.title?.trim() || "";
+    })();
     const previous = Number(task.dailyActualHours?.[timerPlanKey]) || 0;
     const dailyActualHours = { ...(task.dailyActualHours || {}), [timerPlanKey]: previous + hours };
     const changes: Partial<Task> = {
@@ -987,7 +1000,15 @@ function App() {
         [memoPlanKey]: true,
       };
       const dailyPlanText = (changes.dailyPlans?.[memoPlanKey] ?? task.dailyPlans[memoPlanKey] ?? "").trim();
-      if (dailyPlanText) changes.history = [...task.history, { id: generateId(), type: "comment", text: dailyPlanText, timestamp: new Date().toISOString() }];
+      if (dailyPlanText) changes.history = [...task.history, {
+        id: generateId(),
+        type: "comment",
+        text: dailyPlanText,
+        timestamp: new Date().toISOString(),
+        ...(timerWorkTitle && timerWorkTitle !== task.title.trim() ? { workTitle: timerWorkTitle } : {}),
+        ...(typeof workTimer.plannedMinutes === "number" && workTimer.plannedMinutes > 0 ? { workPlannedHours: workTimer.plannedMinutes / 60 } : {}),
+        ...(previous + hours > 0 ? { workActualHours: previous + hours } : {}),
+      }];
     }
     if (recurringTask) {
       const existing = task.recurrenceRecords.find((record) => record.date === workTimer.date);
@@ -1104,7 +1125,7 @@ function App() {
     {notificationsOpen && <NotificationsModal tasks={data.tasks} tags={data.projectTags} onSelect={revealTaskFromPalette} onClose={() => setNotificationsOpen(false)} />}
     {commandPalette && <CommandPalette tasks={data.tasks} tags={data.projectTags} initialTaskId={commandPalette.taskId} position={commandPalette.position} onCreate={(title, today) => createNewTask({ title, ...(today ? { plannedRanges: [{ id: generateId(), startDate: todayValue(), endDate: todayValue() }] } : {}) })} onOpenTask={revealTaskFromPalette} onTaskAction={(task, action) => quickAction(task.id, action)} onClose={() => setCommandPalette(null)} />}
     {fullSearchOpen && <FullTextSearchModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} onOpen={openFullTextResult} onClose={() => setFullSearchOpen(false)} />}
-{achievementsOpen && <AchievementsModal tasks={data.tasks} projects={data.goals} activity={data.activityLog} nonWorkingPeriods={data.nonWorkingPeriods} organizationSeed={data.organizationSeed} onSelect={(id) => { setSelectedId(id); setAchievementsOpen(false); }} onClose={() => setAchievementsOpen(false)} />}
+{achievementsOpen && <AchievementsModal tasks={data.tasks} projects={data.goals} activity={data.activityLog} nonWorkingPeriods={data.nonWorkingPeriods} onSelect={(id) => { setSelectedId(id); setAchievementsOpen(false); }} onClose={() => setAchievementsOpen(false)} />}
     {workTimer && <ActiveTimerBar timer={workTimer} onPause={pauseWorkTimer} onResume={resumeWorkTimer} onOverrun={remindWorkTimer} onFinish={finishWorkTimer} onOpenTask={() => { const task = data.tasks.find((item) => item.id === workTimer.taskId); if (task) revealTaskFromPalette(task); }} />}
     {workTimer && timerFinishOpen && <TimerFinishDialog timer={workTimer} initialMemo={timerMemo} onSave={saveWorkTimer} onDiscard={discardWorkTimer} onClose={() => setTimerFinishOpen(false)} />}
   </div></NonWorkingPeriodsProvider>;

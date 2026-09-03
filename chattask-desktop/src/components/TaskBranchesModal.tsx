@@ -7,8 +7,18 @@ import { PullRequestTargetsModal } from "./PullRequestTargetsModal";
 const normalizeNames = (names: string[]) => [...new Set(names.map((name) => name.trim()).filter(Boolean))];
 const validRepositories = (tag?: ProjectTag): GithubRepository[] => (tag?.githubRepositories || []).map((repository) => ({ ...repository, url: normalizeGithubRepositoryUrl(repository.url) || "" })).filter((repository) => Boolean(repository.url));
 const shellValue = (value: string) => /^[a-zA-Z0-9._/-]+$/.test(value) ? value : `'${value.replace(/'/g, `'"'"'`)}'`;
+const repositoryExpansionStorageKey = (taskId: string) => `chatTaskRepositoryExpansion:${taskId}`;
+const savedExpandedRepositories = (taskId: string) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(repositoryExpansionStorageKey(taskId)) || "null");
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : null;
+  } catch {
+    return null;
+  }
+};
 
-export function TaskBranchesModal({ taskTitle, repositoryBranches, tag, onSave, onSaveRepositories, onOpenTagSettings, onClose }: {
+export function TaskBranchesModal({ taskId, taskTitle, repositoryBranches, tag, onSave, onSaveRepositories, onOpenTagSettings, onClose }: {
+  taskId: string;
   taskTitle: string;
   repositoryBranches: TaskRepositoryBranches[];
   tag?: ProjectTag;
@@ -35,7 +45,10 @@ export function TaskBranchesModal({ taskTitle, repositoryBranches, tag, onSave, 
   const [directTargets, setDirectTargets] = useState<Record<string, string>>({});
   const [targetEditorRepositoryId, setTargetEditorRepositoryId] = useState("");
   const [pullRequestTarget, setPullRequestTarget] = useState<{ repository: GithubRepository; branchName: string } | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(repositories.length <= 2 ? repositories.map((repository) => repository.id) : repositories.slice(0, 1).map((repository) => repository.id)));
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const saved = savedExpandedRepositories(taskId);
+    return new Set(saved ?? (repositories.length <= 2 ? repositories.map((repository) => repository.id) : repositories.slice(0, 1).map((repository) => repository.id)));
+  });
   const [copied, setCopied] = useState("");
   const [moveTargets, setMoveTargets] = useState<Record<string, string>>({});
   const taskSaveHandler = useRef(onSave);
@@ -68,13 +81,18 @@ export function TaskBranchesModal({ taskTitle, repositoryBranches, tag, onSave, 
     setInputs((current) => ({ ...current, [repositoryId]: "" }));
   };
   const removeBranch = (repositoryId: string, name: string) => setGroups((current) => ({ ...current, [repositoryId]: (current[repositoryId] || []).filter((branch) => branch !== name) }));
-  const toggleRepository = (repositoryId: string) => setExpanded((current) => { const next = new Set(current); next.has(repositoryId) ? next.delete(repositoryId) : next.add(repositoryId); return next; });
+  const updateExpanded = (updater: (current: Set<string>) => Set<string>) => setExpanded((current) => {
+    const next = updater(current);
+    localStorage.setItem(repositoryExpansionStorageKey(taskId), JSON.stringify([...next]));
+    return next;
+  });
+  const toggleRepository = (repositoryId: string) => updateExpanded((current) => { const next = new Set(current); next.has(repositoryId) ? next.delete(repositoryId) : next.add(repositoryId); return next; });
   const moveOrphan = (orphanId: string) => {
     const targetId = moveTargets[orphanId] || repositories[0]?.id;
     if (!targetId) return;
     setGroups((current) => { const next = { ...current, [targetId]: normalizeNames([...(current[targetId] || []), ...(current[orphanId] || [])]) }; delete next[orphanId]; return next; });
     setTaskTargets((current) => { const next = { ...current, [targetId]: normalizeNames([...(current[targetId] || []), ...(current[orphanId] || [])]) }; delete next[orphanId]; return next; });
-    setExpanded((current) => new Set(current).add(targetId));
+    updateExpanded((current) => new Set(current).add(targetId));
   };
   const savePullRequestTargets = (repositoryId: string, common: string[], local: string[]) => {
     setCommonTargets((current) => ({ ...current, [repositoryId]: common }));

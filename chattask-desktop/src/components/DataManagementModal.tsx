@@ -85,8 +85,7 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
         </div>
       </section>
       <p className={`storage-status ${sqliteAvailable ? "ok" : "warning"}`}>
-        環境: {environment === "test" ? "テスト" : "本番"}<br />保存先: {sqliteAvailable ? "SQLite（自動保存・1日1回自動バックアップ）" : "localStorage（ブラウザ互換モード）"}<br />
-        組織シード: {data.organizationSeed}
+        環境: {environment === "test" ? "テスト" : "本番"}<br />保存先: {sqliteAvailable ? "SQLite（自動保存・1日1回自動バックアップ）" : "localStorage（ブラウザ互換モード）"}
       </p>
       {sqliteAvailable
         ? <>
