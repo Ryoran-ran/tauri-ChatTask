@@ -110,6 +110,11 @@ export interface HistoryEntry {
   type: "system" | "comment";
   text: string;
   timestamp: string;
+  /** 今日の作業を達成した際に、コメントの対象として保存した作業名。 */
+  workTitle?: string;
+  /** 達成時点で設定されていた対象作業の予定・実績工数。 */
+  workPlannedHours?: number;
+  workActualHours?: number;
   editedAt?: string;
   attachmentIds?: string[];
 }
