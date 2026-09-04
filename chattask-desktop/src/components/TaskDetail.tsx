@@ -268,7 +268,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   };
   const requestStatusChange = (status: Task["status"]) => {
     if (status === task.status) return;
-    if (task.waitingFollowUp && !WAITING_STATUSES.includes(status) && !isTerminalStatus(status)) {
+    if (task.waitingFollowUp && !WAITING_STATUSES.includes(status) && (!isTerminalStatus(status) || status === "done")) {
       setPendingLeavingWaitingStatus(status);
       return;
     }
