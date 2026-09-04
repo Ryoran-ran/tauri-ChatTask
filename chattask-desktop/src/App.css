@@ -2277,8 +2277,11 @@ nav.header-actions .settings-panel input { flex: none; width: 15px; height: 15px
   background: #eff6ff;
   box-shadow: 0 14px 35px rgb(15 23 42 / 20%);
 }
-.work-schedule-transfer-heading { display: grid; gap: .2rem; color: #1e3a8a; }
+.work-schedule-transfer-heading { display: flex; align-items: start; justify-content: space-between; gap: .75rem; color: #1e3a8a; }
+.work-schedule-transfer-heading > div { min-width: 0; display: grid; gap: .2rem; }
 .work-schedule-transfer-heading small { color: #475569; font-size: .68rem; line-height: 1.45; }
+.work-schedule-transfer-heading > button { flex: none; border: 1px solid #bfdbfe; border-radius: 7px; padding: .4rem .6rem; background: white; color: #475569; font-size: .66rem; font-weight: 750; white-space: nowrap; }
+.work-schedule-transfer-heading > button:hover { border-color: #60a5fa; background: #f8fafc; color: #1d4ed8; }
 .work-schedule-transfer-list { display: grid; gap: .45rem; }
 .work-schedule-transfer-list > button {
   display: flex;
