@@ -27,6 +27,7 @@ interface Props {
   onUpdate: (changes: Partial<Task>, historyText?: string) => void;
   onDelete: () => void;
   onCreateChild: () => void;
+  onCreateSibling: () => void;
   onDocuments: () => void;
   onSharedDocuments: (projectId: string, documentId?: string) => void;
   onTagDocuments: () => void;
@@ -43,7 +44,7 @@ interface Props {
   onEditMemo: (id: string, text: string) => void;
 }
 
-export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
+export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onCreateSibling, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
   const [rangeStart, setRangeStart] = useState(todayValue());
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeTitle, setRangeTitle] = useState("");
@@ -569,6 +570,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         <div className="task-detail-menu-panel">
           <span className="task-menu-group-label">タスク操作</span>
           <button onClick={() => { closeTaskMenu(); onCreateChild(); }}>子タスク追加</button>
+          <button onClick={() => { closeTaskMenu(); onCreateSibling(); }}>同じ階層にタスクを追加</button>
           <button onClick={() => { closeTaskMenu(); window.dispatchEvent(new CustomEvent("chattask-open-waiting", { detail: { taskId: task.id } })); }}>{task.waitingFollowUp ? "待ち情報を編集" : "待ち箱へ入れる"}</button>
           {!task.waitingFollowUp && task.lastReleasedWaitingFollowUp && <button onClick={() => { closeTaskMenu(); onUpdate({ waitingFollowUp: task.lastReleasedWaitingFollowUp, status: task.lastReleasedWaitingStatus || "waiting-general", lastReleasedWaitingFollowUp: undefined, lastReleasedWaitingStatus: undefined }, "直前に解除した待ち状態を復元しました。"); }}>直前の待ち解除を取り消す</button>}
           <button onClick={() => { closeTaskMenu(); onDocuments(); }}>ドキュメント</button>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS, isTerminalStatus } from "../data/constants";
+import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS } from "../data/constants";
 import type { PlannedRange, ProjectTag, Task, TaskDocument, TaskTemplate } from "../types";
 import { addDays, generateId, todayValue } from "../utils";
 import { Modal } from "./Modal";
@@ -48,7 +48,7 @@ export function TaskCreateModal({ tasks, tags, templates, parentId, projectTagId
   const [parentPickerOpen, setParentPickerOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TaskTemplate | null>(null);
   const [parentQuery, setParentQuery] = useState("");
-  const parentCandidates = tasks.filter((task) => !isTerminalStatus(task.status));
+  const parentCandidates = tasks;
   const selectedParent = parentCandidates.find((task) => task.id === draft.parentTaskId);
   const normalizedParentQuery = parentQuery.trim().toLocaleLowerCase("ja");
   const parentMatches = parentCandidates.filter((task) => !normalizedParentQuery || [task.title, task.description]
