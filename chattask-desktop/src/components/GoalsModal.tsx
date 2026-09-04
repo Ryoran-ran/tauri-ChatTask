@@ -3,76 +3,14 @@ import { createPortal } from "react-dom";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS as TASK_STATUS_LABELS } from "../data/constants";
 import { removeTaskAttachments } from "../services/attachments";
 import { exportMarkdown } from "../services/documents";
-import type { Goal, GoalMilestone, GoalStatus, PlannedRange, ProjectTag, ProjectWorkItem, Task, TaskLink } from "../types";
+import type { Goal, GoalMilestone, GoalStatus, PlannedRange, ProjectTag, ProjectWorkItem, Task } from "../types";
 import { generateId, rangeDates, todayValue } from "../utils";
-import { AttachmentsSection } from "./AttachmentsSection";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
+import { PROJECT_STATUS_LABELS as STATUS_LABELS, ProjectAdvancedFilterModal, ProjectSortModal, type ProjectAdvancedFilter, type ProjectSortKey, type ProjectSortRule } from "./ProjectFilterModals";
+import { ProjectResources } from "./ProjectResources";
 
-const STATUS_LABELS: Record<GoalStatus, string> = {
-  "not-started": "未着手", "in-progress": "進行中", paused: "一時停止",
-  achieved: "達成", archived: "アーカイブ", cancelled: "中止（旧）",
-};
-const PROJECT_STATUS_GROUPS: { label: string; values: GoalStatus[] }[] = [
-  { label: "開始前", values: ["not-started"] },
-  { label: "対応中", values: ["in-progress", "paused"] },
-  { label: "終了", values: ["achieved", "archived", "cancelled"] },
-];
-type ProjectFilterField = "status" | "priority" | "tag" | "deadline" | "text";
-type ProjectFilterCondition = { id: string; field: ProjectFilterField; operator: "is" | "is-not" | "contains" | "not-contains"; value: string };
-type ProjectAdvancedFilter = { mode: "and" | "or"; conditions: ProjectFilterCondition[] };
-type ProjectSortKey = "priority" | "dueDate" | "status" | "progress" | "updatedAt" | "title";
-type ProjectSortRule = { id: string; key: ProjectSortKey; direction: "asc" | "desc" };
-const blankProjectFilter = (): ProjectFilterCondition => ({ id: generateId(), field: "status", operator: "is", value: "in-progress" });
-const PROJECT_SORT_LABELS: Record<ProjectSortKey, string> = { priority: "優先度", dueDate: "期限", status: "ステータス", progress: "進捗率", updatedAt: "更新日", title: "プロジェクト名" };
 const LAST_SELECTED_PROJECT_KEY = "chatTaskLastSelectedProjectId";
-
-function ProjectSortModal({ rules, onChange, onClose }: { rules: ProjectSortRule[]; onChange: (rules: ProjectSortRule[]) => void; onClose: () => void }) {
-  const move = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= rules.length) return;
-    const next = [...rules];
-    [next[index], next[target]] = [next[target], next[index]];
-    onChange(next);
-  };
-  return <Modal title="プロジェクトの並び替え" onClose={onClose} wide><div className="sort-editor-dialog">
-    <header><div><strong>並び替え条件</strong><p>上にある条件から順番に適用します。</p></div></header>
-    <div className="task-sort-rules">{rules.map((rule, index) => <div key={rule.id}>
-      <b>{index + 1}</b>
-      <select value={rule.key} onChange={(event) => onChange(rules.map((item) => item.id === rule.id ? { ...item, key: event.target.value as ProjectSortKey } : item))}>{Object.entries(PROJECT_SORT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-      <select value={rule.direction} aria-label={`${PROJECT_SORT_LABELS[rule.key]}の方向`} onChange={(event) => onChange(rules.map((item) => item.id === rule.id ? { ...item, direction: event.target.value as "asc" | "desc" } : item))}><option value="asc">昇順</option><option value="desc">降順</option></select>
-      <button type="button" disabled={index === 0} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === rules.length - 1} onClick={() => move(index, 1)}>↓</button><button type="button" aria-label={`${PROJECT_SORT_LABELS[rule.key]}を削除`} onClick={() => onChange(rules.filter((item) => item.id !== rule.id))}>×</button>
-    </div>)}</div>
-    {rules.length < Object.keys(PROJECT_SORT_LABELS).length && <button type="button" className="advanced-filter-add" onClick={() => { const key = (Object.keys(PROJECT_SORT_LABELS) as ProjectSortKey[]).find((candidate) => !rules.some((rule) => rule.key === candidate)); if (key) onChange([...rules, { id: generateId(), key, direction: key === "priority" || key === "dueDate" || key === "title" ? "asc" : "desc" }]); }}>＋ 並び替え条件を追加</button>}
-    <footer><button type="button" className="primary" onClick={onClose}>設定を反映</button></footer>
-  </div></Modal>;
-}
-
-function ProjectStatusFilterModal({ value, onChange, onClose }: { value: string; onChange: (value: string) => void; onClose: () => void }) {
-  const selected = value.split(",").filter((status): status is GoalStatus => status in STATUS_LABELS);
-  const toggle = (status: GoalStatus) => onChange(selected.includes(status) ? selected.filter((item) => item !== status).join(",") : [...selected, status].join(","));
-  const toggleGroup = (statuses: GoalStatus[]) => {
-    const allSelected = statuses.every((status) => selected.includes(status));
-    onChange(allSelected ? selected.filter((status) => !statuses.includes(status)).join(",") : [...new Set([...selected, ...statuses])].join(","));
-  };
-  return <Modal title="プロジェクトのステータスを選択" onClose={onClose} wide><div className="status-filter-picker"><header><div><strong>対象にするステータス</strong><p>カテゴリー単位または個別に複数選択できます。</p></div><div><button type="button" onClick={() => onChange(Object.keys(STATUS_LABELS).join(","))}>すべて選択</button><button type="button" onClick={() => onChange("")}>すべて解除</button></div></header><div className="status-filter-groups project-status-filter-groups">{PROJECT_STATUS_GROUPS.map((group) => { const count = group.values.filter((status) => selected.includes(status)).length; return <section key={group.label}><label className="status-filter-group-title"><input type="checkbox" checked={count === group.values.length} ref={(element) => { if (element) element.indeterminate = count > 0 && count < group.values.length; }} onChange={() => toggleGroup(group.values)} /><span>{group.label}</span><small>{count}/{group.values.length}</small></label><div>{group.values.map((status) => <label key={status}><input type="checkbox" checked={selected.includes(status)} onChange={() => toggle(status)} /><span>{STATUS_LABELS[status]}</span></label>)}</div></section>; })}</div><div className="modal-actions"><span>{selected.length}件選択中</span><button type="button" className="primary" onClick={onClose}>選択を確定</button></div></div></Modal>;
-}
-
-function ProjectAdvancedFilterModal({ filter, tags, onApply, onClose }: { filter: ProjectAdvancedFilter; tags: ProjectTag[]; onApply: (filter: ProjectAdvancedFilter) => void; onClose: () => void }) {
-  const [statusConditionId, setStatusConditionId] = useState("");
-  const update = (id: string, changes: Partial<ProjectFilterCondition>) => onApply({ ...filter, conditions: filter.conditions.map((item) => item.id === id ? { ...item, ...changes } : item) });
-  const defaults: Record<ProjectFilterField, string> = { status: "in-progress", priority: "A", tag: tags[0]?.id || "none", deadline: "true", text: "" };
-  const labels: Record<ProjectFilterField, string> = { status: "ステータス", priority: "優先度", tag: "案件タグ", deadline: "期限", text: "文字列" };
-  const valueEditor = (item: ProjectFilterCondition) => {
-    if (item.field === "status") { const values = item.value.split(",").filter((status): status is GoalStatus => status in STATUS_LABELS); return <button type="button" className="status-filter-select" onClick={() => setStatusConditionId(item.id)}><span>{values.length === 0 ? "未選択" : values.length === 1 ? STATUS_LABELS[values[0]] : `${values.length}件のステータス`}</span><small>選択画面を開く ›</small></button>; }
-    if (item.field === "priority") return <select value={item.value} onChange={(event) => update(item.id, { value: event.target.value })}>{PRIORITIES.map((value) => <option key={value}>{value}</option>)}</select>;
-    if (item.field === "tag") return <select value={item.value} onChange={(event) => update(item.id, { value: event.target.value })}><option value="none">タグなし</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.name}</option>)}</select>;
-    if (item.field === "deadline") return <select value={item.value} onChange={(event) => update(item.id, { value: event.target.value })}><option value="true">あり</option><option value="false">なし</option></select>;
-    return <input value={item.value} onChange={(event) => update(item.id, { value: event.target.value })} placeholder="プロジェクト名・説明・達成条件" />;
-  };
-  const statusCondition = filter.conditions.find((item) => item.id === statusConditionId && item.field === "status");
-  return <><Modal title="プロジェクトの条件検索" onClose={onClose} wide><div className="advanced-filter-builder"><header><div><strong>条件の組み合わせ</strong><p>プロジェクトを複数の条件で絞り込みます。</p></div><select value={filter.mode} onChange={(event) => onApply({ ...filter, mode: event.target.value as "and" | "or" })}><option value="and">すべて満たす（AND）</option><option value="or">いずれかを満たす（OR）</option></select></header><div className="advanced-filter-list">{filter.conditions.map((item, index) => <div className="advanced-filter-row" key={item.id}><b>{index + 1}</b><select value={item.field} onChange={(event) => { const field = event.target.value as ProjectFilterField; update(item.id, { field, operator: field === "text" ? "contains" : "is", value: defaults[field] }); }}>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><select value={item.operator} onChange={(event) => update(item.id, { operator: event.target.value as ProjectFilterCondition["operator"] })}>{item.field === "text" ? <><option value="contains">含む</option><option value="not-contains">含まない</option></> : <><option value="is">一致する</option><option value="is-not">一致しない</option></>}</select>{valueEditor(item)}<button type="button" aria-label="条件を削除" onClick={() => onApply({ ...filter, conditions: filter.conditions.filter((condition) => condition.id !== item.id) })}>×</button></div>)}</div><button type="button" className="advanced-filter-add" onClick={() => onApply({ ...filter, conditions: [...filter.conditions, blankProjectFilter()] })}>＋ 条件を追加</button><div className="modal-actions"><button type="button" disabled={!filter.conditions.length} onClick={() => onApply({ mode: "and", conditions: [] })}>条件をすべて解除</button><button type="button" className="primary" onClick={onClose}>検索結果を表示</button></div></div></Modal>{statusCondition && <ProjectStatusFilterModal value={statusCondition.value} onChange={(value) => update(statusCondition.id, { value })} onClose={() => setStatusConditionId("")} />}</>;
-}
 const WORK_STATUS = { "not-started": "未着手", "in-progress": "進行中", done: "達成" } as const;
 const MILESTONE_STATUS = { "not-started": "未着手", "in-progress": "進行中", achieved: "達成" } as const;
 type CreateRelatedTask = (title: string, parentTaskId?: string, changes?: Partial<Task>, openAfterCreate?: boolean) => string;
@@ -362,35 +300,6 @@ function ScheduleDate({ ranges, showUnscheduled = false }: { ranges: PlannedRang
 }
 function StatusSyncState(_: { task: Task | null | undefined; status: "not-started" | "in-progress" | "achieved" | "done"; enabled: boolean; onReflect: () => void }) {
   return null;
-}
-function ProjectResources({ project, onLinks }: { project: Goal; onLinks: (links: TaskLink[]) => void }) {
-  const [label, setLabel] = useState("");
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
-  const addLink = () => {
-    const entered = url.trim();
-    if (!entered) return;
-    const normalized = /^https?:\/\//i.test(entered) ? entered : `https://${entered}`;
-    try {
-      const parsed = new URL(normalized);
-      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-      onLinks([...(project.sharedLinks || []), { id: generateId(), label: label.trim() || parsed.hostname, url: parsed.toString() }]);
-      setLabel("");
-      setUrl("");
-      setError("");
-    } catch {
-      setError("正しいサイトURLを入力してください。");
-    }
-  };
-  return <section className="project-resources">
-    <header><div><strong>共有サイト・ファイル</strong><small>このプロジェクトで共通利用する資料をまとめます。</small></div></header>
-    <div className="project-shared-links">
-      <div className="project-shared-link-list">{(project.sharedLinks || []).map((link) => <div key={link.id}><a href={link.url} target="_blank" rel="noreferrer"><span>↗</span><strong>{link.label || link.url}</strong><small>{link.url}</small></a><button type="button" className="danger-text" aria-label={`${link.label || link.url}を削除`} onClick={() => onLinks((project.sharedLinks || []).filter((item) => item.id !== link.id))}>×</button></div>)}{!project.sharedLinks?.length && <p>共有サイトは登録されていません。</p>}</div>
-      <div className="project-shared-link-form"><label>表示名<input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="例：案件管理サイト" /></label><label>URL<input value={url} onChange={(event) => { setUrl(event.target.value); setError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addLink(); } }} placeholder="https://..." /></label><button type="button" onClick={addLink}>サイトを追加</button></div>
-      {error && <p className="project-shared-link-error">{error}</p>}
-    </div>
-    <div className="project-shared-files"><AttachmentsSection taskId={`project:${project.id}`} title="共有ファイル" /></div>
-  </section>;
 }
 export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onSave: (projects: Goal[]) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
   const [items, setItems] = useState(() => projects.map(normalizeProject));

@@ -6,21 +6,7 @@ import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { EffortSummaryModal } from "./EffortSummaryModal";
 import { TagIcon } from "./TagIcon";
-
-type Occurrence = { task: Task; occurrenceDate: string };
-type ScheduledItem = { task: Task; range: PlannedRange; planKey: string; completionEvent?: ActivityEvent; carriedForward?: boolean };
-type ExecutionItem = { kind: "scheduled"; scheduled: ScheduledItem } | { kind: "recurring"; occurrence: Occurrence };
-type ExecutionGroup = { id: string; name: string; itemKeys: string[] };
-type ExecutionUnit = { key: string; group?: ExecutionGroup; items: ExecutionItem[] };
-const executionGroupsStorageKey = (date: string) => `chatTaskTodayExecutionGroups:${date}`;
-const readExecutionGroups = (date: string): ExecutionGroup[] => {
-  try {
-    const stored = JSON.parse(localStorage.getItem(executionGroupsStorageKey(date)) || "[]");
-    return Array.isArray(stored) ? stored.filter((group) => group && typeof group.id === "string" && typeof group.name === "string" && Array.isArray(group.itemKeys)) : [];
-  } catch {
-    return [];
-  }
-};
+import { readExecutionGroups, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
 export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTodayOrder, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { tasks: Task[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
   const [moveTarget, setMoveTarget] = useState<Occurrence | null>(null); const [moveDate, setMoveDate] = useState(""); const [moveReason, setMoveReason] = useState("");
   const [actualDrafts, setActualDrafts] = useState<Record<string, string>>({});
@@ -824,7 +810,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   const groupableExecutionItems = executionQueue.filter((item) => !groupedExecutionItemKeys.has(executionItemKey(item)));
   const saveExecutionGroups = (groups: ExecutionGroup[]) => {
     setExecutionGroupsState({ date, groups });
-    localStorage.setItem(executionGroupsStorageKey(date), JSON.stringify(groups));
+    persistExecutionGroups(date, groups);
   };
   const executionQueueSignature = executionQueue.map(executionItemKey).join("|");
   useEffect(() => {
