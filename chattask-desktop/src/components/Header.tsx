@@ -8,6 +8,7 @@ interface Props {
   onTemplates: () => void;
   onReport: () => void;
   onGantt: () => void;
+  onWeeklyLoad: () => void;
   onGoals: () => void;
   onIssues: () => void;
   onNotifications: () => void;
@@ -49,6 +50,7 @@ export function Header(props: Props) {
       <button onClick={props.onIssues}>課題一覧</button>
       <button onClick={props.onGoals}>プロジェクト</button>
       <button onClick={props.onGantt}>ガントチャート</button>
+      <button onClick={props.onWeeklyLoad}>週間予定</button>
       <button onClick={props.onReport}>まとめ出力</button>
       <div className="settings-menu" ref={menuRef}>
         <button className="settings-trigger" onClick={() => setSettings(!settings)} aria-expanded={settings}>設定 <span>▼</span></button>
