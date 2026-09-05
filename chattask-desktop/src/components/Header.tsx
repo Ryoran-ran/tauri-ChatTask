@@ -47,15 +47,15 @@ export function Header(props: Props) {
       <button className={`header-inbox-button ${props.inboxCount ? "has-items" : ""}`} onClick={props.onInbox}>Inbox{props.inboxCount > 0 && <span>{props.inboxCount > 99 ? "99+" : props.inboxCount}</span>}</button>
       <button className={`header-waiting-button ${props.waitingCount ? "has-items" : ""}`} onClick={props.onWaiting}>待ち{props.waitingCount > 0 && <span>{props.waitingCount > 99 ? "99+" : props.waitingCount}</span>}</button>
       <button className={`header-notification-button ${props.notificationCount ? "has-notifications" : ""}`} onClick={props.onNotifications}>通知{props.notificationCount > 0 && <span>{props.notificationCount > 99 ? "99+" : props.notificationCount}</span>}</button>
-      <button onClick={props.onIssues}>課題一覧</button>
       <button onClick={props.onGoals}>プロジェクト</button>
       <button onClick={props.onGantt}>ガントチャート</button>
       <button onClick={props.onWeeklyLoad}>週間予定</button>
-      <button onClick={props.onReport}>まとめ出力</button>
       <div className="settings-menu" ref={menuRef}>
         <button className="settings-trigger" onClick={() => setSettings(!settings)} aria-expanded={settings}>設定 <span>▼</span></button>
         {settings && <div className="settings-panel">
           <button onClick={() => { props.onAchievements(); setSettings(false); }}>頑張りの記録</button>
+          <button onClick={() => { props.onIssues(); setSettings(false); }}>課題一覧</button>
+          <button onClick={() => { props.onReport(); setSettings(false); }}>まとめ出力</button>
           <button onClick={() => { props.onProfile(); setSettings(false); }}>プロフィール設定</button>
           <button onClick={() => { props.onNonWorking(); setSettings(false); }}>休暇・祝日設定</button>
           <button onClick={() => { props.onTags(); setSettings(false); }}>案件タグ設定</button>
