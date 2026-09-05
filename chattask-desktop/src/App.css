@@ -27,9 +27,6 @@ textarea { resize: vertical; line-height: 1.55; }
 .filter-toggle { display: flex; justify-content: space-between; border: 0; padding: .2rem 0; background: transparent; color: #475569; font-size: .78rem; }
 .filters-panel { display: grid; gap: .6rem; }
 .filters-panel > input, .filters-panel > select { width: 100%; }
-.filter-buttons { display: flex; flex-wrap: wrap; gap: .3rem; }
-.filter-buttons button { border: 1px solid #cbd5e1; background: white; color: #475569; border-radius: 999px; padding: .28rem .58rem; font-size: .75rem; }
-.filter-buttons button.active { color: white; background: #2563eb; border-color: #2563eb; }
 .full { width: 100%; }
 .primary, button.primary { border: 1px solid #2563eb; background: #2563eb; color: white; border-radius: 7px; padding: .52rem .75rem; }
 .primary:hover { background: #1d4ed8; }
@@ -4730,6 +4727,13 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
   background: #eff6ff;
   color: #1d4ed8;
 }
+.active-filter-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .3rem; border: 1px solid #dbeafe; border-radius: 8px; padding: .42rem .45rem .42rem .55rem; background: #f8fbff; }
+.active-filter-summary > div { min-width: 0; }
+.active-filter-summary small { display: block; margin-bottom: .08rem; color: #94a3b8; font-size: .52rem; font-weight: 700; }
+.active-filter-summary span { display: block; overflow: hidden; color: #334155; font-size: .64rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.active-filter-summary > button { min-height: 28px; border: 1px solid #bfdbfe; border-radius: 6px; padding: .25rem .4rem; background: white; color: #2563eb; font-size: .58rem; font-weight: 700; }
+.active-filter-summary > button:last-child { border-color: #e2e8f0; color: #64748b; }
+.active-filter-summary > button:disabled { opacity: .4; cursor: default; }
 .advanced-filter-builder { display: grid; gap: 1rem; }
 .advanced-filter-builder > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .advanced-filter-builder > header p { margin: .25rem 0 0; color: #64748b; font-size: .85rem; }

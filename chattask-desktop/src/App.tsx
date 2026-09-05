@@ -54,10 +54,10 @@ function App() {
   const [creatingTaskParentId, setCreatingTaskParentId] = useState<string | null>(null);
   const [templateSourceTask, setTemplateSourceTask] = useState<Task | null>(null);
   const [creatingTaskTagId, setCreatingTaskTagId] = useState<string | undefined>(undefined);
-  const [filter, setFilter] = useState<TaskFilter>(() => (localStorage.getItem("chatTaskCurrentFilter") as TaskFilter) || "all");
-  const [tagFilter, setTagFilter] = useState(() => localStorage.getItem("chatTaskCurrentTagFilter") || "all");
+  const [filter, setFilter] = useState<TaskFilter>("all");
+  const [tagFilter, setTagFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>(() => (localStorage.getItem("chatTaskCurrentPriorityFilter") as "all" | Priority) || "all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedTaskFilter>(() => {
     try {
@@ -391,9 +391,6 @@ function App() {
     };
     const filtered = data.tasks.filter((task) => {
       if (hideRecurring && task.status === "recurring") return false;
-      if (tagFilter === "none" && task.projectTagId) return false;
-      if (tagFilter !== "all" && tagFilter !== "none" && task.projectTagId !== tagFilter) return false;
-      if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
       const tagName = data.projectTags.find((tag) => tag.id === task.projectTagId)?.name || "";
       const searchableText = [task.title, task.description, ...task.repositoryBranches.flatMap((group) => group.branchNames), tagName, ...task.links.map((link) => `${link.label} ${link.url}`), ...task.history.map((item) => item.text), ...task.documents.map((item) => `${item.title} ${item.content}`)].join(" ").toLowerCase();
       if (query && !searchableText.includes(query)) return false;
@@ -411,13 +408,7 @@ function App() {
         const accepted = advancedFilter.mode === "and" ? conditionMatches.every(Boolean) : conditionMatches.some(Boolean);
         if (!accepted) return false;
       }
-      if (filter === "all" && (isTerminalStatus(task.status) || task.status === "pending")) return false;
-      if (filter === "done" && !isTerminalStatus(task.status)) return false;
-      if (filter === "today" && (!hasTodayInTree(task) || isTerminalStatus(task.status))) return false;
-      if (filter === "today-waiting" && (!(hasIncompletePlanForDate(task, currentDate, completedProjectWorkIds) || isRecurringDue(task, currentDate, data.nonWorkingPeriods)) || !WAITING_STATUSES.includes(task.status))) return false;
-      if (filter === "my-turn" && !["doing", "recurring", ...WAITING_STATUSES].includes(task.status)) return false;
-      if (filter === "waiting" && !task.status.startsWith("waiting")) return false;
-      if (filter === "deadline" && (!task.reminderDate || isTerminalStatus(task.status))) return false;
+      if (!advancedFilter.conditions.some((condition) => condition.field === "status") && (isTerminalStatus(task.status) || task.status === "pending")) return false;
       return true;
     });
     const ids = new Set(filtered.map((task) => task.id));
@@ -433,7 +424,7 @@ function App() {
       visit(task.id);
     });
     return ordered;
-  }, [data.tasks, data.projectTags, data.goals, data.nonWorkingPeriods, filter, search, tagFilter, priorityFilter, advancedFilter, hideRecurring, sortRules, currentDate]);
+  }, [data.tasks, data.projectTags, data.goals, data.nonWorkingPeriods, search, advancedFilter, hideRecurring, sortRules, currentDate]);
 
   const updateTaskById = (id: string, changes: Partial<Task>, historyText?: string) => {
     const currentTask = data.tasks.find((task) => task.id === id);
@@ -752,9 +743,9 @@ function App() {
   const saveCurrentView = (name: string) => setSavedViews((current) => [...current, {
     id: generateId(),
     name,
-    filter,
-    tagFilter,
-    priorityFilter,
+    filter: "all",
+    tagFilter: "all",
+    priorityFilter: "all",
     search,
     density,
     narrow,
@@ -763,15 +754,26 @@ function App() {
     advancedFilter,
   }]);
   const applySavedView = (view: SavedTaskView) => {
-    setFilter(view.filter);
-    setTagFilter(view.tagFilter);
-    setPriorityFilter(view.priorityFilter || "all");
+    const conditions = [...(view.advancedFilter?.conditions || [])];
+    const addCondition = (field: "status" | "priority" | "tag" | "today" | "deadline", value: string) => conditions.push({ id: generateId(), field, operator: "is", value });
+    if (view.tagFilter && view.tagFilter !== "all") addCondition("tag", view.tagFilter);
+    if (view.priorityFilter && view.priorityFilter !== "all") addCondition("priority", view.priorityFilter);
+    if (view.filter === "all-with-done") addCondition("status", Object.keys(STATUS_LABELS).join(","));
+    else if (view.filter === "done") addCondition("status", "done,cancelled,handed-over");
+    else if (view.filter === "today") addCondition("today", "true");
+    else if (view.filter === "today-waiting") { addCondition("today", "true"); addCondition("status", WAITING_STATUSES.join(",")); }
+    else if (view.filter === "my-turn") addCondition("status", ["doing", "recurring", ...WAITING_STATUSES].join(","));
+    else if (view.filter === "waiting") addCondition("status", WAITING_STATUSES.join(","));
+    else if (view.filter === "deadline") addCondition("deadline", "true");
+    setFilter("all");
+    setTagFilter("all");
+    setPriorityFilter("all");
     setSearch(view.search);
     setDensity(view.density);
     setNarrow(view.narrow);
     setGroupTasksByTag(view.groupByTag);
     setSortRules(view.sortRules?.length ? view.sortRules : sortRules);
-    setAdvancedFilter(view.advancedFilter || { mode: "and", conditions: [] });
+    setAdvancedFilter({ mode: conditions.length > (view.advancedFilter?.conditions.length || 0) ? "and" : view.advancedFilter?.mode || "and", conditions });
     setFiltersHidden(false);
   };
   const startWorkTimer = (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => {
@@ -950,7 +952,7 @@ function App() {
     {dropNotice && <div className={`global-drop-notice ${dropNotice.error ? "error" : ""}`} role="status">{dropNotice.text}</div>}
     <Header importRef={importRef} onImport={importData} onExport={exportData} onTags={() => setTagsOpen(true)} onTemplates={() => setTemplatesOpen(true)} onReport={() => setReportOpen(true)} onGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} onWeeklyLoad={() => setWeeklyLoadOpen(true)} onGoals={() => setGoalsOpen(true)} onIssues={() => setIssuesOpen(true)} onSearch={() => setFullSearchOpen(true)} onInbox={() => setInboxOpen(true)} inboxCount={data.inboxItems.filter((item) => item.status === "inbox").length} onWaiting={() => { setWaitingTaskId(""); setWaitingOpen(true); }} waitingCount={data.tasks.filter((task) => task.waitingFollowUp).length} onNotifications={() => setNotificationsOpen(true)} notificationCount={notificationCount} onNonWorking={() => setNonWorkingOpen(true)} onHelp={() => setHelpOpen(true)} onProfile={() => setProfileOpen(true)} onDataManagement={() => setDataManagementOpen(true)} onAchievements={() => setAchievementsOpen(true)} hideRecurring={hideRecurring} openTodayOnStartup={openTodayOnStartup} onHideRecurring={setHideRecurring} onOpenTodayOnStartup={setOpenTodayOnStartup} />
     <main className="workspace">
-      <Sidebar tasks={visibleTasks} tags={data.projectTags} projects={data.goals} periods={data.nonWorkingPeriods} selectedId={selectedId} filter={filter} tagFilter={tagFilter} priorityFilter={priorityFilter} search={search} savedViews={savedViews} sortRules={sortRules} filtersHidden={filtersHidden} collapsedIds={collapsedIds} onFilter={setFilter} onTagFilter={setTagFilter} onPriorityFilter={setPriorityFilter} onSearch={setSearch} onSaveView={saveCurrentView} onApplyView={applySavedView} onDeleteView={(id) => setSavedViews((current) => current.filter((view) => view.id !== id))} onSortRules={setSortRules} onToggleFilters={() => setFiltersHidden((value) => !value)} onSelect={setSelectedId} onToggleCollapse={(id) => setCollapsedIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onCreate={(projectTagId) => { setCreatingTaskTagId(projectTagId); setCreatingTaskParentId(""); }} onToday={() => setTodayOpen(true)} narrow={narrow} density={density} groupByTag={groupTasksByTag} onToggleGroupByTag={() => setGroupTasksByTag((value) => !value)} onToggleWidth={() => setNarrow((value) => !value)} onToggleDensity={() => setDensity((value) => value === "standard" ? "compact" : value === "compact" ? "minimal" : "standard")} onQuick={quickAction} onOpenProject={openProjects} onSaveTemplate={setTemplateSourceTask} />
+      <Sidebar tasks={visibleTasks} tags={data.projectTags} projects={data.goals} periods={data.nonWorkingPeriods} selectedId={selectedId} search={search} advancedFilter={advancedFilter} savedViews={savedViews} sortRules={sortRules} filtersHidden={filtersHidden} collapsedIds={collapsedIds} onSearch={setSearch} onClearFilters={() => { setSearch(""); setAdvancedFilter({ mode: "and", conditions: [] }); setFilter("all"); setTagFilter("all"); setPriorityFilter("all"); }} onSaveView={saveCurrentView} onApplyView={applySavedView} onDeleteView={(id) => setSavedViews((current) => current.filter((view) => view.id !== id))} onSortRules={setSortRules} onToggleFilters={() => setFiltersHidden((value) => !value)} onSelect={setSelectedId} onToggleCollapse={(id) => setCollapsedIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onCreate={(projectTagId) => { setCreatingTaskTagId(projectTagId); setCreatingTaskParentId(""); }} onToday={() => setTodayOpen(true)} narrow={narrow} density={density} groupByTag={groupTasksByTag} onToggleGroupByTag={() => setGroupTasksByTag((value) => !value)} onToggleWidth={() => setNarrow((value) => !value)} onToggleDensity={() => setDensity((value) => value === "standard" ? "compact" : value === "compact" ? "minimal" : "standard")} onQuick={quickAction} onOpenProject={openProjects} onSaveTemplate={setTemplateSourceTask} />
       <TaskDetail task={selectedTask} allTasks={data.tasks} projects={data.goals} tags={data.projectTags} profile={data.userProfile} detailsHidden={detailsHidden} onToggleDetails={() => setDetailsHidden((value) => !value)} onUpdate={(changes, text) => selectedId && updateTaskById(selectedId, changes, text)} onDelete={deleteSelectedTask} onCreateChild={() => selectedId && setCreatingTaskParentId(selectedId)} onCreateSibling={() => { if (!selectedTask) return; setCreatingTaskTagId(selectedTask.projectTagId || undefined); setCreatingTaskParentId(selectedTask.parentTaskId || ""); }} onDocuments={() => { setDocumentJump(null); setDocumentsOpen("task"); }} onSharedDocuments={(projectId, documentId = "") => { const project = data.goals.find((item) => item.id === projectId); if (project) { setDocumentJump({ scope: "project", ownerId: project.id, documentId, query: "" }); setDocumentsOpen("project"); } }} onTagDocuments={() => { if (selectedTag) { setDocumentJump(null); setDocumentsOpen("tag"); } }} onOpenTagSettings={() => setTagsOpen(true)} onUpdateTagRepositories={(tagId, githubRepositories) => setData((current) => ({ ...current, projectTags: current.projectTags.map((tag) => tag.id === tagId ? { ...tag, githubRepositories } : tag) }))} onPromote={() => selectedTask && promoteTaskToProject(selectedTask)} onSaveTemplate={() => selectedTask && setTemplateSourceTask(selectedTask)} onOpenProject={openProjects} promoted={Boolean(selectedTask && data.goals.some((item) => item.originTaskId === selectedTask.id))} projectManaged={Boolean(selectedTask && data.goals.some((project) => project.milestones.some((milestone) => milestone.linkedTaskId === selectedTask.id) || project.workItems?.some((work) => work.linkedTaskId === selectedTask.id)))} onDeleteDailyPlan={(date) => selectedId && deleteDailyPlanById(selectedId, date)} onDeleteMemo={(id) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.filter((item) => item.id !== id) })} onEditMemo={(id, text) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.map((item) => item.id === id ? { ...item, text, editedAt: new Date().toISOString() } : item) })} />
     </main>
     {advancedFilterOpen && <AdvancedFilterModal filter={advancedFilter} tags={data.projectTags} onApply={setAdvancedFilter} onClose={() => setAdvancedFilterOpen(false)} />}

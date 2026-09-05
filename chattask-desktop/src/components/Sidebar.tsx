@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { FILTERS, isTerminalStatus } from "../data/constants";
+import { STATUS_LABELS, isTerminalStatus } from "../data/constants";
 import { taskProjectContexts } from "../projectContext";
-import type { Goal, NonWorkingPeriod, Priority, ProjectTag, SavedTaskView, Task, TaskFilter, TaskSortKey, TaskSortRule } from "../types";
+import type { AdvancedFilterCondition, AdvancedTaskFilter, Goal, NonWorkingPeriod, ProjectTag, SavedTaskView, Task, TaskSortKey, TaskSortRule } from "../types";
 import { TaskCard } from "./TaskCard";
 import { TagIcon } from "./TagIcon";
 import { Modal } from "./Modal";
@@ -13,18 +13,14 @@ interface Props {
   projects: Goal[];
   periods: NonWorkingPeriod[];
   selectedId: string | null;
-  filter: TaskFilter;
-  tagFilter: string;
   search: string;
-  priorityFilter: "all" | Priority;
+  advancedFilter: AdvancedTaskFilter;
   savedViews: SavedTaskView[];
   sortRules: TaskSortRule[];
   filtersHidden: boolean;
   collapsedIds: Set<string>;
-  onFilter: (filter: TaskFilter) => void;
-  onTagFilter: (tag: string) => void;
   onSearch: (search: string) => void;
-  onPriorityFilter: (priority: "all" | Priority) => void;
+  onClearFilters: () => void;
   onSaveView: (name: string) => void;
   onApplyView: (view: SavedTaskView) => void;
   onDeleteView: (id: string) => void;
@@ -119,6 +115,24 @@ export function Sidebar(props: Props) {
       ...props.sortRules.filter((rule) => rule.key !== "today"),
     ]);
   };
+  const conditionLabel = (condition: AdvancedFilterCondition) => {
+    const negative = condition.operator === "is-not" || condition.operator === "not-contains";
+    if (condition.field === "status") {
+      const statuses = condition.value.split(",").filter(Boolean);
+      const value = statuses.length === 1 ? STATUS_LABELS[statuses[0] as keyof typeof STATUS_LABELS] || statuses[0] : `${statuses.length}ステータス`;
+      return `状態${negative ? "以外" : ""}：${value}`;
+    }
+    if (condition.field === "priority") return `優先度${negative ? "以外" : ""}：${condition.value}`;
+    if (condition.field === "tag") return `案件${negative ? "以外" : ""}：${condition.value === "none" ? "タグなし" : props.tags.find((tag) => tag.id === condition.value)?.name || "削除済みタグ"}`;
+    if (condition.field === "today") return condition.value === "true" !== negative ? "今日すること" : "今日以外";
+    if (condition.field === "deadline") return condition.value === "true" !== negative ? "期限あり" : "期限なし";
+    return `文字列${negative ? "を含まない" : ""}：${condition.value || "未入力"}`;
+  };
+  const appliedConditionLabels = [
+    ...(props.advancedFilter.conditions.some((condition) => condition.field === "status") ? [] : ["未完了"]),
+    ...props.advancedFilter.conditions.map(conditionLabel),
+    ...(props.search.trim() ? [`キーワード：${props.search.trim()}`] : []),
+  ];
   const renderTask = (task: Task, grouped = false, flat = false) => {
     const children = flat ? [] : props.tasks.filter((child) => child.parentTaskId === task.id);
     const parent = props.tasks.find((item) => item.id === task.parentTaskId);
@@ -159,16 +173,8 @@ export function Sidebar(props: Props) {
         </div>
         {!props.filtersHidden && <div className="filters-panel">
           <input value={props.search} onChange={(event) => props.onSearch(event.target.value)} placeholder="タスク名やメモを検索..." />
-          <div className="filter-buttons">{FILTERS.map((item) => <button key={item.id} className={props.filter === item.id ? "active" : ""} onClick={() => props.onFilter(item.id)}>{item.label}</button>)}</div>
-          <select value={props.tagFilter} onChange={(event) => props.onTagFilter(event.target.value)}>
-            <option value="all">すべての案件タグ</option><option value="none">タグなし</option>
-            {props.tags.filter((tag) => tag.visible).map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-          </select>
-          <select value={props.priorityFilter} onChange={(event) => props.onPriorityFilter(event.target.value as "all" | Priority)}>
-            <option value="all">すべての優先度</option>
-            {(["A", "B", "C", "D"] as Priority[]).map((priority) => <option value={priority} key={priority}>優先度 {priority}</option>)}
-          </select>
           <button type="button" className="advanced-filter-open" onClick={() => window.dispatchEvent(new Event("chattask-open-advanced-filter"))}>＋ 条件検索（AND・OR）</button>
+          <div className="active-filter-summary"><div><small>{props.advancedFilter.mode === "or" && props.advancedFilter.conditions.length > 1 ? "いずれか" : "適用中"}</small><span>{appliedConditionLabels.join("・")}</span></div><button type="button" onClick={() => window.dispatchEvent(new Event("chattask-open-advanced-filter"))}>変更</button><button type="button" disabled={!props.advancedFilter.conditions.length && !props.search.trim()} onClick={props.onClearFilters}>解除</button></div>
           <button type="button" className="sort-editor-open" onClick={() => setSortEditorOpen(true)}><span>↕ 並び替え</span><small>{props.sortRules.length}条件・上から優先</small></button>
           {sortEditorOpen && <Modal title="タスクの並び替え" onClose={() => setSortEditorOpen(false)} wide><div className="sort-editor-dialog">
             <header><div><strong>並び替え条件</strong><p>上にある条件から順番に適用します。</p></div></header>
