@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { STATUS_LABELS } from "../data/constants";
-import type { ActivityEvent, Goal, NonWorkingPeriod, Task } from "../types";
+import type { ActivityEvent, Goal, NonWorkingPeriod, ProjectTag, Task } from "../types";
 import { addDays, getNonWorkingPeriod, todayValue } from "../utils";
 import { Modal } from "./Modal";
+import { TaskWorkStatistics } from "./TaskWorkStatistics";
 
 type Period = "day" | "week" | "month";
 
@@ -43,9 +44,10 @@ const actualHoursForDate = (task: Task, date: string) => Object.entries(task.dai
   .filter(([planKey]) => planKey === date || planKey.startsWith(`${date}::`))
   .reduce((sum, [, hours]) => sum + (Number(hours) || 0), 0);
 
-export function AchievementsModal({ tasks, projects, activity, nonWorkingPeriods, onSelect, onClose }: {
+export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingPeriods, onSelect, onClose }: {
   tasks: Task[];
   projects: Goal[];
+  tags: ProjectTag[];
   activity: ActivityEvent[];
   nonWorkingPeriods: NonWorkingPeriod[];
   onSelect: (id: string) => void;
@@ -226,6 +228,7 @@ export function AchievementsModal({ tasks, projects, activity, nonWorkingPeriods
           </svg>
         </div>
       </section>
+      <TaskWorkStatistics tasks={tasks} tags={tags} periods={nonWorkingPeriods} workingDateOverrides={workingDateOverrides} start={start} end={end} onSelect={onSelect} />
       <section className="achievement-recent">
         <header><strong>この期間に完了したタスク</strong><small>{completedTaskItems.length ? "内容を選ぶとタスクを開きます。" : "この期間に完了したタスクはありません。"}</small></header>
         <div>{completedTaskItems.map((item) => <button key={item.id} disabled={!item.taskId} onClick={() => item.taskId && onSelect(item.taskId)}><span><b>{item.title || "名称のないタスク"}</b><small>{item.kind}</small></span><time>{item.date}</time></button>)}</div>
