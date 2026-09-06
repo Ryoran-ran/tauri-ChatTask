@@ -4,6 +4,7 @@ import type { Goal, NonWorkingPeriod, PlannedRange, ProjectTag, Task, TaskStatus
 import { addDays, getNonWorkingPeriod, isRecurringDue, plannedHoursForDate, rangeDates, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
+import { createGanttExcel } from "../services/ganttExcel";
 import { xmlEscape, zipFiles } from "../services/xmlSpreadsheet";
 
 type GanttStatusFilter = "all" | "active" | "waiting" | "done";
@@ -716,6 +717,34 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     ];
     saveBlob(zipFiles(files), `${exportFileStem}.xlsx`);
   };
+  const exportGanttExcel = () => {
+    setExportMenuOpen(false);
+    const nonWorkingDates = new Set(dates.filter((date) => getNonWorkingPeriod(date, periods, workingDateOverrides)));
+    const blob = createGanttExcel({
+      title: exportTitle,
+      start: period.start,
+      end: period.end,
+      dates,
+      display,
+      nonWorkingDates,
+      today,
+      rows: rows.map((row) => ({
+        kind: kindLabel(row.kind),
+        title: row.title,
+        status: statusLabel(row.status),
+        priority: row.priority || "",
+        depth: row.depth,
+        baselineRanges: row.baselineRanges,
+        plannedRanges: row.plannedRanges,
+        actualDates: row.actualDates,
+        achievedDates: row.achievedDates,
+        plannedHours: row.plannedHours,
+        actualHours: row.actualHours,
+        dueDate: row.dueDate,
+      })),
+    });
+    saveBlob(blob, `${exportFileStem}_ガント.xlsx`);
+  };
   const exportMarkdown = () => {
     setExportMenuOpen(false);
     const scaleLabels: Record<GanttScale, string> = {
@@ -855,7 +884,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
         </div>
         <div className="gantt-export" ref={exportMenuRef}>
           <button type="button" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((open) => !open)}>ファイル出力 ▾</button>
-          {exportMenuOpen && <div className="gantt-export-menu" role="menu"><button type="button" role="menuitem" onClick={exportMarkdown}><strong>Markdown</strong><small>AI確認用に予定・実績・期限を構造化して保存</small></button><button type="button" role="menuitem" onClick={exportPdf}><strong>PDF</strong><small>表示中の期間を横向きで印刷・保存</small></button><button type="button" role="menuitem" onClick={exportExcel}><strong>Excel</strong><small>タスク・予定・工数を表形式で保存</small></button><button type="button" role="menuitem" onClick={exportPng}><strong>PNG</strong><small>ガントチャートを画像として保存</small></button></div>}
+          {exportMenuOpen && <div className="gantt-export-menu" role="menu"><button type="button" role="menuitem" onClick={exportMarkdown}><strong>Markdown</strong><small>AI確認用に予定・実績・期限を構造化して保存</small></button><button type="button" role="menuitem" onClick={exportPdf}><strong>PDF</strong><small>表示中の期間を横向きで印刷・保存</small></button><button type="button" role="menuitem" onClick={exportExcel}><strong>Excel（一覧）</strong><small>タスク・予定・工数を表形式で保存</small></button><button type="button" role="menuitem" onClick={exportGanttExcel}><strong>Excel（ガント）</strong><small>日付列へ予定・実績を色付きバーで表示</small></button><button type="button" role="menuitem" onClick={exportPng}><strong>PNG</strong><small>ガントチャートを画像として保存</small></button></div>}
         </div>
       </div>
     </div>
