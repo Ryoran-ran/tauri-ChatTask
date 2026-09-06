@@ -3,76 +3,14 @@ import { createPortal } from "react-dom";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS as TASK_STATUS_LABELS } from "../data/constants";
 import { removeTaskAttachments } from "../services/attachments";
 import { exportMarkdown } from "../services/documents";
-import type { Goal, GoalMilestone, GoalStatus, PlannedRange, ProjectTag, ProjectWorkItem, Task, TaskLink } from "../types";
+import type { Goal, GoalMilestone, GoalStatus, PlannedRange, ProjectTag, ProjectWorkItem, Task } from "../types";
 import { generateId, rangeDates, todayValue } from "../utils";
-import { AttachmentsSection } from "./AttachmentsSection";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
+import { PROJECT_STATUS_LABELS as STATUS_LABELS, ProjectAdvancedFilterModal, ProjectSortModal, type ProjectAdvancedFilter, type ProjectSortKey, type ProjectSortRule } from "./ProjectFilterModals";
+import { ProjectResources } from "./ProjectResources";
 
-const STATUS_LABELS: Record<GoalStatus, string> = {
-  "not-started": "未着手", "in-progress": "進行中", paused: "一時停止",
-  achieved: "達成", archived: "アーカイブ", cancelled: "中止（旧）",
-};
-const PROJECT_STATUS_GROUPS: { label: string; values: GoalStatus[] }[] = [
-  { label: "開始前", values: ["not-started"] },
-  { label: "対応中", values: ["in-progress", "paused"] },
-  { label: "終了", values: ["achieved", "archived", "cancelled"] },
-];
-type ProjectFilterField = "status" | "priority" | "tag" | "deadline" | "text";
-type ProjectFilterCondition = { id: string; field: ProjectFilterField; operator: "is" | "is-not" | "contains" | "not-contains"; value: string };
-type ProjectAdvancedFilter = { mode: "and" | "or"; conditions: ProjectFilterCondition[] };
-type ProjectSortKey = "priority" | "dueDate" | "status" | "progress" | "updatedAt" | "title";
-type ProjectSortRule = { id: string; key: ProjectSortKey; direction: "asc" | "desc" };
-const blankProjectFilter = (): ProjectFilterCondition => ({ id: generateId(), field: "status", operator: "is", value: "in-progress" });
-const PROJECT_SORT_LABELS: Record<ProjectSortKey, string> = { priority: "優先度", dueDate: "期限", status: "ステータス", progress: "進捗率", updatedAt: "更新日", title: "プロジェクト名" };
 const LAST_SELECTED_PROJECT_KEY = "chatTaskLastSelectedProjectId";
-
-function ProjectSortModal({ rules, onChange, onClose }: { rules: ProjectSortRule[]; onChange: (rules: ProjectSortRule[]) => void; onClose: () => void }) {
-  const move = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= rules.length) return;
-    const next = [...rules];
-    [next[index], next[target]] = [next[target], next[index]];
-    onChange(next);
-  };
-  return <Modal title="プロジェクトの並び替え" onClose={onClose} wide><div className="sort-editor-dialog">
-    <header><div><strong>並び替え条件</strong><p>上にある条件から順番に適用します。</p></div></header>
-    <div className="task-sort-rules">{rules.map((rule, index) => <div key={rule.id}>
-      <b>{index + 1}</b>
-      <select value={rule.key} onChange={(event) => onChange(rules.map((item) => item.id === rule.id ? { ...item, key: event.target.value as ProjectSortKey } : item))}>{Object.entries(PROJECT_SORT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-      <select value={rule.direction} aria-label={`${PROJECT_SORT_LABELS[rule.key]}の方向`} onChange={(event) => onChange(rules.map((item) => item.id === rule.id ? { ...item, direction: event.target.value as "asc" | "desc" } : item))}><option value="asc">昇順</option><option value="desc">降順</option></select>
-      <button type="button" disabled={index === 0} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === rules.length - 1} onClick={() => move(index, 1)}>↓</button><button type="button" aria-label={`${PROJECT_SORT_LABELS[rule.key]}を削除`} onClick={() => onChange(rules.filter((item) => item.id !== rule.id))}>×</button>
-    </div>)}</div>
-    {rules.length < Object.keys(PROJECT_SORT_LABELS).length && <button type="button" className="advanced-filter-add" onClick={() => { const key = (Object.keys(PROJECT_SORT_LABELS) as ProjectSortKey[]).find((candidate) => !rules.some((rule) => rule.key === candidate)); if (key) onChange([...rules, { id: generateId(), key, direction: key === "priority" || key === "dueDate" || key === "title" ? "asc" : "desc" }]); }}>＋ 並び替え条件を追加</button>}
-    <footer><button type="button" className="primary" onClick={onClose}>設定を反映</button></footer>
-  </div></Modal>;
-}
-
-function ProjectStatusFilterModal({ value, onChange, onClose }: { value: string; onChange: (value: string) => void; onClose: () => void }) {
-  const selected = value.split(",").filter((status): status is GoalStatus => status in STATUS_LABELS);
-  const toggle = (status: GoalStatus) => onChange(selected.includes(status) ? selected.filter((item) => item !== status).join(",") : [...selected, status].join(","));
-  const toggleGroup = (statuses: GoalStatus[]) => {
-    const allSelected = statuses.every((status) => selected.includes(status));
-    onChange(allSelected ? selected.filter((status) => !statuses.includes(status)).join(",") : [...new Set([...selected, ...statuses])].join(","));
-  };
-  return <Modal title="プロジェクトのステータスを選択" onClose={onClose} wide><div className="status-filter-picker"><header><div><strong>対象にするステータス</strong><p>カテゴリー単位または個別に複数選択できます。</p></div><div><button type="button" onClick={() => onChange(Object.keys(STATUS_LABELS).join(","))}>すべて選択</button><button type="button" onClick={() => onChange("")}>すべて解除</button></div></header><div className="status-filter-groups project-status-filter-groups">{PROJECT_STATUS_GROUPS.map((group) => { const count = group.values.filter((status) => selected.includes(status)).length; return <section key={group.label}><label className="status-filter-group-title"><input type="checkbox" checked={count === group.values.length} ref={(element) => { if (element) element.indeterminate = count > 0 && count < group.values.length; }} onChange={() => toggleGroup(group.values)} /><span>{group.label}</span><small>{count}/{group.values.length}</small></label><div>{group.values.map((status) => <label key={status}><input type="checkbox" checked={selected.includes(status)} onChange={() => toggle(status)} /><span>{STATUS_LABELS[status]}</span></label>)}</div></section>; })}</div><div className="modal-actions"><span>{selected.length}件選択中</span><button type="button" className="primary" onClick={onClose}>選択を確定</button></div></div></Modal>;
-}
-
-function ProjectAdvancedFilterModal({ filter, tags, onApply, onClose }: { filter: ProjectAdvancedFilter; tags: ProjectTag[]; onApply: (filter: ProjectAdvancedFilter) => void; onClose: () => void }) {
-  const [statusConditionId, setStatusConditionId] = useState("");
-  const update = (id: string, changes: Partial<ProjectFilterCondition>) => onApply({ ...filter, conditions: filter.conditions.map((item) => item.id === id ? { ...item, ...changes } : item) });
-  const defaults: Record<ProjectFilterField, string> = { status: "in-progress", priority: "A", tag: tags[0]?.id || "none", deadline: "true", text: "" };
-  const labels: Record<ProjectFilterField, string> = { status: "ステータス", priority: "優先度", tag: "案件タグ", deadline: "期限", text: "文字列" };
-  const valueEditor = (item: ProjectFilterCondition) => {
-    if (item.field === "status") { const values = item.value.split(",").filter((status): status is GoalStatus => status in STATUS_LABELS); return <button type="button" className="status-filter-select" onClick={() => setStatusConditionId(item.id)}><span>{values.length === 0 ? "未選択" : values.length === 1 ? STATUS_LABELS[values[0]] : `${values.length}件のステータス`}</span><small>選択画面を開く ›</small></button>; }
-    if (item.field === "priority") return <select value={item.value} onChange={(event) => update(item.id, { value: event.target.value })}>{PRIORITIES.map((value) => <option key={value}>{value}</option>)}</select>;
-    if (item.field === "tag") return <select value={item.value} onChange={(event) => update(item.id, { value: event.target.value })}><option value="none">タグなし</option>{tags.map((tag) => <option value={tag.id} key={tag.id}>{tag.name}</option>)}</select>;
-    if (item.field === "deadline") return <select value={item.value} onChange={(event) => update(item.id, { value: event.target.value })}><option value="true">あり</option><option value="false">なし</option></select>;
-    return <input value={item.value} onChange={(event) => update(item.id, { value: event.target.value })} placeholder="プロジェクト名・説明・達成条件" />;
-  };
-  const statusCondition = filter.conditions.find((item) => item.id === statusConditionId && item.field === "status");
-  return <><Modal title="プロジェクトの条件検索" onClose={onClose} wide><div className="advanced-filter-builder"><header><div><strong>条件の組み合わせ</strong><p>プロジェクトを複数の条件で絞り込みます。</p></div><select value={filter.mode} onChange={(event) => onApply({ ...filter, mode: event.target.value as "and" | "or" })}><option value="and">すべて満たす（AND）</option><option value="or">いずれかを満たす（OR）</option></select></header><div className="advanced-filter-list">{filter.conditions.map((item, index) => <div className="advanced-filter-row" key={item.id}><b>{index + 1}</b><select value={item.field} onChange={(event) => { const field = event.target.value as ProjectFilterField; update(item.id, { field, operator: field === "text" ? "contains" : "is", value: defaults[field] }); }}>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><select value={item.operator} onChange={(event) => update(item.id, { operator: event.target.value as ProjectFilterCondition["operator"] })}>{item.field === "text" ? <><option value="contains">含む</option><option value="not-contains">含まない</option></> : <><option value="is">一致する</option><option value="is-not">一致しない</option></>}</select>{valueEditor(item)}<button type="button" aria-label="条件を削除" onClick={() => onApply({ ...filter, conditions: filter.conditions.filter((condition) => condition.id !== item.id) })}>×</button></div>)}</div><button type="button" className="advanced-filter-add" onClick={() => onApply({ ...filter, conditions: [...filter.conditions, blankProjectFilter()] })}>＋ 条件を追加</button><div className="modal-actions"><button type="button" disabled={!filter.conditions.length} onClick={() => onApply({ mode: "and", conditions: [] })}>条件をすべて解除</button><button type="button" className="primary" onClick={onClose}>検索結果を表示</button></div></div></Modal>{statusCondition && <ProjectStatusFilterModal value={statusCondition.value} onChange={(value) => update(statusCondition.id, { value })} onClose={() => setStatusConditionId("")} />}</>;
-}
 const WORK_STATUS = { "not-started": "未着手", "in-progress": "進行中", done: "達成" } as const;
 const MILESTONE_STATUS = { "not-started": "未着手", "in-progress": "進行中", achieved: "達成" } as const;
 type CreateRelatedTask = (title: string, parentTaskId?: string, changes?: Partial<Task>, openAfterCreate?: boolean) => string;
@@ -362,35 +300,6 @@ function ScheduleDate({ ranges, showUnscheduled = false }: { ranges: PlannedRang
 }
 function StatusSyncState(_: { task: Task | null | undefined; status: "not-started" | "in-progress" | "achieved" | "done"; enabled: boolean; onReflect: () => void }) {
   return null;
-}
-function ProjectResources({ project, onLinks }: { project: Goal; onLinks: (links: TaskLink[]) => void }) {
-  const [label, setLabel] = useState("");
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
-  const addLink = () => {
-    const entered = url.trim();
-    if (!entered) return;
-    const normalized = /^https?:\/\//i.test(entered) ? entered : `https://${entered}`;
-    try {
-      const parsed = new URL(normalized);
-      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-      onLinks([...(project.sharedLinks || []), { id: generateId(), label: label.trim() || parsed.hostname, url: parsed.toString() }]);
-      setLabel("");
-      setUrl("");
-      setError("");
-    } catch {
-      setError("正しいサイトURLを入力してください。");
-    }
-  };
-  return <section className="project-resources">
-    <header><div><strong>共有サイト・ファイル</strong><small>このプロジェクトで共通利用する資料をまとめます。</small></div></header>
-    <div className="project-shared-links">
-      <div className="project-shared-link-list">{(project.sharedLinks || []).map((link) => <div key={link.id}><a href={link.url} target="_blank" rel="noreferrer"><span>↗</span><strong>{link.label || link.url}</strong><small>{link.url}</small></a><button type="button" className="danger-text" aria-label={`${link.label || link.url}を削除`} onClick={() => onLinks((project.sharedLinks || []).filter((item) => item.id !== link.id))}>×</button></div>)}{!project.sharedLinks?.length && <p>共有サイトは登録されていません。</p>}</div>
-      <div className="project-shared-link-form"><label>表示名<input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="例：案件管理サイト" /></label><label>URL<input value={url} onChange={(event) => { setUrl(event.target.value); setError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addLink(); } }} placeholder="https://..." /></label><button type="button" onClick={addLink}>サイトを追加</button></div>
-      {error && <p className="project-shared-link-error">{error}</p>}
-    </div>
-    <div className="project-shared-files"><AttachmentsSection taskId={`project:${project.id}`} title="共有ファイル" /></div>
-  </section>;
 }
 export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onSave: (projects: Goal[]) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
   const [items, setItems] = useState(() => projects.map(normalizeProject));
@@ -868,6 +777,7 @@ function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSch
   const [workEditSnapshot, setWorkEditSnapshot] = useState<ProjectWorkItem | null>(null);
   const [newMilestoneEditId, setNewMilestoneEditId] = useState("");
   const [newWorkEditId, setNewWorkEditId] = useState("");
+  const [dismissedWorkTransferId, setDismissedWorkTransferId] = useState("");
   const [openMenu, setOpenMenu] = useState("");
   const [collapsedWorks, setCollapsedWorks] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem("chatTaskCollapsedMilestoneWorks") || "{}"); }
@@ -919,6 +829,7 @@ function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSch
     const source = (project.workItems || []).find((item) => item.id === workDialogId);
     if (source && workDraft?.id !== source.id) setWorkDraft(structuredClone(source));
   }, [project.workItems, workDialogId, workDraft?.id]);
+  useEffect(() => setDismissedWorkTransferId(""), [workDialogId]);
   useEffect(() => {
     if (editingMilestone) document.querySelector<HTMLInputElement>(".tree-title-input")?.focus();
   }, [editingMilestone]);
@@ -1042,11 +953,12 @@ function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSch
     <div className={`tree-goal ${allMilestonesAchieved ? "completed" : ""}`}><span className="tree-goal-node">◎</span><small>GOAL</small><strong>{project.title}</strong><p>{project.successCriteria || "最終達成条件を入力してください"}</p>{project.dueDate && <time>期限 {project.dueDate}</time>}<b>{progress(project)}% 達成</b></div>
     {milestoneDraft && createPortal(<div className="milestone-editor-backdrop" onPointerDown={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}><section className="milestone-editor-dialog" role="dialog" aria-modal="true" aria-label="マイルストーンを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>MILESTONE</small><h3>{newMilestoneEditId === milestoneDraft.id ? "マイルストーンを追加" : "マイルストーンを編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>×</button></header><div className="milestone-editor-fields"><label>マイルストーン名<input autoFocus value={milestoneDraft.title} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, title: event.target.value })} placeholder="到達点を入力" /></label><label>期限<WorkDatePicker ariaLabel="マイルストーンの期限" value={milestoneDraft.dueDate || ""} onChange={(dueDate) => setMilestoneDraft({ ...milestoneDraft, dueDate })} /></label><label>状態<select value={milestoneDraft.status || (milestoneDraft.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; setMilestoneDraft({ ...milestoneDraft, status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="milestone-editor-description">説明<textarea rows={5} value={milestoneDraft.description || ""} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, description: event.target.value })} placeholder="完了条件や到達状態を記載" /></label></div><div className="milestone-editor-works"><div><strong>作業項目</strong><button type="button" onClick={() => { const id = onAddWork(milestoneDraft.id); if (id) { setNewWorkEditId(id); setEditingWork(id); } }}>＋ 作業を追加</button></div>{(project.workItems || []).filter((item) => item.milestoneId === milestoneDraft.id).sort((a, b) => a.sortOrder - b.sortOrder).map((work) => <button type="button" className="milestone-editor-work-row" key={work.id} onClick={() => setEditingWork(work.id)}><span><b>{work.title}</b><small>{WORK_STATUS[work.status]}・予定 {formatHours(work.plannedHours)}</small></span><span>編集 ›</span></button>)}{!(project.workItems || []).some((item) => item.milestoneId === milestoneDraft.id) && <p>作業項目はまだありません。ここから続けて追加できます。</p>}</div><p className="milestone-editor-note">予定期間と予定工数は、マイルストーン配下の作業項目で設定します。</p><footer><button type="button" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>キャンセル</button><button type="button" className="primary" disabled={!milestoneDraft.title.trim()} onClick={() => { onMilestone(milestoneDraft.id, milestoneDraft); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>保存</button></footer></section></div>, document.body)}
     {workDraft && createPortal(<div className="milestone-editor-backdrop work-editor-layer" onPointerDown={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}><section className="milestone-editor-dialog work-editor-dialog" role="dialog" aria-modal="true" aria-label="作業項目を編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>WORK ITEM</small><h3>{newWorkEditId === workDraft.id ? "作業項目を追加" : "作業項目を編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>×</button></header><div className="work-editor-fields"><label className="work-editor-title">作業名<input autoFocus value={workDraft.title} onChange={(event) => setWorkDraft({ ...workDraft, title: event.target.value })} placeholder="実施する作業を入力" /></label><label>状態<select value={workDraft.status} onChange={(event) => setWorkDraft({ ...workDraft, status: event.target.value as ProjectWorkItem["status"] })}>{Object.entries(WORK_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>優先度<select value={workDraft.priority} onChange={(event) => setWorkDraft({ ...workDraft, priority: event.target.value as ProjectWorkItem["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>期限<WorkDatePicker ariaLabel="作業項目の期限" value={workDraft.dueDate || ""} onChange={(dueDate) => setWorkDraft({ ...workDraft, dueDate })} /></label><label className="work-editor-description">説明<textarea rows={4} value={workDraft.description || ""} onChange={(event) => setWorkDraft({ ...workDraft, description: event.target.value })} placeholder="作業内容や完了条件を記載" /></label></div><div className="work-editor-related"><strong>関連ChatTask</strong><LinkedTaskSelector tasks={tasks} value={workDraft.linkedTaskId || ""} suggestedTaskIds={[milestoneDraft?.linkedTaskId || "", ...(milestoneDraft?.taskIds || []), project.originTaskId || "", ...project.taskIds]} suggestionLabel="関連する候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => setWorkDraft({ ...workDraft, linkedTaskId })} /></div><div className="work-editor-schedule"><strong>予定</strong>{!(workDraft.plannedRanges || []).length && <div className="work-unscheduled-state"><b>予定なし</b><span>作業だけを登録し、着手できるタイミングで予定を設定できます。</span></div>}<ScheduleEditor single fixedTitle={workDraft.title} ranges={(workDraft.plannedRanges || []).slice(0, 1)} onChange={(plannedRanges) => { const singleRange = plannedRanges.slice(0, 1).map((range) => ({ ...range, title: workDraft.title.trim() })); setWorkDraft({ ...workDraft, plannedRanges: singleRange, plannedHours: scheduleHours(singleRange) }); }} /></div><footer><button type="button" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>キャンセル</button>{newWorkEditId === workDraft.id && <button type="button" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(false)}>保存して閉じる</button>}<button type="button" className="primary" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(newWorkEditId === workDraft.id)}>{newWorkEditId === workDraft.id ? "保存して次を追加" : "保存"}</button></footer></section></div>, document.body)}
-    {workDraft && workTransferCandidates.length > 0 && createPortal(
+    {workDraft && workTransferCandidates.length > 0 && dismissedWorkTransferId !== workDraft.id && createPortal(
       <aside className="work-schedule-transfer" aria-label="起点タスクの既存予定">
         <div className="work-schedule-transfer-heading">
-          <strong>起点タスクの既存予定</strong>
-          <small>選んだ予定だけを、実績・メモ・完了状態を保ったままこの作業へ引き継ぎます。</small>
+          <div><strong>起点タスクの既存予定</strong>
+          <small>選んだ予定だけを、実績・メモ・完了状態を保ったままこの作業へ引き継ぎます。</small></div>
+          <button type="button" onClick={() => setDismissedWorkTransferId(workDraft.id)}>予定を引き継がない</button>
         </div>
         <div className="work-schedule-transfer-list">
           {workTransferCandidates.map((range) => <button type="button" key={range.id} onClick={() => transferScheduleToWork(range)}>

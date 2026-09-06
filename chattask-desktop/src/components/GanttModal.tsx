@@ -4,6 +4,10 @@ import type { Goal, NonWorkingPeriod, PlannedRange, ProjectTag, Task, TaskStatus
 import { addDays, getNonWorkingPeriod, isRecurringDue, plannedHoursForDate, rangeDates, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
+import { createGanttExcel } from "../services/ganttExcel";
+import { createGanttSvg } from "../services/ganttSvg";
+import { createImagePdf } from "../services/imagePdf";
+import { xmlEscape, zipFiles } from "../services/xmlSpreadsheet";
 
 type GanttStatusFilter = "all" | "active" | "waiting" | "done";
 type GanttDisplay = "compare" | "planned" | "actual";
@@ -176,40 +180,6 @@ const weekStart = (value: string) => {
   return dateValue(date);
 };
 const yearStart = (value: string) => `${value.slice(0, 4)}-01-01`;
-const xmlEscape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[character] || character));
-const zipFiles = (files: Array<{ name: string; content: string }>) => {
-  const encoder = new TextEncoder();
-  const crcTable = Array.from({ length: 256 }, (_, index) => {
-    let value = index;
-    for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    return value >>> 0;
-  });
-  const crc32 = (bytes: Uint8Array) => {
-    let crc = 0xffffffff;
-    bytes.forEach((byte) => { crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8); });
-    return (crc ^ 0xffffffff) >>> 0;
-  };
-  const chunks: Uint8Array[] = [];
-  const central: Uint8Array[] = [];
-  let offset = 0;
-  const view = (size: number) => new DataView(new ArrayBuffer(size));
-  files.forEach((file) => {
-    const name = encoder.encode(file.name);
-    const data = encoder.encode(file.content);
-    const crc = crc32(data);
-    const local = view(30);
-    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint32(14, crc, true); local.setUint32(18, data.length, true); local.setUint32(22, data.length, true); local.setUint16(26, name.length, true);
-    chunks.push(new Uint8Array(local.buffer), name, data);
-    const directory = view(46);
-    directory.setUint32(0, 0x02014b50, true); directory.setUint16(4, 20, true); directory.setUint16(6, 20, true); directory.setUint32(16, crc, true); directory.setUint32(20, data.length, true); directory.setUint32(24, data.length, true); directory.setUint16(28, name.length, true); directory.setUint32(42, offset, true);
-    central.push(new Uint8Array(directory.buffer), name);
-    offset += 30 + name.length + data.length;
-  });
-  const centralSize = central.reduce((sum, chunk) => sum + chunk.length, 0);
-  const end = view(22);
-  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, centralSize, true); end.setUint32(16, offset, true);
-  return new Blob([...chunks, ...central, new Uint8Array(end.buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-};
 const aggregateRows = (id: string, kind: GanttRow["kind"], title: string, status: string, depth: number, children: GanttRow[], dueDate = ""): GanttRow => {
   const starts = children.flatMap((row) => row.plannedRanges.map((range) => range.startDate)).filter(Boolean).sort();
   const ends = children.flatMap((row) => row.plannedRanges.map((range) => range.endDate)).filter(Boolean).sort();
@@ -661,35 +631,37 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   };
   const exportSvg = () => {
-    const labelWidth = 310;
-    const dayWidth = scale === "week" ? 90 : scale === "month" ? 28 : scale === "quarter" ? 12 : scale === "half-year" ? 7 : 4;
-    const timelineWidth = dates.length * dayWidth;
-    const rowHeight = 44;
-    const headerHeight = 58;
-    const width = labelWidth + timelineWidth;
-    const height = headerHeight + Math.max(1, rows.length) * rowHeight + 24;
-    const rangeRect = (start: string, end: string, y: number, fill: string, rectHeight: number, opacity = 1) => {
-      const clippedStart = start < period.start ? period.start : start;
-      const clippedEnd = end > period.end ? period.end : end;
-      const startIndex = dates.indexOf(clippedStart);
-      const endIndex = dates.indexOf(clippedEnd);
-      if (startIndex < 0 || endIndex < startIndex) return "";
-      return `<rect x="${labelWidth + startIndex * dayWidth}" y="${y}" width="${Math.max(2, (endIndex - startIndex + 1) * dayWidth)}" height="${rectHeight}" rx="3" fill="${fill}" opacity="${opacity}"/>`;
-    };
-    const monthLabels = dates.map((date, index) => ({ date, index })).filter(({ date, index }) => index === 0 || date.endsWith("-01"));
-    const gridLines = dates.map((date, index) => {
-      const major = date.endsWith("-01") || scale === "week";
-      return major ? `<line x1="${labelWidth + index * dayWidth}" y1="34" x2="${labelWidth + index * dayWidth}" y2="${height}" stroke="#cbd5e1" stroke-width="1"/>` : "";
-    }).join("");
-    const rowSvg = rows.map((row, rowIndex) => {
-      const y = headerHeight + rowIndex * rowHeight;
-      const actualRanges = contiguousDateRanges([...row.actualDates, ...row.achievedDates]);
-      const baseline = display === "compare" ? row.baselineRanges.map((range) => rangeRect(range.startDate, range.endDate, y + 6, "#cbd5e1", 7, .9)).join("") : "";
-      const planned = display !== "actual" ? row.plannedRanges.map((range) => rangeRect(range.startDate, range.endDate, y + 15, "#60a5fa", 10, .9)).join("") : "";
-      const actual = display !== "planned" ? actualRanges.map((range) => rangeRect(range.start, range.end, y + 29, "#22c55e", 9)).join("") : "";
-      return `<g><rect x="0" y="${y}" width="${width}" height="${rowHeight}" fill="${rowIndex % 2 ? "#f8fafc" : "#ffffff"}"/><line x1="0" y1="${y + rowHeight}" x2="${width}" y2="${y + rowHeight}" stroke="#e2e8f0"/><text x="${14 + row.depth * 14}" y="${y + 19}" fill="#1e293b" font-size="12" font-weight="700">${xmlEscape(row.title)}</text><text x="${14 + row.depth * 14}" y="${y + 34}" fill="#64748b" font-size="9">予定 ${hours(row.plannedHours)}h / 実績 ${hours(row.actualHours)}h</text>${baseline}${planned}${actual}</g>`;
-    }).join("");
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/><text x="14" y="21" fill="#0f172a" font-size="16" font-weight="800">${xmlEscape(exportTitle)}</text><text x="14" y="40" fill="#64748b" font-size="10">${period.start}〜${period.end}</text><line x1="${labelWidth}" y1="0" x2="${labelWidth}" y2="${height}" stroke="#94a3b8"/>${gridLines}${monthLabels.map(({ date, index }) => `<text x="${labelWidth + index * dayWidth + 4}" y="23" fill="#475569" font-size="10" font-weight="700">${Number(date.slice(5, 7))}月</text>`).join("")}${rowSvg}</svg>`;
+    const nonWorkingDates = new Set(dates.filter((date) => getNonWorkingPeriod(date, periods, workingDateOverrides)));
+    return createGanttSvg({
+      title: selectedProject ? `${selectedProject.title}・ガントチャート` : "ガントチャート",
+      start: period.start,
+      end: period.end,
+      dates,
+      dateLabels: dates.map(timelineLabel),
+      plannedEffort: dates.map((date) => plannedEffortByDate.get(date) || 0),
+      nonWorkingDates,
+      display,
+      cellWidth: cell,
+      rows: rows.map((row) => ({
+        kind: row.kind,
+        title: row.title,
+        periodLabel: row.periodLabel,
+        depth: row.depth,
+        hasChildren: row.hasChildren,
+        status: statusLabel(row.status),
+        statusTone: taskTone(row.status),
+        priority: row.priority,
+        tagName: row.tagId ? tagById.get(row.tagId)?.name : undefined,
+        baselineRanges: row.baselineRanges,
+        plannedRanges: row.plannedRanges,
+        actualDates: row.actualDates,
+        achievedDates: row.achievedDates,
+        plannedHours: row.plannedHours,
+        actualHours: row.actualHours,
+        dueDate: row.dueDate,
+        delayed: Boolean(row.dueDate && row.dueDate < today && !isCompletedStatus(row.status)),
+      })),
+    });
   };
   const exportPng = () => {
     setExportMenuOpen(false);
@@ -713,19 +685,30 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
   };
   const exportPdf = () => {
     setExportMenuOpen(false);
-    const frame = document.createElement("iframe");
-    frame.style.position = "fixed";
-    frame.style.width = "1px";
-    frame.style.height = "1px";
-    frame.style.opacity = "0";
-    frame.style.pointerEvents = "none";
-    document.body.appendChild(frame);
-    const documentToPrint = frame.contentDocument;
-    if (!documentToPrint) return frame.remove();
-    documentToPrint.open();
-    documentToPrint.write(`<html><head><title>${xmlEscape(exportFileStem)}</title><style>@page{size:A3 landscape;margin:8mm}html,body{margin:0}svg{width:100%;height:auto;max-height:calc(100vh - 2mm)}</style></head><body>${exportSvg()}</body></html>`);
-    documentToPrint.close();
-    window.setTimeout(() => { frame.contentWindow?.focus(); frame.contentWindow?.print(); window.setTimeout(() => frame.remove(), 1_000); }, 150);
+    const image = new Image();
+    const url = URL.createObjectURL(new Blob([exportSvg()], { type: "image/svg+xml;charset=utf-8" }));
+    const cleanup = () => URL.revokeObjectURL(url);
+    image.onerror = cleanup;
+    image.onload = () => {
+      const maxCanvasDimension = 6_000;
+      const ratio = Math.min(2, maxCanvasDimension / image.width, maxCanvasDimension / image.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * ratio));
+      canvas.height = Math.max(1, Math.round(image.height * ratio));
+      const context = canvas.getContext("2d");
+      if (!context) return cleanup();
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(async (jpegBlob) => {
+        if (jpegBlob) {
+          const pdf = createImagePdf(await jpegBlob.arrayBuffer(), canvas.width, canvas.height);
+          saveBlob(pdf, `${exportFileStem}.pdf`);
+        }
+        cleanup();
+      }, "image/jpeg", 0.94);
+    };
+    image.src = url;
   };
   const exportExcel = () => {
     setExportMenuOpen(false);
@@ -748,6 +731,34 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       { name: "xl/worksheets/sheet1.xml", content: `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>` },
     ];
     saveBlob(zipFiles(files), `${exportFileStem}.xlsx`);
+  };
+  const exportGanttExcel = () => {
+    setExportMenuOpen(false);
+    const nonWorkingDates = new Set(dates.filter((date) => getNonWorkingPeriod(date, periods, workingDateOverrides)));
+    const blob = createGanttExcel({
+      title: exportTitle,
+      start: period.start,
+      end: period.end,
+      dates,
+      display,
+      nonWorkingDates,
+      today,
+      rows: rows.map((row) => ({
+        kind: kindLabel(row.kind),
+        title: row.title,
+        status: statusLabel(row.status),
+        priority: row.priority || "",
+        depth: row.depth,
+        baselineRanges: row.baselineRanges,
+        plannedRanges: row.plannedRanges,
+        actualDates: row.actualDates,
+        achievedDates: row.achievedDates,
+        plannedHours: row.plannedHours,
+        actualHours: row.actualHours,
+        dueDate: row.dueDate,
+      })),
+    });
+    saveBlob(blob, `${exportFileStem}_ガント.xlsx`);
   };
   const exportMarkdown = () => {
     setExportMenuOpen(false);
@@ -888,7 +899,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
         </div>
         <div className="gantt-export" ref={exportMenuRef}>
           <button type="button" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((open) => !open)}>ファイル出力 ▾</button>
-          {exportMenuOpen && <div className="gantt-export-menu" role="menu"><button type="button" role="menuitem" onClick={exportMarkdown}><strong>Markdown</strong><small>AI確認用に予定・実績・期限を構造化して保存</small></button><button type="button" role="menuitem" onClick={exportPdf}><strong>PDF</strong><small>表示中の期間を横向きで印刷・保存</small></button><button type="button" role="menuitem" onClick={exportExcel}><strong>Excel</strong><small>タスク・予定・工数を表形式で保存</small></button><button type="button" role="menuitem" onClick={exportPng}><strong>PNG</strong><small>ガントチャートを画像として保存</small></button></div>}
+          {exportMenuOpen && <div className="gantt-export-menu" role="menu"><button type="button" role="menuitem" onClick={exportMarkdown}><strong>Markdown</strong><small>AI確認用に予定・実績・期限を構造化して保存</small></button><button type="button" role="menuitem" onClick={exportPdf}><strong>PDF</strong><small>表示中の期間を横向きで印刷・保存</small></button><button type="button" role="menuitem" onClick={exportExcel}><strong>Excel（一覧）</strong><small>タスク・予定・工数を表形式で保存</small></button><button type="button" role="menuitem" onClick={exportGanttExcel}><strong>Excel（ガント）</strong><small>日付列へ予定・実績を色付きバーで表示</small></button><button type="button" role="menuitem" onClick={exportPng}><strong>PNG</strong><small>ガントチャートを画像として保存</small></button></div>}
         </div>
       </div>
     </div>

@@ -1,19 +1,20 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
 import { taskProjectContexts } from "../projectContext";
-import type { GithubRepository, Goal, HistoryEntry, PlannedRange, ProjectTag, Task, TaskLink, UserProfile } from "../types";
-import { formatDateTime, generateId, localDateValue, mergeRanges, normalizeUrl, quickLinkNameForUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
-import { MarkdownText } from "./MarkdownText";
+import type { GithubRepository, Goal, HistoryEntry, ProjectTag, Task, TaskLink, UserProfile } from "../types";
+import { generateId, mergeRanges, normalizeUrl, quickLinkNameForUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
 import { RecurrenceSettingsEditor } from "./RecurrenceSettingsEditor";
 import { AttachmentsSection } from "./AttachmentsSection";
 import { AttachmentCards } from "./AttachmentCards";
 import { addAttachment, listAttachments, openAttachment, removeAttachment, type Attachment } from "../services/attachments";
-import { UserAvatar } from "./UserAvatar";
 import { Modal } from "./Modal";
 import { RelatedTasksModal } from "./RelatedTasksModal";
 import { TaskBranchesModal } from "./TaskBranchesModal";
 import { WorkDatePicker } from "./WorkDatePicker";
+import { ParentTaskSelector } from "./ParentTaskSelector";
+import { TaskHistoryList } from "./TaskHistoryList";
+import { TaskStatusPrompts } from "./TaskStatusPrompts";
+import { handleTextareaIndent, memoUrls, scheduleEffort } from "./taskDetailUtils";
 
 interface Props {
   task: Task | null;
@@ -26,6 +27,7 @@ interface Props {
   onUpdate: (changes: Partial<Task>, historyText?: string) => void;
   onDelete: () => void;
   onCreateChild: () => void;
+  onCreateSibling: () => void;
   onDocuments: () => void;
   onSharedDocuments: (projectId: string, documentId?: string) => void;
   onTagDocuments: () => void;
@@ -42,78 +44,7 @@ interface Props {
   onEditMemo: (id: string, text: string) => void;
 }
 
-const memoUrls = (text: string) => {
-  const matches = text.match(/https?:\/\/[^\s<>"'）)\]】]+/g) || [];
-  const normalized = matches.map((url) => url.replace(/[.,。、!?！？;；:：]+$/g, "")).map(normalizeUrl).filter((url): url is string => Boolean(url));
-  return [...new Set(normalized)];
-};
-
-const handleMemoIndent = (event: KeyboardEvent<HTMLTextAreaElement>, value: string, onChange: (value: string) => void) => {
-  if (event.key !== "Tab") return false;
-  event.preventDefault();
-  const textarea = event.currentTarget;
-  const indent = "    ";
-  const selectionStart = textarea.selectionStart;
-  const selectionEnd = textarea.selectionEnd;
-  const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
-  const nextBreak = value.indexOf("\n", selectionEnd);
-  const lineEnd = nextBreak < 0 ? value.length : nextBreak;
-  const lines = value.slice(lineStart, lineEnd).split("\n");
-  let replacement: string;
-  let nextStart: number;
-  let nextEnd: number;
-  if (event.shiftKey) {
-    const removed = lines.map((line) => Math.min(indent.length, line.match(/^ */)?.[0].length || 0));
-    replacement = lines.map((line, index) => line.slice(removed[index])).join("\n");
-    nextStart = Math.max(lineStart, selectionStart - (removed[0] || 0));
-    nextEnd = Math.max(nextStart, selectionEnd - removed.reduce((total, amount) => total + amount, 0));
-  } else {
-    replacement = lines.map((line) => `${indent}${line}`).join("\n");
-    nextStart = selectionStart + indent.length;
-    nextEnd = selectionEnd + lines.length * indent.length;
-  }
-  onChange(`${value.slice(0, lineStart)}${replacement}${value.slice(lineEnd)}`);
-  requestAnimationFrame(() => {
-    textarea.focus();
-    textarea.setSelectionRange(nextStart, nextEnd);
-  });
-  return true;
-};
-
-const scheduleEffort = (task: Task, range: PlannedRange) => {
-  const entries = Object.entries(task.dailyActualHours || {});
-  // 実績は日付だけではなく予定IDへ紐づける。同日の別予定へ流用しない。
-  const applicableEntries = entries.filter(([key]) => key.includes("::") && key.split("::")[1] === range.id);
-  const planned = Math.max(0, Number(range.plannedHours) || 0);
-  const actual = applicableEntries.reduce((sum, [, value]) => sum + Math.max(0, Number(value) || 0), 0);
-  const accuracy = planned > 0 ? Math.max(0, Math.round((1 - Math.abs(actual - planned) / planned) * 100)) : null;
-  const format = (value: number) => Number(value.toFixed(2)).toString();
-  return { planned: format(planned), actual: format(actual), accuracy };
-};
-
-const formatHoursValue = (value: number) => Number(value.toFixed(2)).toString();
-
-function CollapsibleMemo({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const [collapsible, setCollapsible] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (expanded) return;
-    const content = contentRef.current;
-    if (!content) return;
-    const measure = () => setCollapsible(content.scrollHeight > content.clientHeight + 1);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [text, expanded]);
-  return <div className={`memo-collapse ${collapsible ? "collapsible" : ""} ${expanded ? "expanded" : ""}`}>
-    <div ref={contentRef} className="memo-collapse-content"><MarkdownText text={text} /></div>
-    {(collapsible || expanded) && <button type="button" className="memo-collapse-toggle" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "折りたたむ" : "もっと見る"}</button>}
-  </div>;
-}
-
-export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
+export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onCreateSibling, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
   const [rangeStart, setRangeStart] = useState(todayValue());
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeTitle, setRangeTitle] = useState("");
@@ -140,12 +71,9 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const [memo, setMemo] = useState("");
   const memoInputRef = useRef<HTMLTextAreaElement>(null);
   const dragDepthRef = useRef(0);
-  const historyScrollRef = useRef<HTMLDivElement>(null);
   const taskMenuRef = useRef<HTMLDetailsElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleFocusRef = useRef("");
-  const [editingMemo, setEditingMemo] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [pendingWaitingStatus, setPendingWaitingStatus] = useState<Task["status"] | null>(null);
   const [pendingLeavingWaitingStatus, setPendingLeavingWaitingStatus] = useState<Task["status"] | null>(null);
@@ -157,8 +85,6 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [draggingFile, setDraggingFile] = useState(false);
   const [attachmentError, setAttachmentError] = useState("");
-  const [historyDate, setHistoryDate] = useState("");
-  const [historySearchVisible, setHistorySearchVisible] = useState(false);
   const [projectContextOpen, setProjectContextOpen] = useState(() => localStorage.getItem("chatTaskProjectContextOpen") !== "false");
   const [projectContextVisible, setProjectContextVisible] = useState(() => localStorage.getItem("chatTaskProjectContextVisible") !== "false");
   const [tagResourcesVisible, setTagResourcesVisible] = useState(() => localStorage.getItem("chatTaskTagResourcesVisible") !== "false");
@@ -182,28 +108,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       titleInputRef.current?.select();
     });
   }, [task?.id]);
-  useEffect(() => { setPendingAttachments([]); setAttachmentError(""); setHistorySearchVisible(false); setEditingLinkId(null); }, [task?.id]);
-  useLayoutEffect(() => {
-    setHistoryDate("");
-    let cancelled = false;
-    let secondFrame = 0;
-    const scrollToBottom = () => {
-      if (cancelled) return;
-      const container = historyScrollRef.current;
-      if (container) container.scrollTop = container.scrollHeight;
-    };
-    const firstFrame = requestAnimationFrame(() => {
-      scrollToBottom();
-      secondFrame = requestAnimationFrame(scrollToBottom);
-    });
-    const timers = [80, 240, 600].map((delay) => window.setTimeout(scrollToBottom, delay));
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(firstFrame);
-      cancelAnimationFrame(secondFrame);
-      timers.forEach(window.clearTimeout);
-    };
-  }, [task?.id, task?.history.length]);
+  useEffect(() => { setPendingAttachments([]); setAttachmentError(""); setEditingLinkId(null); }, [task?.id]);
   useEffect(() => {
     if (!task?.id) { setAllAttachments([]); return; }
     void listAttachments(task.id).then(setAllAttachments).catch((reason) => setAttachmentError(String(reason)));
@@ -268,7 +173,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   };
   const requestStatusChange = (status: Task["status"]) => {
     if (status === task.status) return;
-    if (task.waitingFollowUp && !WAITING_STATUSES.includes(status) && !isTerminalStatus(status)) {
+    if (task.waitingFollowUp && !WAITING_STATUSES.includes(status) && (!isTerminalStatus(status) || status === "done")) {
       setPendingLeavingWaitingStatus(status);
       return;
     }
@@ -649,41 +554,6 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const descendantIds = new Set<string>();
   const collectDescendants = (parentId: string) => allTasks.filter((item) => item.parentTaskId === parentId).forEach((item) => { if (!descendantIds.has(item.id)) { descendantIds.add(item.id); collectDescendants(item.id); } });
   collectDescendants(task.id);
-  const visibleHistory = task.history.filter((entry) => !(entry.type === "system" && entry.text.trim() === "プロジェクトから作業項目の予定を同期しました。"));
-  const historyDates = [...new Set(visibleHistory.map((entry) => localDateValue(entry.timestamp)).filter(Boolean))].sort().reverse();
-  const scrollToLatest = () => historyScrollRef.current?.scrollTo({ top: historyScrollRef.current.scrollHeight, behavior: "smooth" });
-  const scrollToHistoryDate = () => {
-    if (!historyDate) return;
-    const container = historyScrollRef.current;
-    const target = container?.querySelector<HTMLElement>(`[data-history-date="${historyDate}"]`);
-    if (!container || !target) return;
-    const top = target.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
-    container.scrollTo({ top: Math.max(0, top - 12), behavior: "smooth" });
-    target.classList.add("history-highlight");
-    window.setTimeout(() => target.classList.remove("history-highlight"), 1400);
-  };
-  const historyDateLabel = (date: string) => {
-    if (date === todayValue()) return "今日";
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const offset = yesterday.getTimezoneOffset();
-    const yesterdayValue = new Date(yesterday.getTime() - offset * 60_000).toISOString().slice(0, 10);
-    if (date === yesterdayValue) return "昨日";
-    return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", weekday: "short" }).format(new Date(`${date}T00:00:00`));
-  };
-  const historyGroups = visibleHistory.reduce<{ date: string; entries: HistoryEntry[] }[]>((groups, entry) => {
-    const date = localDateValue(entry.timestamp);
-    const current = groups[groups.length - 1];
-    if (current?.date === date) current.entries.push(entry);
-    else groups.push({ date, entries: [entry] });
-    return groups;
-  }, []);
-  const historyEntries = historyGroups.map((group) => <section className="history-date-group" key={group.date}>
-    <div className="history-date-label" data-history-date={group.date}><button type="button" onClick={() => { setHistoryDate(group.date); setHistorySearchVisible(true); }} title="この日付を検索">{historyDateLabel(group.date)}</button></div>
-    {group.entries.map((entry) => <Fragment key={entry.id}>{entry.type === "system"
-      ? <div className="system-entry">{entry.text}<time>{formatDateTime(entry.timestamp)}</time></div>
-        : <div className="memo-entry"><UserAvatar profile={profile} /><div className="memo-content"><div className="memo-head"><strong>{profile.displayName}</strong><time>{formatDateTime(entry.timestamp)}</time><span className="memo-actions">{editingMemo !== entry.id && <>{memoUrls(entry.text).some((url) => !task.links.some((link) => normalizeUrl(link.url) === url)) && <button className="memo-link-register" title="メモ内のURLを選んで関連リンクへ追加" onClick={() => openMemoLinkImport(entry.text)}>リンクを登録</button>}<button onClick={() => { setEditingMemo(entry.id); setEditingText(entry.text); }}>編集</button><button className="danger-text" onClick={() => onDeleteMemo(entry.id)}>削除</button></>}</span></div>{(entry.workTitle || entry.workPlannedHours !== undefined || entry.workActualHours !== undefined) && <div className="memo-work-title"><span>{entry.workTitle && <><small>対象作業</small><strong>{entry.workTitle}</strong></>}</span><span className="memo-work-effort">{entry.workPlannedHours !== undefined && <small>予定 <b>{formatHoursValue(entry.workPlannedHours)}h</b></small>}{entry.workActualHours !== undefined && <small>実績 <b>{formatHoursValue(entry.workActualHours)}h</b></small>}</span></div>}{editingMemo === entry.id ? <div><textarea rows={4} value={editingText} onChange={(event) => setEditingText(event.target.value)} onKeyDown={(event) => { if (handleMemoIndent(event, editingText, setEditingText)) return; if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) { event.preventDefault(); onEditMemo(entry.id, editingText); setEditingMemo(null); } }} /><div className="editor-buttons"><button onClick={() => setEditingMemo(null)}>キャンセル</button><button className="primary" onClick={() => { onEditMemo(entry.id, editingText); setEditingMemo(null); }}>保存</button></div></div> : <>{entry.text && <CollapsibleMemo text={entry.text} />}<AttachmentCards attachments={allAttachments.filter((attachment) => entry.attachmentIds?.includes(attachment.id))} quickLinkedAttachmentIds={ownLinkFiles} onQuickLink={addAttachmentQuickLink} onRenamed={(attachment, name) => setAllAttachments((current) => current.map((item) => item.id === attachment.id ? { ...item, name } : item))} /></>}</div></div>}</Fragment>)}
-  </section>);
   const closeTaskMenu = () => {
     if (taskMenuRef.current) taskMenuRef.current.open = false;
   };
@@ -700,6 +570,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         <div className="task-detail-menu-panel">
           <span className="task-menu-group-label">タスク操作</span>
           <button onClick={() => { closeTaskMenu(); onCreateChild(); }}>子タスク追加</button>
+          <button onClick={() => { closeTaskMenu(); onCreateSibling(); }}>同じ階層にタスクを追加</button>
           <button onClick={() => { closeTaskMenu(); window.dispatchEvent(new CustomEvent("chattask-open-waiting", { detail: { taskId: task.id } })); }}>{task.waitingFollowUp ? "待ち情報を編集" : "待ち箱へ入れる"}</button>
           {!task.waitingFollowUp && task.lastReleasedWaitingFollowUp && <button onClick={() => { closeTaskMenu(); onUpdate({ waitingFollowUp: task.lastReleasedWaitingFollowUp, status: task.lastReleasedWaitingStatus || "waiting-general", lastReleasedWaitingFollowUp: undefined, lastReleasedWaitingStatus: undefined }, "直前に解除した待ち状態を復元しました。"); }}>直前の待ち解除を取り消す</button>}
           <button onClick={() => { closeTaskMenu(); onDocuments(); }}>ドキュメント</button>
@@ -711,15 +582,18 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         </div>
       </details>
     </div>
-    {pendingWaitingStatus && <div className="task-waiting-choice" role="alertdialog" aria-label="待ち箱への登録を選択">
-      <div><strong>「{STATUS_LABELS[pendingWaitingStatus]}」へ変更します</strong><span>このタスクを待ち箱にも入れますか？</span></div>
-      <div><button type="button" onClick={() => setPendingWaitingStatus(null)}>変更をやめる</button><button type="button" onClick={() => { const status = pendingWaitingStatus; setPendingWaitingStatus(null); onUpdate({ status, waitingFollowUp: undefined }, `ステータスを「${STATUS_LABELS[status]}」へ変更しました。`); }}>ステータスだけ変更</button><button type="button" className="primary" onClick={() => { const status = pendingWaitingStatus; setPendingWaitingStatus(null); onUpdate({ status, waitingFollowUp: undefined }, `ステータスを「${STATUS_LABELS[status]}」へ変更しました。`); window.setTimeout(() => window.dispatchEvent(new CustomEvent("chattask-open-waiting", { detail: { taskId: task.id } })), 0); }}>待ち箱にも入れる</button></div>
-    </div>}
-    {pendingLeavingWaitingStatus && task.waitingFollowUp && <div className="task-waiting-choice" role="alertdialog" aria-label="待ち箱の解除を選択">
-      <div><strong>「{STATUS_LABELS[pendingLeavingWaitingStatus]}」へ変更します</strong><span>現在の待ち情報をどうしますか？</span></div>
-      <div><button type="button" onClick={() => setPendingLeavingWaitingStatus(null)}>変更をやめる</button><button type="button" onClick={() => { const status = pendingLeavingWaitingStatus; setPendingLeavingWaitingStatus(null); onUpdate({ status, waitingFollowUp: task.waitingFollowUp }, `ステータスを「${STATUS_LABELS[status]}」へ変更し、待ち箱には残しました。`); }}>待ち箱には残す</button><button type="button" className="primary" onClick={() => { const status = pendingLeavingWaitingStatus; const info = task.waitingFollowUp!; const releasedAt = new Date().toISOString(); setPendingLeavingWaitingStatus(null); onUpdate({ status, waitingFollowUp: undefined, lastReleasedWaitingFollowUp: info, lastReleasedWaitingStatus: task.status, waitingHistory: [...(task.waitingHistory || []), { id: generateId(), followUp: info, status: task.status, releasedAt, reason: "status-change" }] }, `ステータスを「${STATUS_LABELS[status]}」へ変更し、待ち箱を解除しました。`); window.dispatchEvent(new CustomEvent("chattask-drop-notice", { detail: { text: `「${task.title}」の待ちを解除しました。待ち箱から取り消せます。` } })); }}>待ち箱を解除する</button></div>
-    </div>}
-    {deleteConfirm && <div className="task-delete-confirm" role="alert"><span>「{task.title || "無題のタスク"}」を削除しますか？{allTasks.some((item) => item.parentTaskId === task.id) && " 子タスクは親なしに移動します。"}</span><div><button onClick={() => setDeleteConfirm(false)}>キャンセル</button><button className="danger" onClick={onDelete}>削除する</button></div></div>}
+    <TaskStatusPrompts
+      task={task}
+      allTasks={allTasks}
+      pendingWaitingStatus={pendingWaitingStatus}
+      pendingLeavingWaitingStatus={pendingLeavingWaitingStatus}
+      deleteConfirm={deleteConfirm}
+      onUpdate={onUpdate}
+      onDelete={onDelete}
+      onCancelWaiting={() => setPendingWaitingStatus(null)}
+      onCancelLeavingWaiting={() => setPendingLeavingWaitingStatus(null)}
+      onCancelDelete={() => setDeleteConfirm(false)}
+    />
     <div className="quick-links task-quick-links">
       <span>クイックリンク</span>
       <div className="quick-link-scroll">{task.links.map((link) => link.kind === "file" || link.attachmentId ? <button type="button" className="quick-file-link" key={link.id} title={`${link.label || "ファイル"}を開く`} onClick={() => link.attachmentId && void openAttachment(link.attachmentId)}><i aria-hidden="true">▧</i>{link.label || "ファイル"}</button> : <a key={link.id} href={link.url} target="_blank" rel="noreferrer">{link.label || new URL(link.url).hostname}</a>)}{inheritedParentLinks.map((link) => link.kind === "file" || link.attachmentId ? <button type="button" className="quick-file-link inherited-parent-link" key={`parent:${parentTask?.id}:${link.id}`} title={`${parentTask?.title || "親タスク"}から継承・${link.label || "ファイル"}を開く`} onClick={() => link.attachmentId && void openAttachment(link.attachmentId)}><i aria-hidden="true">↳</i><b aria-hidden="true">▧</b>{link.label || "ファイル"}</button> : <a className="inherited-parent-link" key={`parent:${parentTask?.id}:${link.id}`} href={link.url} target="_blank" rel="noreferrer" title={`${parentTask?.title || "親タスク"}から継承`} aria-label={`${link.label || new URL(link.url).hostname}（${parentTask?.title || "親タスク"}から継承）`}><i aria-hidden="true">↳</i>{link.label || new URL(link.url).hostname}</a>)}</div>
@@ -789,8 +663,8 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       </div></details>
       <AttachmentsSection taskId={task.id} refreshKey={attachmentRevision} quickLinkedAttachmentIds={ownLinkFiles} onQuickLink={addAttachmentQuickLink} onChanged={() => setAttachmentRevision((value) => value + 1)} onHistory={(text) => onUpdate({}, text)} />
     </div>}
-      <div className="history-panel">{historySearchVisible ? <div className="history-jump"><span>メモ履歴 {visibleHistory.length}件</span><select aria-label="移動する履歴の日付" value={historyDate} onChange={(event) => setHistoryDate(event.target.value)}><option value="">日付を選択</option>{historyDates.map((date) => <option key={date} value={date}>{date.replace(/-/g, "/")}</option>)}</select><button type="button" disabled={!historyDate} onClick={scrollToHistoryDate}>移動</button><button type="button" onClick={scrollToLatest}>最新へ</button><button type="button" onClick={() => setHistorySearchVisible(false)}>検索を閉じる</button></div> : <button type="button" className="history-search-trigger" onClick={() => setHistorySearchVisible(true)}>日付検索</button>}<div className="history-list" ref={historyScrollRef}>{historyEntries}</div>
-      <div className={`memo-composer ${draggingFile ? "dragging-file" : ""}`} onDragEnter={enterDropZone} onDragOver={(event) => event.preventDefault()} onDragLeave={leaveDropZone} onDrop={dropFiles}><textarea ref={memoInputRef} value={memo} onChange={(event) => setMemo(event.target.value)} onPaste={pasteFiles} onKeyDown={(event) => { if (handleMemoIndent(event, memo, setMemo)) return; if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); addMemo(); } }} placeholder="作業内容やメモを入力...（Tabで字下げ、Shift+Tabで解除、⌘/Ctrl + Enterで記録）" /><button className="primary" onClick={addMemo}>記録</button>{(attachmentBusy || draggingFile) && <div className="memo-drop-overlay">{attachmentBusy ? "ファイルを保存中..." : "ここにドロップして添付"}</div>}</div>
+      <div className="history-panel"><TaskHistoryList task={task} profile={profile} attachments={allAttachments} quickLinkedAttachmentIds={ownLinkFiles} onQuickLink={addAttachmentQuickLink} onRenamed={(attachment, name) => setAllAttachments((current) => current.map((item) => item.id === attachment.id ? { ...item, name } : item))} onDeleteMemo={onDeleteMemo} onEditMemo={onEditMemo} onOpenMemoLinkImport={openMemoLinkImport} />
+      <div className={`memo-composer ${draggingFile ? "dragging-file" : ""}`} onDragEnter={enterDropZone} onDragOver={(event) => event.preventDefault()} onDragLeave={leaveDropZone} onDrop={dropFiles}><textarea ref={memoInputRef} value={memo} onChange={(event) => setMemo(event.target.value)} onPaste={pasteFiles} onKeyDown={(event) => { if (handleTextareaIndent(event, memo, setMemo)) return; if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); addMemo(); } }} placeholder="作業内容やメモを入力...（Tabで字下げ、Shift+Tabで解除、⌘/Ctrl + Enterで記録）" /><button className="primary" onClick={addMemo}>記録</button>{(attachmentBusy || draggingFile) && <div className="memo-drop-overlay">{attachmentBusy ? "ファイルを保存中..." : "ここにドロップして添付"}</div>}</div>
       <AttachmentCards attachments={pendingAttachments} quickLinkedAttachmentIds={ownLinkFiles} onQuickLink={addAttachmentQuickLink} onRenamed={(attachment, name) => { setPendingAttachments((current) => current.map((item) => item.id === attachment.id ? { ...item, name } : item)); setAllAttachments((current) => current.map((item) => item.id === attachment.id ? { ...item, name } : item)); }} onRemove={(attachment) => { void removeAttachment(attachment.id).then(() => { setPendingAttachments((current) => current.filter((item) => item.id !== attachment.id)); setAttachmentRevision((value) => value + 1); }).catch((reason) => setAttachmentError(String(reason))); }} />
       {attachmentError && <div className="memo-attachment-error">{attachmentError}</div>}
     </div>
@@ -821,7 +695,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
             const projectOverdue = projectContext.status !== "completed" && (range.originalEndDate ? range.endDate > range.originalEndDate : range.endDate < todayValue());
             return <article className={`task-schedule-quick-item task-schedule-project-link schedule-status-${projectOverdue ? "overdue" : projectContext.status || "not-started"} ${projectContext.projectId ? "" : "is-unlinked"}`} key={range.id} role={projectContext.projectId ? "button" : undefined} tabIndex={projectContext.projectId ? 0 : undefined} onClick={() => { if (!projectContext.projectId) return; setScheduleQuickOpen(false); onOpenProject(projectContext.projectId); }} onKeyDown={(event) => { if (projectContext.projectId && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setScheduleQuickOpen(false); onOpenProject(projectContext.projectId); } }}><div><strong>{scheduleTitle(range)}</strong><span>{range.startDate === range.endDate ? range.startDate : `${range.startDate}〜${range.endDate}`}</span>{(range.description || range.note) && <small>{range.description || range.note}</small>}{effortView}</div><div className="task-schedule-project-meta"><span className={`task-schedule-project-status status-${projectContext.status || "unknown"}`}>{projectOverdue ? `遅延・${projectContext.label}` : projectContext.label}</span><span className="task-schedule-project-action">{projectContext.projectId ? "プロジェクトを開く ›" : "管理元を確認できません"}</span></div></article>;
           }
-          return <article className={`task-schedule-quick-item is-editable ${unscheduled ? "is-unscheduled" : `schedule-status-${overdue ? "overdue" : status}`} ${draggingRangeId === range.id ? "is-dragging" : ""} ${dragOverRangeId === range.id ? "is-drag-over" : ""}`} key={range.id} onDragOver={(event) => { const source = task.plannedRanges.find((item) => item.id === draggingRangeId); if (!source || source.startDate !== range.startDate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverRangeId(range.id); }} onDragLeave={() => setDragOverRangeId((current) => current === range.id ? "" : current)} onDrop={(event) => { event.preventDefault(); reorderRange(range); }}><span className="task-schedule-drag-handle" draggable={!projectManaged && !unscheduled} role="button" tabIndex={0} aria-label={`${scheduleTitle(range)}を並べ替え`} title={unscheduled ? "予定日を設定すると並べ替えできます" : "同じ開始日の予定内でドラッグして並べ替え"} onDragStart={(event) => { setDraggingRangeId(range.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", range.id); }} onDragEnd={() => { setDraggingRangeId(""); setDragOverRangeId(""); }}>⠿</span><div><strong>{scheduleTitle(range)}</strong><span>{unscheduled ? "予定なし" : range.startDate === range.endDate ? range.startDate : `${range.startDate}〜${range.endDate}`}</span>{(range.description || range.note) && <small>{range.description || range.note}</small>}{effortView}</div><div className="task-schedule-quick-item-actions"><select className={overdue ? "is-overdue" : ""} aria-label={`${scheduleTitle(range)}の状態`} value={status} onChange={(event) => updateRangeStatus(range, event.target.value as NonNullable<typeof range.status>)}><option value="not-started">{overdue ? "遅延・未着手" : "未着手"}</option><option value="in-progress">{overdue ? "遅延・進行中" : "進行中"}</option><option value="completed">完了</option></select>{!projectManaged && <><button type="button" onClick={() => { loadRangeDraft(range); setQuickScheduleAdding(true); }}>詳細編集</button><button type="button" className="task-schedule-delete" onClick={() => deleteRange(range)}>削除</button></>}</div></article>;
+          return <article className={`task-schedule-quick-item is-editable ${unscheduled ? "is-unscheduled" : `schedule-status-${overdue ? "overdue" : status}`} ${draggingRangeId === range.id ? "is-dragging" : ""} ${dragOverRangeId === range.id ? "is-drag-over" : ""}`} key={range.id} onDragOver={(event) => { const source = task.plannedRanges.find((item) => item.id === draggingRangeId); if (!source || source.startDate !== range.startDate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverRangeId(range.id); }} onDragLeave={() => setDragOverRangeId((current) => current === range.id ? "" : current)} onDrop={(event) => { event.preventDefault(); reorderRange(range); }}><span className="task-schedule-drag-handle" draggable={!projectManaged && !unscheduled} role="button" tabIndex={0} aria-label={`${scheduleTitle(range)}を並べ替え`} title={unscheduled ? "予定日を設定すると並べ替えできます" : "同じ開始日の予定内でドラッグして並べ替え"} onDragStart={(event) => { setDraggingRangeId(range.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", range.id); }} onDragEnd={() => { setDraggingRangeId(""); setDragOverRangeId(""); }}>⠿</span><div><strong>{scheduleTitle(range)}</strong><span>{unscheduled ? "予定なし" : range.startDate === range.endDate ? range.startDate : `${range.startDate}〜${range.endDate}`}</span>{(range.description || range.note) && <small>{range.description || range.note}</small>}{effortView}</div><div className="task-schedule-quick-item-actions"><select className={overdue ? "is-overdue" : ""} aria-label={`${scheduleTitle(range)}の状態`} value={status} onChange={(event) => updateRangeStatus(range, event.target.value as NonNullable<typeof range.status>)}><option value="not-started">{overdue ? "遅延・未着手" : "未着手"}</option><option value="in-progress">{overdue ? "遅延・進行中" : "進行中"}</option><option value="completed">完了</option></select>{!projectManaged && <><button type="button" onClick={() => { loadRangeDraft(range); setQuickScheduleAdding(true); }}>詳細編集</button><button type="button" className="task-schedule-delete" aria-label={`予定「${scheduleTitle(range)}」を削除`} onClick={() => deleteRange(range)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg><span>削除</span></button></>}</div></article>;
         })}{!task.plannedRanges.length && !(task.unscheduledPlans || []).length && <div className="task-schedule-quick-empty"><strong>予定はまだありません</strong><span>右上の「予定を追加」から、このタスクの作業予定を登録できます。</span></div>}</div>
         </section>
         {quickScheduleAdding ? <section className="task-schedule-quick-form">
@@ -849,32 +723,4 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       </div>
     </Modal>}
   </section>;
-}
-
-function ParentTaskSelector({ task, candidates, onChange }: { task: Task; candidates: Task[]; onChange: (parentTaskId: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const parent = candidates.find((item) => item.id === task.parentTaskId);
-  const normalizedQuery = query.trim().toLowerCase();
-  const matches = candidates.filter((item) => !normalizedQuery || `${item.title} ${item.description}`.toLowerCase().includes(normalizedQuery));
-  const choose = (parentTaskId: string) => {
-    onChange(parentTaskId);
-    setOpen(false);
-    setQuery("");
-  };
-  return <div className="parent-task-field">
-    <small>親タスク</small>
-    <button type="button" className="parent-task-trigger" onClick={() => setOpen(true)}><span>{parent?.title || "親タスクなし"}</span><b>{parent ? "変更" : "検索"}</b></button>
-    {open && createPortal(<div className="linked-task-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <section className="linked-task-picker parent-task-picker" role="dialog" aria-modal="true" aria-label="親タスクを検索">
-        <header><div><strong>親タスクを選択</strong><small>タスク名・説明で検索できます</small></div><button type="button" onClick={() => setOpen(false)}>×</button></header>
-        <div className="linked-task-picker-search"><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="親タスクを検索..." /></div>
-        <div className="linked-task-picker-results"><section><h4>{normalizedQuery ? "検索結果" : "すべてのタスク"}</h4>
-          {matches.map((item) => <button type="button" className={`linked-task-choice ${item.id === task.parentTaskId ? "selected" : ""}`} key={item.id} onClick={() => choose(item.id)}><span><strong>{item.title || "無題のタスク"}</strong><small>{item.description || "説明なし"}</small></span><span><b>{item.id === task.parentTaskId ? "選択中" : "選択"}</b></span></button>)}
-          {!matches.length && <p>該当するタスクはありません。</p>}
-        </section></div>
-        <footer><button type="button" className="danger-text" disabled={!task.parentTaskId} onClick={() => choose("")}>親タスクとの関連を解除</button><button type="button" onClick={() => setOpen(false)}>キャンセル</button></footer>
-      </section>
-    </div>, document.body)}
-  </div>;
 }
