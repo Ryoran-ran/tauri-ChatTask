@@ -271,20 +271,31 @@ textarea { resize: vertical; line-height: 1.55; }
 .task-branch-name-copy span { flex: none; color: #2563eb; font-size: .62rem; font-weight: 700; }
 .task-branch-rename-form { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .3rem; }
 .task-branch-rename-form input { min-width: 0; height: 34px; border-color: #93c5fd; border-radius: 8px; padding: .35rem .5rem; background: #fff; color: #1e293b; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .72rem; }
-.task-branch-rename-form button { min-height: 32px; border-radius: 8px; padding: .32rem .5rem; font-size: .62rem; }
+.task-branch-rename-form button { min-width: 54px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; padding: 0 .6rem; box-shadow: 0 1px 2px rgb(15 23 42 / 6%); font-size: .62rem; font-weight: 750; white-space: nowrap; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, color .15s ease, transform .15s ease; }
+.task-branch-rename-cancel { border: 1px solid #cbd5e1; background: #fff; color: #475569; }
+.task-branch-rename-cancel:hover { border-color: #94a3b8; background: #f8fafc; color: #334155; box-shadow: 0 3px 8px rgb(15 23 42 / 9%); transform: translateY(-1px); }
+.task-branch-rename-submit { border: 1px solid #2563eb; background: #2563eb; color: #fff; box-shadow: 0 2px 6px rgb(37 99 235 / 22%) !important; }
+.task-branch-rename-submit:hover:not(:disabled) { border-color: #1d4ed8; background: #1d4ed8; box-shadow: 0 4px 10px rgb(37 99 235 / 28%) !important; transform: translateY(-1px); }
+.task-branch-rename-form button:active { box-shadow: 0 1px 2px rgb(15 23 42 / 8%) !important; transform: translateY(0); }
+.task-branch-rename-form button:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 2px; }
 .task-branch-command-actions { display: flex; align-items: center; justify-content: flex-end; gap: .3rem; flex-wrap: wrap; }
 .task-branch-command-actions button, .task-branch-command-actions a { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; padding: .34rem .52rem; font-size: .64rem; font-weight: 700; white-space: nowrap; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, color .15s ease, transform .15s ease; }
 .task-branch-command-actions button { border: 1px solid #dbe3ee; background: #f8fafc; box-shadow: 0 1px 2px rgb(15 23 42 / 5%); color: #475569; }
 .task-branch-command-actions button:hover { border-color: #93c5fd; background: #eff6ff; box-shadow: 0 3px 8px rgb(30 64 175 / 10%); color: #1d4ed8; transform: translateY(-1px); }
 .task-branch-command-actions .task-pr-create-button { border-color: #bfdbfe; background: #eff6ff; color: #2563eb; }
-.task-branch-command-actions .task-branch-create-button { border-color: #c4b5fd; background: #f5f3ff; color: #6d28d9; }
-.task-branch-command-actions .task-branch-create-button:hover { border-color: #a78bfa; background: #ede9fe; color: #5b21b6; }
-.task-branch-command-actions .task-branch-rename-button { background: #fff; }
+.task-branch-command-actions .task-branch-more-button { width: 32px; min-width: 32px; padding: 0; background: #fff; font-size: .9rem; letter-spacing: .04em; }
+.task-branch-command-actions .task-branch-more-button[aria-expanded="true"] { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
 .task-branch-command-actions button.danger-text { width: 30px; min-width: 30px; height: 30px; min-height: 30px; border: 1px solid transparent; border-radius: 999px; padding: 0; background: transparent; box-shadow: none; color: #dc2626; }
 .task-branch-command-actions button.danger-text:hover { border-color: #fecdd3; background: #fff1f2; box-shadow: none; color: #be123c; }
 .task-branch-command-actions a { border: 1px solid #bfdbfe; background: #eff6ff; color: #2563eb; text-decoration: none; }
 .task-branch-command-actions a:hover { border-color: #60a5fa; background: #dbeafe; box-shadow: 0 3px 8px rgb(30 64 175 / 10%); transform: translateY(-1px); }
-.task-branches-summary > button:focus-visible, .task-repository-branch-card > header > :is(a, .task-pr-target-header-button):focus-visible, .task-branch-command-actions > :is(button, a):focus-visible { outline: 3px solid #bfdbfe; outline-offset: 2px; }
+.task-branch-secondary-actions { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: .35rem; border-top: 1px solid #e2e8f0; padding-top: .4rem; }
+.task-branch-secondary-actions::before { margin-right: auto; color: #94a3b8; content: "その他の操作"; font-size: .58rem; font-weight: 700; }
+.task-branch-secondary-actions button { min-height: 30px; border: 1px solid #dbe3ee; border-radius: 7px; padding: .3rem .55rem; background: #fff; color: #475569; font-size: .62rem; font-weight: 700; }
+.task-branch-secondary-actions button:hover { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+.task-branch-secondary-actions .task-branch-create-button { border-color: #c4b5fd; background: #f5f3ff; color: #6d28d9; }
+.task-branch-secondary-actions .task-branch-create-button:hover { border-color: #a78bfa; background: #ede9fe; color: #5b21b6; }
+.task-branches-summary > button:focus-visible, .task-repository-branch-card > header > :is(a, .task-pr-target-header-button):focus-visible, .task-branch-command-actions > :is(button, a):focus-visible, .task-branch-secondary-actions > button:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 2px; }
 .task-branches-summary > button:active, .task-repository-branch-card > header > :is(a, .task-pr-target-header-button):active, .task-branch-command-actions > :is(button, a):active { box-shadow: 0 1px 2px rgb(15 23 42 / 6%); transform: translateY(0); }
 .task-pr-create-menu { position: relative; }
 .task-pr-create-menu > summary { list-style: none; border: 1px solid #bfdbfe; border-radius: 5px; padding: .32rem .48rem; background: white; color: #2563eb; cursor: pointer; font-size: .64rem; white-space: nowrap; }

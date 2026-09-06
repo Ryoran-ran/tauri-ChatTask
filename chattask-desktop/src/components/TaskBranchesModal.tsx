@@ -47,6 +47,7 @@ export function TaskBranchesModal({ taskId, taskTitle, repositoryBranches, tag, 
   const [pullRequestTarget, setPullRequestTarget] = useState<{ repository: GithubRepository; branchName: string } | null>(null);
   const [renamingBranch, setRenamingBranch] = useState<{ repositoryId: string; originalName: string; name: string } | null>(null);
   const [deletingBranch, setDeletingBranch] = useState<{ repositoryId: string; repositoryName: string; name: string } | null>(null);
+  const [actionMenu, setActionMenu] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const saved = savedExpandedRepositories(taskId);
     return new Set(saved ?? (repositories.length <= 2 ? repositories.map((repository) => repository.id) : repositories.slice(0, 1).map((repository) => repository.id)));
@@ -61,6 +62,19 @@ export function TaskBranchesModal({ taskId, taskTitle, repositoryBranches, tag, 
   const totalBranches = Object.values(groups).reduce((total, names) => total + names.length, 0);
   useEffect(() => { taskSaveHandler.current = onSave; }, [onSave]);
   useEffect(() => { repositorySaveHandler.current = onSaveRepositories; }, [onSaveRepositories]);
+  useEffect(() => {
+    if (!actionMenu) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest("[data-branch-actions]")) setActionMenu("");
+    };
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setActionMenu(""); };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [actionMenu]);
   useEffect(() => {
     if (!taskSaveInitialized.current) { taskSaveInitialized.current = true; return; }
     const repositoryIds = new Set([...Object.keys(groups), ...Object.keys(taskTargets)]);
@@ -116,18 +130,21 @@ export function TaskBranchesModal({ taskId, taskTitle, repositoryBranches, tag, 
     const onlyTargetUrl = targets.length === 1 ? githubPullRequestUrl(repository.url, name, targets[0]) : null;
     const isRenaming = renamingBranch?.repositoryId === repository.id && renamingBranch.originalName === name;
     return <div key={name}>{isRenaming
-      ? <form className="task-branch-rename-form" onSubmit={(event) => { event.preventDefault(); renameBranch(repository.id, name, renamingBranch.name); }}><input autoFocus aria-label={`${name}の新しいブランチ名`} value={renamingBranch.name} onChange={(event) => setRenamingBranch({ ...renamingBranch, name: event.target.value })} spellCheck={false} /><button type="button" onClick={() => setRenamingBranch(null)}>取消</button><button type="submit" className="primary" disabled={!renamingBranch.name.trim()}>変更</button></form>
+      ? <form className="task-branch-rename-form" onSubmit={(event) => { event.preventDefault(); renameBranch(repository.id, name, renamingBranch.name); }}><input autoFocus aria-label={`${name}の新しいブランチ名`} value={renamingBranch.name} onChange={(event) => setRenamingBranch({ ...renamingBranch, name: event.target.value })} spellCheck={false} /><button type="button" className="task-branch-rename-cancel" onClick={() => setRenamingBranch(null)}>取消</button><button type="submit" className="task-branch-rename-submit" disabled={!renamingBranch.name.trim()}>変更</button></form>
       : <button type="button" className="task-branch-name-copy" title="ブランチ名をコピー" onClick={() => void copy(name, `${key}:name`)}><code>{name}</code><span>{copied === `${key}:name` ? "コピー済み" : "名前をコピー"}</span></button>}
       <div className="task-branch-command-actions">
-        <button type="button" className="task-branch-rename-button" disabled={isRenaming} onClick={() => setRenamingBranch({ repositoryId: repository.id, originalName: name, name })}>名前変更</button>
-        <button type="button" className="task-branch-create-button" title="ブランチ作成コマンドをコピー" onClick={() => void copy(`git switch -c ${shellValue(name)}`, `${key}:create`)}>{copied === `${key}:create` ? "コピー済み" : "作成"}</button>
         <button type="button" onClick={() => void copy(`git switch ${shellValue(name)}`, `${key}:switch`)}>{copied === `${key}:switch` ? "コピー済み" : "切替"}</button>
         <button type="button" onClick={() => void copy(`git push -u origin ${shellValue(name)}`, `${key}:push`)}>{copied === `${key}:push` ? "コピー済み" : "Push"}</button>
         {targets.length > 1
           ? <button type="button" className="task-pr-create-button" onClick={() => setPullRequestTarget({ repository, branchName: name })}>PR作成 ▾</button>
           : <a href={onlyTargetUrl || fallbackUrl || undefined} target="_blank" rel="noreferrer" title={`${name}から${targets[0] ? ` ${targets[0]} へ` : ""}プルリクエストを作成`}>{targets[0] ? `PR → ${targets[0]}` : "PR作成"} ↗</a>}
-        <button type="button" className="danger-text" aria-label={`${name}を削除`} title="削除" onClick={() => setDeletingBranch({ repositoryId: repository.id, repositoryName: repository.name || "GitHubリポジトリ", name })}>×</button>
+        <button type="button" className="task-branch-more-button" data-branch-actions aria-label={`${name}のその他の操作`} aria-expanded={actionMenu === key} title="その他の操作" onClick={() => setActionMenu((current) => current === key ? "" : key)}>…</button>
+        <button type="button" className="danger-text" aria-label={`${name}を削除`} title="削除" onClick={() => { setActionMenu(""); setDeletingBranch({ repositoryId: repository.id, repositoryName: repository.name || "GitHubリポジトリ", name }); }}>×</button>
       </div>
+      {actionMenu === key && <div className="task-branch-secondary-actions" data-branch-actions role="menu" aria-label={`${name}のその他の操作`}>
+        <button type="button" role="menuitem" onClick={() => { setRenamingBranch({ repositoryId: repository.id, originalName: name, name }); setActionMenu(""); }}>名前を変更</button>
+        <button type="button" role="menuitem" className="task-branch-create-button" onClick={() => void copy(`git switch -c ${shellValue(name)}`, `${key}:create`)}>{copied === `${key}:create` ? "コピー済み" : "作成コマンドをコピー"}</button>
+      </div>}
     </div>;
   })}</div> : <p className="task-repository-no-branches">ブランチは未設定です。</p>;
   const targetEditorRepository = repositories.find((repository) => repository.id === targetEditorRepositoryId);
