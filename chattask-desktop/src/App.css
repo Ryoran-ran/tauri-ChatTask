@@ -269,11 +269,17 @@ textarea { resize: vertical; line-height: 1.55; }
 .task-branch-name-copy:hover { background: #eff6ff; }
 .task-branch-name-copy code { overflow: hidden; color: #1e293b; font-size: .76rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .task-branch-name-copy span { flex: none; color: #2563eb; font-size: .62rem; font-weight: 700; }
-.task-branch-command-actions { display: flex; align-items: center; gap: .3rem; }
+.task-branch-rename-form { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .3rem; }
+.task-branch-rename-form input { min-width: 0; height: 34px; border-color: #93c5fd; border-radius: 8px; padding: .35rem .5rem; background: #fff; color: #1e293b; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .72rem; }
+.task-branch-rename-form button { min-height: 32px; border-radius: 8px; padding: .32rem .5rem; font-size: .62rem; }
+.task-branch-command-actions { display: flex; align-items: center; justify-content: flex-end; gap: .3rem; flex-wrap: wrap; }
 .task-branch-command-actions button, .task-branch-command-actions a { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; padding: .34rem .52rem; font-size: .64rem; font-weight: 700; white-space: nowrap; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, color .15s ease, transform .15s ease; }
 .task-branch-command-actions button { border: 1px solid #dbe3ee; background: #f8fafc; box-shadow: 0 1px 2px rgb(15 23 42 / 5%); color: #475569; }
 .task-branch-command-actions button:hover { border-color: #93c5fd; background: #eff6ff; box-shadow: 0 3px 8px rgb(30 64 175 / 10%); color: #1d4ed8; transform: translateY(-1px); }
 .task-branch-command-actions .task-pr-create-button { border-color: #bfdbfe; background: #eff6ff; color: #2563eb; }
+.task-branch-command-actions .task-branch-create-button { border-color: #c4b5fd; background: #f5f3ff; color: #6d28d9; }
+.task-branch-command-actions .task-branch-create-button:hover { border-color: #a78bfa; background: #ede9fe; color: #5b21b6; }
+.task-branch-command-actions .task-branch-rename-button { background: #fff; }
 .task-branch-command-actions button.danger-text { width: 30px; min-width: 30px; height: 30px; min-height: 30px; border: 1px solid transparent; border-radius: 999px; padding: 0; background: transparent; box-shadow: none; color: #dc2626; }
 .task-branch-command-actions button.danger-text:hover { border-color: #fecdd3; background: #fff1f2; box-shadow: none; color: #be123c; }
 .task-branch-command-actions a { border: 1px solid #bfdbfe; background: #eff6ff; color: #2563eb; text-decoration: none; }
@@ -302,6 +308,17 @@ textarea { resize: vertical; line-height: 1.55; }
 .task-pr-destination-dialog > label input { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .task-pr-destination-dialog .button-link { display: inline-flex; min-height: 38px; align-items: center; border: 1px solid #2563eb; border-radius: 7px; padding: .5rem .75rem; background: #2563eb; color: white; font-size: .72rem; font-weight: 700; text-decoration: none; }
 .task-pr-destination-dialog .button-link.disabled { opacity: .4; pointer-events: none; }
+.task-branch-delete-dialog { display: grid; gap: .8rem; }
+.task-branch-delete-warning { display: flex; align-items: center; gap: .7rem; border: 1px solid #fecdd3; border-radius: 10px; padding: .75rem; background: #fff1f2; }
+.task-branch-delete-warning > span { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 999px; background: #e11d48; color: #fff; font-size: 1rem; font-weight: 850; }
+.task-branch-delete-warning > div { display: grid; gap: .12rem; }
+.task-branch-delete-warning strong { color: #881337; font-size: .78rem; }
+.task-branch-delete-warning small { color: #9f1239; font-size: .65rem; }
+.task-branch-delete-dialog dl { display: grid; gap: .45rem; margin: 0; border: 1px solid #e2e8f0; border-radius: 9px; padding: .65rem .75rem; background: #f8fafc; }
+.task-branch-delete-dialog dl > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; gap: .55rem; }
+.task-branch-delete-dialog dt { color: #64748b; font-size: .65rem; font-weight: 700; }
+.task-branch-delete-dialog dd { min-width: 0; margin: 0; overflow: hidden; color: #1e293b; font-size: .72rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.task-branch-delete-dialog code { color: #be123c; font-size: .72rem; }
 .task-pr-target-settings { display: grid; gap: .45rem; border: 1px solid #dbeafe; border-radius: 8px; padding: .6rem; background: #f8fbff; }
 .task-pr-target-settings > header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .task-pr-target-settings > header > div { display: grid; gap: .08rem; }
