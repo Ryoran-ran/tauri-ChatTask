@@ -33,8 +33,25 @@ const languageLabels: Record<string, string> = {
   json: "JSON", sql: "SQL", bash: "Bash", text: "Text",
 };
 
+const indentWidth = (value: string) => value.replace(/\t/g, "    ").length;
+const removeIndent = (line: string, width: number) => {
+  let offset = 0;
+  let removed = 0;
+  while (offset < line.length && removed < width) {
+    if (line[offset] === " ") {
+      removed += 1;
+      offset += 1;
+    } else if (line[offset] === "\t") {
+      removed += 4;
+      offset += 1;
+    } else break;
+  }
+  return line.slice(offset);
+};
+
 const normalizeSeparatorsWithLineMap = (text: string) => {
   let inCodeFence = false;
+  let codeFenceIndent = 0;
   let followsClosedFence = false;
   const lines: { text: string; sourceLine: number }[] = [];
   const sourceLines = text.replace(/\r\n?/g, "\n").split("\n");
@@ -42,15 +59,19 @@ const normalizeSeparatorsWithLineMap = (text: string) => {
   const unmatchedFenceIndex = fenceIndexes.length % 2 ? fenceIndexes[fenceIndexes.length - 1] : -1;
   sourceLines.forEach((sourceLineText, index) => {
     const sourceLine = index + 1;
-    const fence = sourceLineText.match(/^\s*(```.*)$/);
+    const fence = sourceLineText.match(/^(\s*)(```.*)$/);
     const wasInCodeFence = inCodeFence;
     // Nested lists often indent fences by four or more spaces, which Markdown
     // interprets as ordinary indented code instead of a fence. Normalize only
     // for preview; keep the stored source untouched.
     let line = fence
-      ? index === unmatchedFenceIndex ? `\\${fence[1]}` : fence[1]
-      : sourceLineText;
-    if (fence && index !== unmatchedFenceIndex) inCodeFence = !inCodeFence;
+      ? index === unmatchedFenceIndex ? `\\${fence[2]}` : fence[2]
+      : inCodeFence && codeFenceIndent > 0 ? removeIndent(sourceLineText, codeFenceIndent) : sourceLineText;
+    if (fence && index !== unmatchedFenceIndex) {
+      if (!inCodeFence) codeFenceIndent = indentWidth(fence[1]);
+      inCodeFence = !inCodeFence;
+      if (!inCodeFence) codeFenceIndent = 0;
+    }
     if (fence && wasInCodeFence && !inCodeFence) {
       followsClosedFence = true;
     } else if (!inCodeFence && followsClosedFence && line.trim()) {
@@ -99,10 +120,23 @@ export function MarkdownText({ text, preserveLineBreaks = true, sourceMapped = f
       breaks: preserveLineBreaks,
       gfm: true,
     } as const;
+    const tokens = marked.lexer(normalized, options);
+    const originalLines = text.replace(/\r\n?/g, "\n").split("\n");
+    const codeIndentColumns: number[] = [];
+    let trackedLine = 1;
+    tokens.forEach((token) => {
+      const raw = token.raw || "";
+      const sourceLine = normalizedResult.lineMap[trackedLine - 1] || trackedLine;
+      if (token.type === "code") {
+        const fenceIndent = originalLines[sourceLine - 1]?.match(/^([ \t]*)```/)?.[1] || "";
+        codeIndentColumns.push(fenceIndent.replace(/\t/g, "    ").length);
+      }
+      trackedLine += (raw.match(/\n/g) || []).length;
+    });
     let rendered: string;
     if (sourceMapped) {
       let line = 1;
-      rendered = marked.lexer(normalized, options).map((token) => {
+      rendered = tokens.map((token) => {
         const normalizedStartLine = line;
         const raw = token.raw || "";
         const newlineCount = (raw.match(/\n/g) || []).length;
@@ -124,12 +158,12 @@ export function MarkdownText({ text, preserveLineBreaks = true, sourceMapped = f
         return tokenTemplate.innerHTML;
       }).join("");
     } else {
-      rendered = marked.parse(normalized, options) as string;
+      rendered = marked.parser(tokens, options);
     }
     const clean = DOMPurify.sanitize(rendered);
     const template = document.createElement("template"); template.innerHTML = clean;
     template.content.querySelectorAll("a").forEach((link) => { link.target = "_blank"; link.rel = "noopener noreferrer"; });
-    template.content.querySelectorAll("pre").forEach((pre) => {
+    template.content.querySelectorAll("pre").forEach((pre, index) => {
       const code = pre.querySelector("code");
       const declared = Array.from(code?.classList || []).find((name) => name.startsWith("language-"))?.slice("language-".length).toLowerCase() || "";
       const language = languageAliases[declared];
@@ -138,6 +172,11 @@ export function MarkdownText({ text, preserveLineBreaks = true, sourceMapped = f
         code.classList.add("hljs");
       }
       pre.classList.add("markdown-code-block");
+      const indentColumns = Math.min(codeIndentColumns[index] || 0, 24);
+      if (indentColumns > 0) {
+        pre.dataset.codeIndent = String(indentColumns);
+        pre.style.marginLeft = `${indentColumns * .65}rem`;
+      }
       const label = document.createElement("span");
       label.className = "markdown-code-language";
       label.textContent = languageLabels[language] || declared || "Code";
