@@ -11,6 +11,15 @@ const WAITING_LABELS: Record<WaitingKind, string> = {
 
 type UpdateTask = (id: string, changes: Partial<Task>, history?: string) => void;
 
+const rememberedWaitingParty = (task?: Task) => {
+  if (!task) return "";
+  if (task.waitingFollowUp?.party?.trim()) return task.waitingFollowUp.party.trim();
+  if (task.lastReleasedWaitingFollowUp?.party?.trim()) return task.lastReleasedWaitingFollowUp.party.trim();
+  return [...(task.waitingHistory || [])]
+    .sort((a, b) => b.releasedAt.localeCompare(a.releasedAt))
+    .find((entry) => entry.followUp.party?.trim())?.followUp.party?.trim() || "";
+};
+
 export function WaitingBoxModal({ tasks, initialTaskId, onUpdateTask, onOpenTask, onClose }: {
   tasks: Task[];
   initialTaskId?: string;
@@ -26,7 +35,7 @@ export function WaitingBoxModal({ tasks, initialTaskId, onUpdateTask, onOpenTask
   const editingTask = tasks.find((task) => task.id === editingId);
   const existing = editingTask?.waitingFollowUp;
   const [kind, setKind] = useState<WaitingKind>(existing?.kind || "go");
-  const [party, setParty] = useState(existing?.party || "");
+  const [party, setParty] = useState(rememberedWaitingParty(editingTask));
   const [reviewDate, setReviewDate] = useState(existing?.reviewDate || "");
   const [memo, setMemo] = useState(existing?.memo || "");
   const [tab, setTab] = useState<"current" | "history">("current");
@@ -39,7 +48,7 @@ export function WaitingBoxModal({ tasks, initialTaskId, onUpdateTask, onOpenTask
 
   const beginEdit = (task: Task) => {
     setDeleteWaitingConfirm(false);
-    setEditingId(task.id); setKind(task.waitingFollowUp?.kind || "go"); setParty(task.waitingFollowUp?.party || "");
+    setEditingId(task.id); setKind(task.waitingFollowUp?.kind || "go"); setParty(rememberedWaitingParty(task));
     setReviewDate(task.waitingFollowUp?.reviewDate || ""); setMemo(task.waitingFollowUp?.memo || "");
   };
   const save = () => {
