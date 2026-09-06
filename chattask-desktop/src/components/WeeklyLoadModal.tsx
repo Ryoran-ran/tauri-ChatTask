@@ -3,6 +3,7 @@ import type { NonWorkingPeriod, ProjectTag, Task } from "../types";
 import { addDays, getNonWorkingPeriod, isRecurringDue, plannedHoursForDate, plannedRangeHoursForDate, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { TagIcon } from "./TagIcon";
+import { WorkDatePicker } from "./WorkDatePicker";
 
 const dateObject = (value: string) => new Date(`${value}T12:00:00`);
 const weekStart = (value: string) => {
@@ -15,15 +16,7 @@ const dateLabel = (value: string) => {
   const date = dateObject(value);
   return `${date.getMonth() + 1}/${date.getDate()}`;
 };
-const weekLabel = (start: string, end: string) => {
-  const from = dateObject(start);
-  const to = dateObject(end);
-  const fromLabel = `${from.getFullYear()}年${from.getMonth() + 1}月${from.getDate()}日`;
-  const toLabel = from.getFullYear() === to.getFullYear()
-    ? `${to.getMonth() + 1}月${to.getDate()}日`
-    : `${to.getFullYear()}年${to.getMonth() + 1}月${to.getDate()}日`;
-  return `${fromLabel}〜${toLabel}`;
-};
+const weekdayLabel = (value: string) => ["日", "月", "火", "水", "木", "金", "土"][dateObject(value).getDay()];
 const loadTone = (hours: number, capacity: number) => hours > capacity ? "over" : hours >= capacity * .8 ? "high" : hours > 0 ? "normal" : "empty";
 type LoadDisplay = "work" | "task";
 type LoadWorkRow = { id: string; title: string; period: string; daily: number[]; total: number };
@@ -99,7 +92,7 @@ export function WeeklyLoadModal({ tasks, tags, periods, onSelect, onClose }: {
   return <Modal title="週間予定" wide onClose={onClose}>
     <div className="weekly-load-view">
       <div className="weekly-load-controls">
-        <div className="weekly-load-date-nav"><button type="button" onClick={() => setAnchor(addDays(anchor, -7))}>← 前週</button><strong>{weekLabel(anchor, days[6])}</strong><button type="button" onClick={() => setAnchor(weekStart(today))}>今週</button><button type="button" onClick={() => setAnchor(addDays(anchor, 7))}>次週 →</button></div>
+        <div className="weekly-load-date-nav"><button type="button" onClick={() => setAnchor(addDays(anchor, -7))}>← 前週</button><label className="weekly-load-start-date"><span>開始日</span><WorkDatePicker value={anchor} onChange={setAnchor} ariaLabel="週間予定の開始日" allowClear={false} /></label><strong>〜 {dateLabel(days[6])}</strong><button type="button" onClick={() => setAnchor(weekStart(today))}>今週</button><button type="button" onClick={() => setAnchor(addDays(anchor, 7))}>次週 →</button></div>
         <div className="weekly-load-filters"><div className="weekly-load-display-switch"><button type="button" className={display === "work" ? "active" : ""} onClick={() => changeDisplay("work")}>作業</button><button type="button" className={display === "task" ? "active" : ""} onClick={() => changeDisplay("task")}>タスク</button></div><label>案件タグ<select value={tagId} onChange={(event) => setTagId(event.target.value)}><option value="">すべて</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label><label>1日の上限<input type="number" min="0.5" max="24" step="0.5" value={capacity} onChange={(event) => changeCapacity(Number(event.target.value))} />h</label></div>
       </div>
 
@@ -116,7 +109,7 @@ export function WeeklyLoadModal({ tasks, tags, periods, onSelect, onClose }: {
           const tone = nonWorking ? "off" : loadTone(dailyTotals[index], capacity);
           const ratio = nonWorking ? 0 : Math.min(100, dailyTotals[index] / capacity * 100);
           return <article key={date} className={`${tone} ${date === today ? "today" : ""}`}>
-            <header><span>{["月", "火", "水", "木", "金", "土", "日"][index]}曜日</span><strong>{dateLabel(date)}</strong></header>
+            <header><span>{weekdayLabel(date)}曜日</span><strong>{dateLabel(date)}</strong></header>
             <b>{nonWorking ? "休み" : hoursLabel(dailyTotals[index])}</b>
             <div><i style={{ width: `${ratio}%` }} /></div>
             <small>{nonWorking ? nonWorking.note || "非稼働日" : dailyTotals[index] > capacity ? `${hoursLabel(dailyTotals[index] - capacity)}超過` : `${hoursLabel(capacity - dailyTotals[index])}空き`}</small>
@@ -128,7 +121,7 @@ export function WeeklyLoadModal({ tasks, tags, periods, onSelect, onClose }: {
         <header><div><strong>{display === "work" ? "タスク ＞ 作業の予定配分" : "タスク別の予定配分"}</strong><small>{display === "work" ? "タスク行で作業を開閉できます。タスク名を選ぶと編集画面を開きます。" : "タスク名を選ぶと編集画面を開きます。"}</small></div><span>{display === "work" ? `${workCount}作業` : `${rows.length}件`}</span></header>
         <div className="weekly-load-table-scroll">
           <table className="weekly-load-table">
-            <thead><tr><th>タスク</th>{days.map((date, index) => <th key={date}><span>{["月", "火", "水", "木", "金", "土", "日"][index]}</span><small>{dateLabel(date)}</small></th>)}<th>合計</th></tr></thead>
+            <thead><tr><th>タスク</th>{days.map((date) => <th key={date}><span>{weekdayLabel(date)}</span><small>{dateLabel(date)}</small></th>)}<th>合計</th></tr><tr className="weekly-load-total-row"><th>合計</th>{dailyTotals.map((value, index) => <th key={days[index]} className={value > capacity ? "over" : value >= capacity * .8 ? "high" : ""}><strong>{hoursLabel(value)}</strong><small>{getNonWorkingPeriod(days[index], periods, workingDateOverrides) ? "休み" : value > capacity ? `${hoursLabel(value - capacity)}超過` : `${hoursLabel(capacity - value)}空き`}</small></th>)}<th><strong>{hoursLabel(total)}</strong><small>週間</small></th></tr></thead>
             <tbody>{rows.map((row) => {
               const tag = tags.find((item) => item.id === row.task.projectTagId);
               const collapsed = collapsedTaskIds.has(row.task.id);

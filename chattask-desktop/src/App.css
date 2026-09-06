@@ -1555,8 +1555,11 @@ nav.header-actions .settings-panel > button.settings-danger { color: #b91c1c; }
 .modal:has(.weekly-load-view) { width: min(1600px, 98vw); height: min(930px, 96vh); max-height: 96vh; }
 .weekly-load-controls { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
 .weekly-load-date-nav, .weekly-load-filters { display: flex; align-items: center; gap: .4rem; }
-.weekly-load-date-nav strong { min-width: 235px; color: #334155; font-size: .76rem; text-align: center; }
+.weekly-load-date-nav > strong { min-width: 54px; color: #334155; font-size: .7rem; text-align: left; white-space: nowrap; }
 .weekly-load-date-nav button { border: 1px solid #cbd5e1; border-radius: 7px; padding: .4rem .58rem; background: white; color: #475569; font-size: .66rem; font-weight: 700; }
+.weekly-load-start-date { display: flex; align-items: center; gap: .32rem; color: #64748b; font-size: .58rem; font-weight: 700; white-space: nowrap; }
+.weekly-load-start-date .work-date-picker { width: 122px; }
+.weekly-load-start-date .work-date-trigger { min-height: 34px; padding: .35rem .48rem; background: white; font-size: .66rem; }
 .weekly-load-filters label { display: flex; align-items: center; gap: .35rem; color: #64748b; font-size: .62rem; font-weight: 700; white-space: nowrap; }
 .weekly-load-filters select { min-width: 150px; padding-block: .38rem; }
 .weekly-load-filters input { width: 65px; padding: .38rem .42rem; text-align: right; }
@@ -1622,13 +1625,19 @@ nav.header-actions .settings-panel > button.settings-danger { color: #b91c1c; }
 .weekly-load-table td.high { background: #fffbeb; color: #b45309; font-weight: 800; }
 .weekly-load-table td.over { background: #fef2f2; color: #dc2626; font-weight: 800; }
 .weekly-load-table td:last-child { color: #1d4ed8; }
+.weekly-load-table thead .weekly-load-total-row > th { top: 37px; z-index: 2; border-top: 2px solid #bfdbfe; border-bottom: 2px solid #bfdbfe; background: #eff6ff; color: #1e40af; font-weight: 800; }
+.weekly-load-table thead .weekly-load-total-row > th:first-child { text-align: left; }
+.weekly-load-table thead .weekly-load-total-row > th.high { background: #fffbeb; color: #b45309; }
+.weekly-load-table thead .weekly-load-total-row > th.over { background: #fef2f2; color: #dc2626; }
+.weekly-load-table thead .weekly-load-total-row strong, .weekly-load-table thead .weekly-load-total-row small { display: block; }
+.weekly-load-table thead .weekly-load-total-row small { margin-top: .08rem; color: #64748b; font-size: .48rem; font-weight: 600; white-space: nowrap; }
 .weekly-load-empty { margin: 1.8rem; color: #94a3b8; font-size: .65rem; text-align: center; }
 .weekly-load-legend { display: flex; align-items: center; gap: .75rem; color: #64748b; font-size: .56rem; }
 .weekly-load-legend span::before { display: inline-block; width: 8px; height: 8px; margin-right: .25rem; border-radius: 2px; background: #3b82f6; content: ""; }
 .weekly-load-legend span.high::before { background: #f59e0b; }
 .weekly-load-legend span.over::before { background: #ef4444; }
 .weekly-load-legend small { margin-left: auto; color: #94a3b8; }
-@media (max-width: 900px) { .weekly-load-controls { align-items: stretch; flex-direction: column; }.weekly-load-date-nav { justify-content: space-between; }.weekly-load-date-nav strong { min-width: 0; }.weekly-load-filters { justify-content: flex-end; }.weekly-load-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.weekly-load-days { min-width: 720px; }.weekly-load-view { overflow-x: auto; }.weekly-load-table { min-width: 850px; }.weekly-load-legend small { display: none; } }
+@media (max-width: 900px) { .weekly-load-controls { align-items: stretch; flex-direction: column; }.weekly-load-date-nav { justify-content: space-between; }.weekly-load-date-nav > strong { min-width: 0; }.weekly-load-filters { justify-content: flex-end; }.weekly-load-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }.weekly-load-days { min-width: 720px; }.weekly-load-view { overflow-x: auto; }.weekly-load-table { min-width: 850px; }.weekly-load-legend small { display: none; } }
 .achievement-recent > div { max-height: 220px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; overflow-y: auto; padding: .6rem; }
 .achievement-recent > div > button { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: .6rem; border: 1px solid #e2e8f0; border-radius: 7px; padding: .5rem .6rem; background: #f8fafc; color: #334155; text-align: left; }
 .achievement-recent > div > button:hover { border-color: #86efac; background: #f0fdf4; }
