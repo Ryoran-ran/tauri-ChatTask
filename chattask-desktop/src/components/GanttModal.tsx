@@ -5,6 +5,8 @@ import { addDays, getNonWorkingPeriod, isRecurringDue, plannedHoursForDate, rang
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { createGanttExcel } from "../services/ganttExcel";
+import { createGanttSvg } from "../services/ganttSvg";
+import { createImagePdf } from "../services/imagePdf";
 import { xmlEscape, zipFiles } from "../services/xmlSpreadsheet";
 
 type GanttStatusFilter = "all" | "active" | "waiting" | "done";
@@ -629,35 +631,37 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   };
   const exportSvg = () => {
-    const labelWidth = 310;
-    const dayWidth = scale === "week" ? 90 : scale === "month" ? 28 : scale === "quarter" ? 12 : scale === "half-year" ? 7 : 4;
-    const timelineWidth = dates.length * dayWidth;
-    const rowHeight = 44;
-    const headerHeight = 58;
-    const width = labelWidth + timelineWidth;
-    const height = headerHeight + Math.max(1, rows.length) * rowHeight + 24;
-    const rangeRect = (start: string, end: string, y: number, fill: string, rectHeight: number, opacity = 1) => {
-      const clippedStart = start < period.start ? period.start : start;
-      const clippedEnd = end > period.end ? period.end : end;
-      const startIndex = dates.indexOf(clippedStart);
-      const endIndex = dates.indexOf(clippedEnd);
-      if (startIndex < 0 || endIndex < startIndex) return "";
-      return `<rect x="${labelWidth + startIndex * dayWidth}" y="${y}" width="${Math.max(2, (endIndex - startIndex + 1) * dayWidth)}" height="${rectHeight}" rx="3" fill="${fill}" opacity="${opacity}"/>`;
-    };
-    const monthLabels = dates.map((date, index) => ({ date, index })).filter(({ date, index }) => index === 0 || date.endsWith("-01"));
-    const gridLines = dates.map((date, index) => {
-      const major = date.endsWith("-01") || scale === "week";
-      return major ? `<line x1="${labelWidth + index * dayWidth}" y1="34" x2="${labelWidth + index * dayWidth}" y2="${height}" stroke="#cbd5e1" stroke-width="1"/>` : "";
-    }).join("");
-    const rowSvg = rows.map((row, rowIndex) => {
-      const y = headerHeight + rowIndex * rowHeight;
-      const actualRanges = contiguousDateRanges([...row.actualDates, ...row.achievedDates]);
-      const baseline = display === "compare" ? row.baselineRanges.map((range) => rangeRect(range.startDate, range.endDate, y + 6, "#cbd5e1", 7, .9)).join("") : "";
-      const planned = display !== "actual" ? row.plannedRanges.map((range) => rangeRect(range.startDate, range.endDate, y + 15, "#60a5fa", 10, .9)).join("") : "";
-      const actual = display !== "planned" ? actualRanges.map((range) => rangeRect(range.start, range.end, y + 29, "#22c55e", 9)).join("") : "";
-      return `<g><rect x="0" y="${y}" width="${width}" height="${rowHeight}" fill="${rowIndex % 2 ? "#f8fafc" : "#ffffff"}"/><line x1="0" y1="${y + rowHeight}" x2="${width}" y2="${y + rowHeight}" stroke="#e2e8f0"/><text x="${14 + row.depth * 14}" y="${y + 19}" fill="#1e293b" font-size="12" font-weight="700">${xmlEscape(row.title)}</text><text x="${14 + row.depth * 14}" y="${y + 34}" fill="#64748b" font-size="9">予定 ${hours(row.plannedHours)}h / 実績 ${hours(row.actualHours)}h</text>${baseline}${planned}${actual}</g>`;
-    }).join("");
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/><text x="14" y="21" fill="#0f172a" font-size="16" font-weight="800">${xmlEscape(exportTitle)}</text><text x="14" y="40" fill="#64748b" font-size="10">${period.start}〜${period.end}</text><line x1="${labelWidth}" y1="0" x2="${labelWidth}" y2="${height}" stroke="#94a3b8"/>${gridLines}${monthLabels.map(({ date, index }) => `<text x="${labelWidth + index * dayWidth + 4}" y="23" fill="#475569" font-size="10" font-weight="700">${Number(date.slice(5, 7))}月</text>`).join("")}${rowSvg}</svg>`;
+    const nonWorkingDates = new Set(dates.filter((date) => getNonWorkingPeriod(date, periods, workingDateOverrides)));
+    return createGanttSvg({
+      title: selectedProject ? `${selectedProject.title}・ガントチャート` : "ガントチャート",
+      start: period.start,
+      end: period.end,
+      dates,
+      dateLabels: dates.map(timelineLabel),
+      plannedEffort: dates.map((date) => plannedEffortByDate.get(date) || 0),
+      nonWorkingDates,
+      display,
+      cellWidth: cell,
+      rows: rows.map((row) => ({
+        kind: row.kind,
+        title: row.title,
+        periodLabel: row.periodLabel,
+        depth: row.depth,
+        hasChildren: row.hasChildren,
+        status: statusLabel(row.status),
+        statusTone: taskTone(row.status),
+        priority: row.priority,
+        tagName: row.tagId ? tagById.get(row.tagId)?.name : undefined,
+        baselineRanges: row.baselineRanges,
+        plannedRanges: row.plannedRanges,
+        actualDates: row.actualDates,
+        achievedDates: row.achievedDates,
+        plannedHours: row.plannedHours,
+        actualHours: row.actualHours,
+        dueDate: row.dueDate,
+        delayed: Boolean(row.dueDate && row.dueDate < today && !isCompletedStatus(row.status)),
+      })),
+    });
   };
   const exportPng = () => {
     setExportMenuOpen(false);
@@ -681,19 +685,30 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
   };
   const exportPdf = () => {
     setExportMenuOpen(false);
-    const frame = document.createElement("iframe");
-    frame.style.position = "fixed";
-    frame.style.width = "1px";
-    frame.style.height = "1px";
-    frame.style.opacity = "0";
-    frame.style.pointerEvents = "none";
-    document.body.appendChild(frame);
-    const documentToPrint = frame.contentDocument;
-    if (!documentToPrint) return frame.remove();
-    documentToPrint.open();
-    documentToPrint.write(`<html><head><title>${xmlEscape(exportFileStem)}</title><style>@page{size:A3 landscape;margin:8mm}html,body{margin:0}svg{width:100%;height:auto;max-height:calc(100vh - 2mm)}</style></head><body>${exportSvg()}</body></html>`);
-    documentToPrint.close();
-    window.setTimeout(() => { frame.contentWindow?.focus(); frame.contentWindow?.print(); window.setTimeout(() => frame.remove(), 1_000); }, 150);
+    const image = new Image();
+    const url = URL.createObjectURL(new Blob([exportSvg()], { type: "image/svg+xml;charset=utf-8" }));
+    const cleanup = () => URL.revokeObjectURL(url);
+    image.onerror = cleanup;
+    image.onload = () => {
+      const maxCanvasDimension = 6_000;
+      const ratio = Math.min(2, maxCanvasDimension / image.width, maxCanvasDimension / image.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * ratio));
+      canvas.height = Math.max(1, Math.round(image.height * ratio));
+      const context = canvas.getContext("2d");
+      if (!context) return cleanup();
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(async (jpegBlob) => {
+        if (jpegBlob) {
+          const pdf = createImagePdf(await jpegBlob.arrayBuffer(), canvas.width, canvas.height);
+          saveBlob(pdf, `${exportFileStem}.pdf`);
+        }
+        cleanup();
+      }, "image/jpeg", 0.94);
+    };
+    image.src = url;
   };
   const exportExcel = () => {
     setExportMenuOpen(false);
