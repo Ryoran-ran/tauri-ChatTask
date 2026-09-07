@@ -66,6 +66,7 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
   const [period, setPeriod] = useState<Period>("week");
   const [base, setBase] = useState(todayValue());
   const [selectedChartDate, setSelectedChartDate] = useState<string | null>(null);
+  const [showWorkStatistics, setShowWorkStatistics] = useState(false);
   const selectPeriod = (nextPeriod: Period) => { setPeriod(nextPeriod); setSelectedChartDate(null); };
   const [showNonWorkingDays, setShowNonWorkingDays] = useState(() => localStorage.getItem("chatTaskAchievementShowNonWorkingDays") !== "false");
   const workingDateOverrides = useMemo(() => {
@@ -239,7 +240,7 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
           <button className={period === "half-year" ? "active" : ""} onClick={() => selectPeriod("half-year")}>半年</button>
           <button className={period === "year" ? "active" : ""} onClick={() => selectPeriod("year")}>1年</button>
         </div>
-        <div className="achievement-date-nav"><button onClick={() => setBase(shiftPeriod(base, period, -1))}>←</button><strong>{start === end ? start : `${start}〜${end}`}</strong><button onClick={() => setBase(shiftPeriod(base, period, 1))}>→</button><button onClick={() => setBase(todayValue())}>今日</button></div>
+        <div className="achievement-date-nav"><button onClick={() => setBase(shiftPeriod(base, period, -1))}>←</button><strong>{start === end ? start : `${start}〜${end}`}</strong><button onClick={() => setBase(shiftPeriod(base, period, 1))}>→</button><button onClick={() => setBase(todayValue())}>今日</button><button className="achievement-open-statistics" onClick={() => setShowWorkStatistics(true)}>工数統計を開く</button></div>
       </header>
       <section className="achievement-metrics">
         <article className="complete"><small>完了したタスク</small><strong>{completedTaskCount}<span>件</span></strong></article>
@@ -283,7 +284,6 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
           </svg>
         </div>
       </section>
-      <TaskWorkStatistics tasks={tasks} tags={tags} periods={nonWorkingPeriods} workingDateOverrides={workingDateOverrides} start={start} end={end} onSelect={onSelect} />
       <section className="achievement-recent">
         <header><strong>この期間に完了したタスク</strong><small>{completedTaskItems.length ? "内容を選ぶとタスクを開きます。" : "この期間に完了したタスクはありません。"}</small></header>
         <div>{completedTaskItems.map((item) => <button key={item.id} disabled={!item.taskId} onClick={() => item.taskId && onSelect(item.taskId)}><span><b>{item.title || "名称のないタスク"}</b><small>{item.kind}</small></span><time>{item.date}</time></button>)}</div>
@@ -293,5 +293,6 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
         <div>{completedResponseItems.map((item) => <button key={item.id} disabled={!item.taskId} onClick={() => item.taskId && onSelect(item.taskId)}><span><b>{item.title || "名称のない対応"}</b><small>{item.kind}</small></span><time>{item.date}</time></button>)}</div>
       </section>
     </div>
+    {showWorkStatistics && <Modal title="対応内容・工数統計" wide onClose={() => setShowWorkStatistics(false)}><div className="work-statistics-view"><TaskWorkStatistics tasks={tasks} tags={tags} periods={nonWorkingPeriods} workingDateOverrides={workingDateOverrides} start={start} end={end} onSelect={onSelect} standalone /></div></Modal>}
   </Modal>;
 }
