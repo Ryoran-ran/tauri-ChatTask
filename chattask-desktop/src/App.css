@@ -89,10 +89,13 @@ textarea { resize: vertical; line-height: 1.55; }
 .task-card-child::before { content: ""; position: absolute; top: calc(-.43rem - 1px); bottom: calc(-.43rem - 1px); left: -8px; width: 1px; background: #b8c4d4; pointer-events: none; }
 .task-card-child::after { content: ""; position: absolute; top: 50%; left: -8px; width: 9px; height: 1px; background: #b8c4d4; pointer-events: none; }
 .task-card-child.task-card-last-child::before { bottom: 50%; }
+.task-tree-ancestor-line { position: absolute; top: calc(-.43rem - 1px); bottom: calc(-.43rem - 1px); width: 1px; background: #b8c4d4; pointer-events: none; }
 .density-compact .task-card-child::before { top: calc(-.31rem - 1px); bottom: calc(-.31rem - 1px); }
 .density-compact .task-card-child.task-card-last-child::before { bottom: 50%; }
+.density-compact .task-tree-ancestor-line { top: calc(-.31rem - 1px); bottom: calc(-.31rem - 1px); }
 .density-minimal .task-card-child::before { top: calc(-.21rem - 1px); bottom: calc(-.21rem - 1px); }
 .density-minimal .task-card-child.task-card-last-child::before { bottom: 50%; }
+.density-minimal .task-tree-ancestor-line { top: calc(-.21rem - 1px); bottom: calc(-.21rem - 1px); }
 .task-card.has-overdue-deadline { border-left: 4px solid #dc2626; padding-left: calc(.62rem - 3px); }
 .task-card:hover { border-color: #93c5fd; transform: translateY(-1px); }
 .task-card.selected { border-color: #3b82f6; box-shadow: 0 0 0 2px #dbeafe; }
@@ -1459,12 +1462,14 @@ nav.header-actions .settings-panel > button.settings-danger { color: #b91c1c; }
 .modal-backdrop:has(.achievement-view) { padding: 2vh 1vw; }
 .modal:has(.achievement-view) { width: min(1800px, 98vw); height: min(1000px, 96vh); max-height: 96vh; }
 .achievement-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .65rem; }
-.achievement-period-switch { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 8px; padding: 3px; background: #f8fafc; }
+.achievement-period-switch { display: inline-flex; max-width: 100%; overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 8px; padding: 3px; background: #f8fafc; }
 .achievement-period-switch button { min-width: 68px; border: 0; border-radius: 6px; padding: .42rem .65rem; background: transparent; color: #64748b; font-size: .72rem; font-weight: 750; }
 .achievement-period-switch button.active { background: #2563eb; color: white; box-shadow: 0 2px 6px #1d4ed833; }
-.achievement-date-nav { display: flex; align-items: center; gap: .35rem; }
+.achievement-date-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .35rem; }
 .achievement-date-nav strong { min-width: 205px; color: #334155; font-size: .75rem; text-align: center; }
 .achievement-date-nav button { min-height: 32px; border: 1px solid #cbd5e1; border-radius: 6px; padding: .35rem .55rem; background: white; color: #475569; font-size: .7rem; }
+.achievement-date-nav .achievement-open-statistics { margin-left: .3rem; border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; font-weight: 800; }
+.achievement-date-nav .achievement-open-statistics:hover { border-color: #60a5fa; background: #dbeafe; }
 .achievement-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .55rem; }
 .achievement-metrics article { min-width: 0; min-height: 96px; display: flex; flex-direction: column; justify-content: center; border: 1px solid #dbe3ee; border-radius: 10px; padding: .7rem .75rem; background: #f8fafc; }
 .achievement-metrics article small { color: #64748b; font-size: .62rem; font-weight: 750; }
@@ -1509,12 +1514,14 @@ nav.header-actions .settings-panel > button.settings-danger { color: #b91c1c; }
 .achievement-combined-chart .active-task-point circle { fill: white; stroke: #2563eb; stroke-width: 3; }
 .achievement-combined-chart .active-task-point.is-non-working circle { fill: #f5f3ff; stroke: #818cf8; stroke-width: 1.5; }
 .achievement-combined-chart .active-task-point.is-previous circle { fill: #dbeafe; }
+.achievement-combined-chart .active-task-value-background { fill: white; stroke: #bfdbfe; stroke-width: 1; filter: drop-shadow(0 1px 2px #1e3a5f24); }
 .achievement-combined-chart .active-task-point text { fill: #1d4ed8; font-size: 9px; font-weight: 850; text-anchor: middle; }
 .achievement-combined-chart .selected-day-guide { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 3 3; }
 .achievement-combined-chart .day-hit-area { fill: transparent; cursor: crosshair; outline: none; }
 .achievement-combined-chart .day-hit-area:focus { fill: rgb(219 234 254 / 18%); }
 .achievement-chart-selection { display: flex; min-height: 36px; align-items: center; gap: .7rem; border-bottom: 1px solid #e2e8f0; padding: .4rem .75rem; background: #f8fafc; color: #64748b; font-size: .6rem; }
 .achievement-chart-selection > strong { min-width: 74px; color: #334155; font-size: .65rem; }
+.achievement-chart-selection.has-selection > strong { min-width: 118px; }
 .achievement-chart-selection > span { white-space: nowrap; }
 .achievement-chart-selection > span b { margin-left: .18rem; font-size: .72rem; }
 .achievement-chart-selection > span.done b { color: #15803d; }
@@ -1551,6 +1558,12 @@ nav.header-actions .settings-panel > button.settings-danger { color: #b91c1c; }
 .achievement-response-list > div > button:hover { border-color: #c4b5fd; background: #f5f3ff; }
 .achievement-response-list > div small { color: #7c3aed; }
 .achievement-work-statistics { overflow: hidden; border: 1px solid #dbe3ee; border-radius: 10px; background: white; }
+.modal-backdrop:has(.work-statistics-view) { padding: 2vh 1vw; }
+.modal:has(.work-statistics-view) { width: min(1500px, 98vw); height: min(900px, 96vh); max-height: 96vh; }
+.modal:has(.work-statistics-view) > .modal-body { overflow: hidden; }
+.work-statistics-view { height: 100%; min-height: 0; }
+.work-statistics-view > .achievement-work-statistics { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.work-statistics-view .achievement-task-work-list { min-height: 0; max-height: none; flex: 1; }
 .achievement-work-statistics > header { display: flex; align-items: center; justify-content: space-between; gap: .8rem; border-bottom: 1px solid #e2e8f0; padding: .65rem .75rem; }
 .achievement-work-statistics > header strong, .achievement-work-statistics > header small { display: block; }
 .achievement-work-statistics > header strong { color: #1e293b; font-size: .75rem; }

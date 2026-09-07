@@ -27,7 +27,7 @@ const accuracy = (planned: number, actual: number) => planned > 0 && actual > 0
   ? Math.round(Math.min(planned, actual) / Math.max(planned, actual) * 100)
   : null;
 
-export function TaskWorkStatistics({ tasks, tags, periods, workingDateOverrides, start, end, onSelect }: {
+export function TaskWorkStatistics({ tasks, tags, periods, workingDateOverrides, start, end, onSelect, standalone = false }: {
   tasks: Task[];
   tags: ProjectTag[];
   periods: NonWorkingPeriod[];
@@ -35,6 +35,7 @@ export function TaskWorkStatistics({ tasks, tags, periods, workingDateOverrides,
   start: string;
   end: string;
   onSelect: (id: string) => void;
+  standalone?: boolean;
 }) {
   const [tagId, setTagId] = useState("");
   const days = useMemo(() => rangeDates([{ id: "statistics-period", startDate: start, endDate: end }]), [start, end]);
@@ -99,7 +100,7 @@ export function TaskWorkStatistics({ tasks, tags, periods, workingDateOverrides,
   const activeTags = tags.filter((tag) => rows.some((row) => row.tag?.id === tag.id));
 
   return <section className="achievement-work-statistics">
-    <header><div><strong>対応内容・工数統計</strong><small>タスクを展開すると、期間内に対応した作業と見積結果を確認できます。</small></div><label>案件タグ<select value={tagId} onChange={(event) => setTagId(event.target.value)}><option value="">すべて</option>{activeTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label></header>
+    <header><div><strong>{standalone ? `${start}〜${end}` : "対応内容・工数統計"}</strong><small>タスクを展開すると、期間内に対応した作業と見積結果を確認できます。</small></div><label>案件タグ<select value={tagId} onChange={(event) => setTagId(event.target.value)}><option value="">すべて</option>{activeTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label></header>
     <div className="achievement-effort-metrics"><span><small>予定</small><b>{hoursLabel(totalPlanned)}</b></span><span><small>実績</small><b>{hoursLabel(totalActual)}</b></span><span className={totalActual > totalPlanned && totalPlanned > 0 ? "over" : ""}><small>差分</small><b>{totalActual - totalPlanned > 0 ? "+" : ""}{hoursLabel(totalActual - totalPlanned)}</b></span><span><small>見積精度</small><b>{totalAccuracy === null ? "—" : `${totalAccuracy}%`}</b></span></div>
     <div className="achievement-task-work-list">{visibleRows.map((row) => <details key={row.task.id}>
       <summary><span className="achievement-task-work-title">{row.tag && <TagIcon tag={row.tag} />}<span><strong>{row.task.title || "名称のないタスク"}</strong><small>{row.works.length}作業</small></span></span><span className="achievement-task-work-totals"><small>予定 {hoursLabel(row.planned)}</small><small>実績 {hoursLabel(row.actual)}</small><b>{accuracy(row.planned, row.actual) === null ? "—" : `${accuracy(row.planned, row.actual)}%`}</b><button type="button" onClick={(event) => { event.preventDefault(); onSelect(row.task.id); }}>タスクを開く</button></span></summary>

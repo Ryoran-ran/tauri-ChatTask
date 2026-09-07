@@ -137,10 +137,20 @@ export function Sidebar(props: Props) {
     const children = flat ? [] : props.tasks.filter((child) => child.parentTaskId === task.id);
     const parent = props.tasks.find((item) => item.id === task.parentTaskId);
     const depth = flat ? 0 : grouped && parent?.projectTagId !== task.projectTagId ? 0 : depthFor(task, props.tasks);
-    const visibleSiblings = depth > 0 ? visibleTasks.filter((item) => item.parentTaskId === task.parentTaskId) : [];
+    const siblingsOf = (item: Task) => visibleTasks.filter((candidate) => candidate.parentTaskId === item.parentTaskId && (!grouped || candidate.projectTagId === item.projectTagId));
+    const visibleSiblings = depth > 0 ? siblingsOf(task) : [];
     const isLastChild = depth > 0 && visibleSiblings[visibleSiblings.length - 1]?.id === task.id;
+    const ancestorContinuationDepths: number[] = [];
+    let ancestor = parent;
+    let ancestorDepth = depth - 1;
+    while (ancestor && ancestorDepth > 0) {
+      const ancestorSiblings = siblingsOf(ancestor);
+      if (ancestorSiblings[ancestorSiblings.length - 1]?.id !== ancestor.id) ancestorContinuationDepths.push(ancestorDepth);
+      ancestor = props.tasks.find((item) => item.id === ancestor?.parentTaskId);
+      ancestorDepth -= 1;
+    }
     const projectContexts = taskProjectContexts(props.projects, task.id);
-    return <TaskCard key={task.id} task={task} tag={props.tags.find((tag) => tag.id === task.projectTagId)} projectContexts={projectContexts} completedProjectWorkIds={completedProjectWorkIds} periods={props.periods} hasTodayDescendant={!flat && hasTodayDescendant(task.id)} selected={task.id === props.selectedId} childCount={children.length} completedChildren={children.filter((child) => isTerminalStatus(child.status)).length} depth={depth} isLastChild={isLastChild} collapsed={!flat && props.collapsedIds.has(task.id)} onSelect={() => props.onSelect(task.id)} onToggle={() => props.onToggleCollapse(task.id)} onQuick={(action) => props.onQuick(task.id, action)} onOpenProject={props.onOpenProject} onSaveTemplate={() => props.onSaveTemplate(task)} />;
+    return <TaskCard key={task.id} task={task} tag={props.tags.find((tag) => tag.id === task.projectTagId)} projectContexts={projectContexts} completedProjectWorkIds={completedProjectWorkIds} periods={props.periods} hasTodayDescendant={!flat && hasTodayDescendant(task.id)} selected={task.id === props.selectedId} childCount={children.length} completedChildren={children.filter((child) => isTerminalStatus(child.status)).length} depth={depth} isLastChild={isLastChild} ancestorContinuationDepths={ancestorContinuationDepths} collapsed={!flat && props.collapsedIds.has(task.id)} onSelect={() => props.onSelect(task.id)} onToggle={() => props.onToggleCollapse(task.id)} onQuick={(action) => props.onQuick(task.id, action)} onOpenProject={props.onOpenProject} onSaveTemplate={() => props.onSaveTemplate(task)} />;
   };
   const groups = props.groupByTag ? [
     ...props.tags.filter((tag) => tag.visible).map((tag) => ({ id: tag.id, name: tag.name, color: tag.color || "#3b82f6", tasks: visibleTasks.filter((task) => task.projectTagId === tag.id) })),
