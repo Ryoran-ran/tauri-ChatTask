@@ -18,6 +18,7 @@ interface Props {
   completedChildren: number;
   depth: number;
   isLastChild: boolean;
+  ancestorContinuationDepths: number[];
   collapsed: boolean;
   onSelect: () => void;
   onToggle: () => void;
@@ -26,7 +27,7 @@ interface Props {
   onSaveTemplate: () => void;
 }
 
-export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, periods, hasTodayDescendant, selected, childCount, completedChildren, depth, isLastChild, collapsed, onSelect, onToggle, onOpenProject }: Props) {
+export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, periods, hasTodayDescendant, selected, childCount, completedChildren, depth, isLastChild, ancestorContinuationDepths, collapsed, onSelect, onToggle, onOpenProject }: Props) {
   const today = todayValue();
   const waiting = WAITING_STATUSES.includes(task.status);
   const waitingReviewDue = Boolean(waiting && task.waitingFollowUp?.reviewDate && task.waitingFollowUp.reviewDate <= today);
@@ -54,6 +55,7 @@ export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, 
 
   return (
     <article data-task-id={task.id} data-task-depth={depth} className={`task-card task-card-status-${visualStatus} ${depth > 0 ? "task-card-child" : ""} ${isLastChild ? "task-card-last-child" : ""} ${selected ? "selected" : ""} ${isTerminalStatus(task.status) ? "completed" : ""} ${deadline?.className === "overdue" ? "has-overdue-deadline" : ""}`} title={`ステータス：${STATUS_LABELS[task.status]}${deadline?.className === "overdue" ? `／期限 ${deadline.label}` : ""}`} style={{ marginLeft: Math.min(depth, 3) * 14 }} onClick={onSelect}>
+      {ancestorContinuationDepths.map((ancestorDepth) => <span key={ancestorDepth} className="task-tree-ancestor-line" aria-hidden="true" style={{ left: -8 - (depth - ancestorDepth) * 14 }} />)}
       {waitingReviewDue && <span className="task-waiting-review-dot" role="img" aria-label="今日確認する待ちタスク" title={`今日確認する（確認日：${task.waitingFollowUp?.reviewDate}）`} />}
       <div className="task-card-row">
         {childCount > 0 ? <button className={`collapse-button ${hasTodayDescendant ? "has-today-descendant" : ""}`} title={hasTodayDescendant ? "配下の子タスクに今日の予定があります" : undefined} aria-label={`${collapsed ? "子タスクを開く" : "子タスクを閉じる"}${hasTodayDescendant ? "。配下に今日の予定があります" : ""}`} onClick={(event) => { event.stopPropagation(); onToggle(); }}><span>{collapsed ? "▶" : "▼"}</span>{hasTodayDescendant && <i aria-hidden="true" />}</button> : <span className="collapse-spacer" />}
