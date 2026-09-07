@@ -587,6 +587,15 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
         : scale === "half-year"
           ? { small: "1か月", large: "半年" }
           : { small: "1か月", large: "1年" };
+  const periodPickerLabel = () => {
+    if (scale === "week") return `${period.start.replace(/-/g, "/")}〜${period.end.slice(5).replace("-", "/")}`;
+    if (scale === "month") return `${period.start.slice(0, 4)}年${Number(period.start.slice(5, 7))}月`;
+    return `${period.start.slice(0, 7).replace("-", "/")}〜${period.end.slice(0, 7).replace("-", "/")}`;
+  };
+  const choosePeriodDate = (date: string) => {
+    if (!date || scale === "project") return;
+    setAnchor(scale === "week" ? weekStart(date) : scale === "year" ? yearStart(date) : monthStart(date));
+  };
   const navigatePeriod = (direction: -1 | 1, amount: "small" | "large") => {
     if (scale === "project") return;
     if (scale === "week") return setAnchor(addDays(anchor, direction * (amount === "small" ? 1 : 7)));
@@ -890,9 +899,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
           <button disabled={scale === "project"} onClick={() => navigatePeriod(-1, "small")} aria-label={`${navigationUnits.small}前へ`}>← {navigationUnits.small}</button>
           {scale === "project"
             ? <strong className="gantt-period-label" aria-label="表示期間">{ganttPeriodLabel(period.start, period.end)}</strong>
-            : scale === "week"
-              ? <WorkDatePicker className="gantt-period-jump" ariaLabel="表示する週を選択" value={anchor} onChange={(date) => date && setAnchor(weekStart(date))} allowClear={false} />
-              : <input className="gantt-period-jump" type="month" aria-label="表示する年月を選択" value={anchor.slice(0, 7)} onChange={(event) => event.target.value && setAnchor(`${event.target.value}-01`)} />}
+            : <WorkDatePicker className="gantt-period-jump" ariaLabel={`${navigationUnits.large}の表示開始を選択`} value={anchor} onChange={choosePeriodDate} allowClear={false} formatValue={periodPickerLabel} showNonWorkingStatus={false} pickerMode={scale === "week" ? "day" : scale === "year" ? "year" : "month"} />}
           <button disabled={scale === "project"} onClick={() => setAnchor(scale === "week" ? weekStart(today) : scale === "year" ? yearStart(today) : monthStart(today))}>今日</button>
           <button disabled={scale === "project"} onClick={() => navigatePeriod(1, "small")} aria-label={`${navigationUnits.small}後へ`}>{navigationUnits.small} →</button>
           <button disabled={scale === "project"} onClick={() => navigatePeriod(1, "large")} aria-label={`${navigationUnits.large}後へ`}>{navigationUnits.large} →</button>

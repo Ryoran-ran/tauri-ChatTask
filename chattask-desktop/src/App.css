@@ -1861,11 +1861,16 @@ nav.header-actions .settings-panel input { flex: none; width: 15px; height: 15px
 .gantt-period-jump { min-height: 0; border: 0; padding: 0; background: transparent; }
 .gantt-period-jump > .work-date-trigger { min-height: 32px; border-color: #bfdbfe; padding: .3rem .5rem; background: #eff6ff; color: #1d4ed8; font-size: .68rem; font-weight: 750; justify-content: center; }
 .gantt-period-jump > .work-date-trigger b { margin-left: .25rem; font-size: .75rem; }
+.gantt-navigation .gantt-period-jump { width: 165px; }
 .work-date-warning { display: block; margin-top: .25rem; color: #c2410c; font-size: .7rem; font-weight: 700; }
 .work-date-calendar { position: fixed; z-index: 10020; box-sizing: border-box; border: 1px solid #bfdbfe; border-radius: .8rem; padding: .65rem; background: white; box-shadow: 0 18px 45px #0f172a33; color: #172033; }
 .work-date-calendar > header { display: grid; grid-template-columns: 2.2rem 1fr 2.2rem; align-items: center; gap: .35rem; margin-bottom: .45rem; }
 .work-date-calendar > header strong { text-align: center; font-size: .9rem; }
 .work-date-calendar > header button { min-height: 2rem; border: 0; border-radius: .45rem; background: #eff6ff; color: #2563eb; font-size: 1.25rem; }
+.work-date-calendar > header .work-date-period-switch { width: auto; display: inline-flex; align-items: center; justify-content: center; gap: .35rem; padding: .25rem .6rem; background: transparent; color: #1e293b; font-size: .9rem; font-weight: 800; }
+.work-date-calendar > header .work-date-period-switch:hover { background: #eff6ff; color: #1d4ed8; }
+.work-date-calendar > header .work-date-period-switch span { flex: none; color: #64748b; font-size: .78rem; line-height: 1; }
+.work-date-calendar > header .work-date-period-switch:hover span { color: #2563eb; }
 .work-date-weekdays, .work-date-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: .16rem; }
 .work-date-weekdays span { padding: .2rem 0; color: #64748b; font-size: .68rem; font-weight: 800; text-align: center; }
 .work-date-weekdays span:first-child { color: #dc2626; }
@@ -1880,6 +1885,10 @@ nav.header-actions .settings-panel input { flex: none; width: 15px; height: 15px
 .work-date-days button.is-selected { border-color: #2563eb; background: #2563eb; color: white; box-shadow: 0 2px 7px #2563eb55; }
 .work-date-days button:disabled { opacity: .25; cursor: not-allowed; }
 .work-date-days button i { position: absolute; right: .2rem; bottom: .18rem; width: .25rem; height: .25rem; border-radius: 50%; background: currentColor; }
+.work-date-months, .work-date-years { display: grid; grid-template-columns: repeat(3, 1fr); gap: .35rem; padding: .2rem 0; }
+.work-date-months button, .work-date-years button { min-height: 2.6rem; border: 1px solid #e2e8f0; border-radius: .55rem; padding: .4rem; background: white; color: #334155; font-size: .76rem; font-weight: 750; }
+.work-date-months button:hover, .work-date-years button:hover { border-color: #60a5fa; background: #eff6ff; color: #1d4ed8; }
+.work-date-months button.is-selected, .work-date-years button.is-selected { border-color: #2563eb; background: #2563eb; color: white; box-shadow: 0 2px 7px #2563eb44; }
 .work-date-calendar > footer { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .55rem; padding-top: .5rem; border-top: 1px solid #e2e8f0; }
 .work-date-calendar > footer > div { display: flex; gap: .35rem; }
 .work-date-calendar > footer button { border: 1px solid #cbd5e1; border-radius: .4rem; padding: .3rem .5rem; background: white; color: #334155; font-size: .68rem; font-weight: 700; }
