@@ -528,8 +528,6 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     });
     const milestoneOrder = new Map(selectedProject.milestones.map((item, index) => [`milestone:${item.id}`, item.sortOrder ?? index]));
     const projectChildren = [...milestoneRows].sort((a, b) => {
-      const dateOrder = compareByStartDate(a, b);
-      if (dateOrder) return dateOrder;
       const aOrder = milestoneOrder.get(a.id);
       const bOrder = milestoneOrder.get(b.id);
       return (aOrder ?? 0) - (bOrder ?? 0);

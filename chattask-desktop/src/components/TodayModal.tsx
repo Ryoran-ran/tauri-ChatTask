@@ -7,6 +7,8 @@ import { WorkDatePicker } from "./WorkDatePicker";
 import { EffortSummaryModal } from "./EffortSummaryModal";
 import { TagIcon } from "./TagIcon";
 import { readExecutionGroups, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
+const todayExecutionLaterOpenKey = "chatTaskTodayExecutionLaterOpen";
+const todayExecutionHoldingOpenKey = "chatTaskTodayExecutionHoldingOpen";
 export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTodayOrder, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { tasks: Task[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
   const [moveTarget, setMoveTarget] = useState<Occurrence | null>(null); const [moveDate, setMoveDate] = useState(""); const [moveReason, setMoveReason] = useState("");
   const [actualDrafts, setActualDrafts] = useState<Record<string, string>>({});
@@ -25,7 +27,16 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   const [executionGroupName, setExecutionGroupName] = useState("");
   const [selectedExecutionGroupKeys, setSelectedExecutionGroupKeys] = useState<Set<string>>(() => new Set());
   const [expandedExecutionGroupIds, setExpandedExecutionGroupIds] = useState<Set<string>>(() => new Set());
-  const [executionLaterOpen, setExecutionLaterOpen] = useState(false);
+  const [executionLaterOpen, setExecutionLaterOpen] = useState(() => date === todayValue() && localStorage.getItem(todayExecutionLaterOpenKey) === "true");
+  const [executionHoldingOpen, setExecutionHoldingOpen] = useState(() => date === todayValue() && localStorage.getItem(todayExecutionHoldingOpenKey) === "true");
+  const updateExecutionLaterOpen = (open: boolean) => {
+    setExecutionLaterOpen(open);
+    if (date === todayValue()) localStorage.setItem(todayExecutionLaterOpenKey, String(open));
+  };
+  const updateExecutionHoldingOpen = (open: boolean) => {
+    setExecutionHoldingOpen(open);
+    if (date === todayValue()) localStorage.setItem(todayExecutionHoldingOpenKey, String(open));
+  };
   const [dragOrderKey, setDragOrderKey] = useState("");
   const [copiedCalendarKey, setCopiedCalendarKey] = useState("");
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Set<string>>(() => new Set());
@@ -228,6 +239,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     return status !== "done" && status !== "skipped";
   });
   const unsetOrderPrefix = "unset:";
+  const holdingOrderPrefix = "holding:";
   const executionItemKey = (item: ExecutionItem) => item.kind === "scheduled"
     ? carryItemKey(item.scheduled)
     : `recurring:${item.occurrence.task.id}:${item.occurrence.occurrenceDate}`;
@@ -237,14 +249,25 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     ...orderableOccurrences.map((occurrence): ExecutionItem => ({ kind: "recurring", occurrence })),
   ];
   const activeOrderKeys = new Set(orderableItems.map(executionItemKey));
-  const storedQueueKeys = todayOrder.filter((key) => !key.startsWith(unsetOrderPrefix) && activeOrderKeys.has(key));
+  const storedHolding = todayOrder.flatMap((storedKey) => {
+    if (!storedKey.startsWith(holdingOrderPrefix)) return [];
+    const match = storedKey.slice(holdingOrderPrefix.length).match(/^(\d+):(.*)$/);
+    if (!match || !activeOrderKeys.has(match[2])) return [];
+    return [{ key: match[2], originalIndex: Number(match[1]) }];
+  });
+  const storedHoldingKeys = new Set(storedHolding.map((item) => item.key));
+  const storedQueueKeys = todayOrder.filter((key) => !key.startsWith(unsetOrderPrefix) && !key.startsWith(holdingOrderPrefix) && activeOrderKeys.has(key));
   const storedUnsetKeys = todayOrder.filter((key) => key.startsWith(unsetOrderPrefix)).map((key) => key.slice(unsetOrderPrefix.length)).filter((key) => activeOrderKeys.has(key));
-  const representedOrderKeys = new Set([...storedQueueKeys, ...storedUnsetKeys]);
+  const representedOrderKeys = new Set([...storedQueueKeys, ...storedUnsetKeys, ...storedHoldingKeys]);
   const newOrderKeys = orderableItems.map(executionItemKey).filter((key) => !representedOrderKeys.has(key));
   const executionQueueKeys = [...storedQueueKeys, ...newOrderKeys];
   const itemByOrderKey = new Map(orderableItems.map((item) => [executionItemKey(item), item]));
   const executionQueue = executionQueueKeys.map((key) => itemByOrderKey.get(key)).filter((item): item is ExecutionItem => Boolean(item));
   const executionUnset = storedUnsetKeys.map((key) => itemByOrderKey.get(key)).filter((item): item is ExecutionItem => Boolean(item));
+  const executionHolding = storedHolding.flatMap(({ key, originalIndex }) => {
+    const item = itemByOrderKey.get(key);
+    return item ? [{ item, originalIndex }] : [];
+  });
   const dashboardOccurrences = occurrences.filter((occurrence) => !isHiddenRecurringOccurrence(occurrence));
   const dashboardCountableOccurrences = dashboardOccurrences.filter(({ task, occurrenceDate }) =>
     task.recurrenceRecords.find((item) => item.date === occurrenceDate)?.status !== "skipped");
@@ -294,7 +317,8 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     setExecutionGroupName("");
     setSelectedExecutionGroupKeys(new Set());
     setExpandedExecutionGroupIds(new Set());
-    setExecutionLaterOpen(false);
+    setExecutionLaterOpen(date === todayValue() && localStorage.getItem(todayExecutionLaterOpenKey) === "true");
+    setExecutionHoldingOpen(date === todayValue() && localStorage.getItem(todayExecutionHoldingOpenKey) === "true");
     setAdvanceDialogOpen(false);
     setAdvanceTargetKey("");
     setAdvanceSearch("");
@@ -817,10 +841,11 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     if (executionGroupsState.date !== date || activeExecutionGroups.length === executionGroups.length) return;
     saveExecutionGroups(activeExecutionGroups);
   }, [date, executionQueueSignature, executionGroupsState]);
-  const persistExecutionOrder = (queue: ExecutionItem[], unset = executionUnset) => {
+  const persistExecutionOrder = (queue: ExecutionItem[], unset = executionUnset, holding = executionHolding) => {
     onTodayOrder([
       ...queue.map(executionItemKey),
       ...unset.map((item) => `${unsetOrderPrefix}${executionItemKey(item)}`),
+      ...holding.map(({ item, originalIndex }) => `${holdingOrderPrefix}${originalIndex}:${executionItemKey(item)}`),
     ]);
   };
   const moveExecutionUnit = (key: string, targetIndex: number) => {
@@ -839,6 +864,21 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   const addToExecutionOrder = (item: ExecutionItem) => {
     if (finalized) return;
     persistExecutionOrder([...executionQueue, item], executionUnset.filter((candidate) => executionItemKey(candidate) !== executionItemKey(item)));
+  };
+  const holdExecutionItem = (item: ExecutionItem) => {
+    if (finalized) return;
+    const key = executionItemKey(item);
+    const originalIndex = executionQueue.findIndex((candidate) => executionItemKey(candidate) === key);
+    if (originalIndex < 0) return;
+    persistExecutionOrder(executionQueue.filter((candidate) => executionItemKey(candidate) !== key), executionUnset, [...executionHolding, { item, originalIndex }]);
+  };
+  const resumeExecutionItem = (held: (typeof executionHolding)[number], destination: "active" | "next" | "original") => {
+    if (finalized) return;
+    const firstUnitLength = executionUnits[0]?.items.length || 0;
+    const insertionIndex = destination === "active" ? 0 : destination === "next" ? firstUnitLength : Math.min(held.originalIndex, executionQueue.length);
+    const nextQueue = [...executionQueue];
+    nextQueue.splice(insertionIndex, 0, held.item);
+    persistExecutionOrder(nextQueue, executionUnset, executionHolding.filter((candidate) => executionItemKey(candidate.item) !== executionItemKey(held.item)));
   };
   const openExecutionGroupDialog = () => {
     setExecutionGroupName("");
@@ -884,7 +924,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     const updatedItems = itemKeys.map((itemKey) => executionItemMap.get(itemKey)).filter((item): item is ExecutionItem => Boolean(item));
     persistExecutionOrder(executionUnits.flatMap((candidate) => candidate.key === unit.key ? updatedItems : candidate.items));
   };
-  const executionOrderRow = (item: ExecutionItem, orderLabel: string, tier: "active" | "next" | "later", unit: ExecutionUnit, unitIndex: number, memberIndex?: number) => {
+  const executionOrderRow = (item: ExecutionItem, orderLabel: string, tier: "active" | "next" | "later" | "holding", unit: ExecutionUnit, unitIndex: number, memberIndex?: number, held?: (typeof executionHolding)[number]) => {
     const key = executionItemKey(item);
     const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task;
     const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title;
@@ -892,7 +932,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     const kindLabel = item.kind === "recurring" ? "定期" : WAITING_STATUSES.includes(itemStatus(item.scheduled)) ? "待ち" : "作業";
     const grouped = Boolean(unit.group);
     return <li key={key} className={`${dragOrderKey === unit.key ? "is-dragging" : ""} execution-tier-${tier} ${grouped ? "execution-group-member" : ""}`} draggable={!finalized && !grouped}
-      onDragStart={() => { setDragOrderKey(unit.key); if (laterExecutionUnits.length) setExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
+      onDragStart={() => { setDragOrderKey(unit.key); if (laterExecutionUnits.length) updateExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => { if (grouped) return; event.preventDefault(); if (dragOrderKey && dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }}>
       <span className="execution-order-number">{orderLabel}</span>
@@ -904,14 +944,14 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
       </button>
       {item.kind === "scheduled" ? statusBadge(task, item.scheduled) : <span className="today-status-badge todo">未実施</span>}
       <div className="execution-order-task-actions">
-        <button type="button" className={`today-timer-start ${activeTimerTaskId === task.id ? "is-running" : ""}`} disabled={finalized || activeTimerTaskId === task.id} onClick={() => chooseTimer(task, item.kind === "scheduled" ? item.scheduled.planKey : date, plannedHours)}>{activeTimerTaskId === task.id ? "計測中" : "開始"}</button>
-        {calendarCopyButton(`order:${key}`, task, item.kind === "scheduled" ? item.scheduled.range : undefined)}
+        {tier !== "holding" && <><button type="button" className={`today-timer-start ${activeTimerTaskId === task.id ? "is-running" : ""}`} disabled={finalized || activeTimerTaskId === task.id} onClick={() => chooseTimer(task, item.kind === "scheduled" ? item.scheduled.planKey : date, plannedHours)}>{activeTimerTaskId === task.id ? "計測中" : "開始"}</button>{calendarCopyButton(`order:${key}`, task, item.kind === "scheduled" ? item.scheduled.range : undefined)}</>}
         {item.kind === "scheduled"
           ? <button type="button" className="today-card-expand" onClick={() => setEntryTarget(item.scheduled)}>記録</button>
           : <><button type="button" className="today-card-move" disabled={finalized} onClick={() => { setMoveTarget(item.occurrence); setMoveDate(addDays(date, 1)); setMoveReason(""); }}>別日に対応</button><button type="button" className="today-card-documents" onClick={() => onOpenDocuments(task.id)}><span aria-hidden="true">▤</span>文書{task.documents.length > 0 && <small>{task.documents.length}</small>}</button><button type="button" className="today-card-expand" onClick={() => { setRecurrenceMemoDraft(task.recurrenceRecords.find((record) => record.date === item.occurrence.occurrenceDate)?.memo ?? task.recurrenceMemoTemplate); setRecurrenceDetailTarget(item.occurrence); }}>詳細</button></>}
+        {tier !== "holding" && <button type="button" className="execution-hold-button" title={activeTimerTaskId === task.id ? "計測を終了してから一時待ちにしてください" : "通常の対応順から一時的に外す"} disabled={finalized || activeTimerTaskId === task.id} onClick={() => holdExecutionItem(item)}>一時待ち</button>}
       </div>
       <div className="execution-order-controls" aria-label={`${title}の順番操作`}>
-        {unit.group && memberIndex !== undefined ? <><button type="button" title="グループ内で一つ上へ" disabled={finalized || memberIndex === 0} onClick={() => moveExecutionGroupMember(unit, key, -1)}>↑</button><button type="button" title="グループ内で一つ下へ" disabled={finalized || memberIndex === unit.items.length - 1} onClick={() => moveExecutionGroupMember(unit, key, 1)}>↓</button><button type="button" title="グループから外す" disabled={finalized} onClick={() => removeFromExecutionGroup(unit.group!, key)}>×</button></> : <><button type="button" title="先頭へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, 0)}>⇤</button><button type="button" title="一つ上へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, unitIndex - 1)}>↑</button><button type="button" title="一つ下へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, unitIndex + 1)}>↓</button><button type="button" title="最後へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, executionUnits.length - 1)}>⇥</button><button type="button" title="順番から外す" disabled={finalized} onClick={() => removeFromExecutionOrder(item)}>×</button></>}
+        {held ? <><button type="button" className="execution-resume-active" disabled={finalized} onClick={() => resumeExecutionItem(held, "active")}>今する</button><button type="button" disabled={finalized} onClick={() => resumeExecutionItem(held, "next")}>次にする</button><button type="button" disabled={finalized} onClick={() => resumeExecutionItem(held, "original")}>元の位置</button></> : unit.group && memberIndex !== undefined ? <><button type="button" title="グループ内で一つ上へ" disabled={finalized || memberIndex === 0} onClick={() => moveExecutionGroupMember(unit, key, -1)}>↑</button><button type="button" title="グループ内で一つ下へ" disabled={finalized || memberIndex === unit.items.length - 1} onClick={() => moveExecutionGroupMember(unit, key, 1)}>↓</button><button type="button" title="グループから外す" disabled={finalized} onClick={() => removeFromExecutionGroup(unit.group!, key)}>×</button></> : <><button type="button" title="先頭へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, 0)}>⇤</button><button type="button" title="一つ上へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, unitIndex - 1)}>↑</button><button type="button" title="一つ下へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, unitIndex + 1)}>↓</button><button type="button" title="最後へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, executionUnits.length - 1)}>⇥</button><button type="button" title="順番から外す" disabled={finalized} onClick={() => removeFromExecutionOrder(item)}>×</button></>}
       </div>
     </li>;
   };
@@ -920,7 +960,7 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
   const laterExecutionUnits = executionUnits.slice(4);
   const renderExecutionUnit = (unit: ExecutionUnit, unitIndex: number, tier: "active" | "next" | "later") => unit.group
     ? <li key={unit.key} className={`execution-work-group execution-tier-${tier} ${dragOrderKey === unit.key ? "is-dragging" : ""}`} draggable={!finalized}
-      onDragStart={() => { setDragOrderKey(unit.key); if (laterExecutionUnits.length) setExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
+      onDragStart={() => { setDragOrderKey(unit.key); if (laterExecutionUnits.length) updateExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
       onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (dragOrderKey && dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }}>
       <header><span className="execution-order-number">{unitIndex + 1}</span><div><strong>{unit.group.name}</strong><small>残り {unit.items.length}件 / 全{unit.group.itemKeys.length}件</small></div><span className="execution-group-badge">並行作業</span><button type="button" className="execution-group-toggle" disabled={tier === "active"} onClick={() => setExpandedExecutionGroupIds((current) => { const next = new Set(current); if (next.has(unit.group!.id)) next.delete(unit.group!.id); else next.add(unit.group!.id); return next; })}>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "▲" : "▼"}<span>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "閉じる" : "開く"}</span></button><div className="execution-group-controls"><button type="button" title="一つ上へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, unitIndex - 1)}>↑</button><button type="button" title="一つ下へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, unitIndex + 1)}>↓</button><button type="button" disabled={finalized} onClick={() => dissolveExecutionGroup(unit.group!.id)}>グループ解除</button></div></header>
       {(tier === "active" || expandedExecutionGroupIds.has(unit.group.id)) && <ol className="execution-order-list">{unit.items.map((item, memberIndex) => executionOrderRow(item, `${unitIndex + 1}.${memberIndex + 1}`, tier, unit, unitIndex, memberIndex))}</ol>}
@@ -928,16 +968,17 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     : executionOrderRow(unit.items[0], String(unitIndex + 1), tier, unit, unitIndex);
   const executionOrderSection = () => <section className="today-section execution-order-section">
     <div className="execution-order-heading">
-      {sectionHeading("今日の対応順", executionQueue.length)}
+      {sectionHeading("今日の対応順", executionQueue.length + executionHolding.length)}
       <div><small>グループもドラッグして順番を変更できます</small><button type="button" disabled={finalized || groupableExecutionItems.length < 2} onClick={openExecutionGroupDialog}>＋ 作業グループを作成</button></div>
     </div>
-    {executionUnits.length ? <div className="execution-priority-groups">
-      <section className="execution-focus-group">
+    {executionUnits.length || executionHolding.length ? <div className="execution-priority-groups">
+      {currentExecutionUnits.length > 0 && <section className="execution-focus-group">
         <header><div><strong>今すること</strong><span>{currentExecutionUnits[0]?.group ? "グループ内の作業がすべて終わったら次へ進みます" : "最優先の作業"}</span></div></header>
         <ol className="execution-unit-list">{currentExecutionUnits.map((unit, index) => renderExecutionUnit(unit, index, "active"))}</ol>
-      </section>
+      </section>}
       {nextExecutionUnits.length > 0 && <section className="execution-next-group"><header><strong>次にすること <small>{nextExecutionUnits.length}項目</small></strong><span>上から順に着手</span></header><ol className="execution-unit-list">{nextExecutionUnits.map((unit, offset) => renderExecutionUnit(unit, offset + 1, "next"))}</ol></section>}
-      {laterExecutionUnits.length > 0 && <section className="execution-later-group"><button type="button" className="execution-later-toggle" aria-expanded={executionLaterOpen} onClick={() => setExecutionLaterOpen((current) => !current)}><span><strong>今日中にすること</strong><small>{laterExecutionUnits.length}項目</small></span><b>{executionLaterOpen ? "折りたたむ ▲" : "一覧を表示 ▼"}</b></button>{executionLaterOpen && <ol className="execution-unit-list">{laterExecutionUnits.map((unit, offset) => renderExecutionUnit(unit, offset + 4, "later"))}</ol>}</section>}
+      {laterExecutionUnits.length > 0 && <section className="execution-later-group"><button type="button" className="execution-later-toggle" aria-expanded={executionLaterOpen} onClick={() => updateExecutionLaterOpen(!executionLaterOpen)}><span><strong>今日中にすること</strong><small>{laterExecutionUnits.length}項目</small></span><b>{executionLaterOpen ? "折りたたむ ▲" : "一覧を表示 ▼"}</b></button>{executionLaterOpen && <ol className="execution-unit-list">{laterExecutionUnits.map((unit, offset) => renderExecutionUnit(unit, offset + 4, "later"))}</ol>}</section>}
+      {executionHolding.length > 0 && <section className="execution-holding-group"><button type="button" className="execution-holding-toggle" aria-expanded={executionHoldingOpen} onClick={() => updateExecutionHoldingOpen(!executionHoldingOpen)}><span><strong>一時待ち</strong><small>{executionHolding.length}件</small></span><b>{executionHoldingOpen ? "折りたたむ ▲" : "一覧を表示 ▼"}</b></button>{executionHoldingOpen && <ol className="execution-unit-list">{executionHolding.map((held) => executionOrderRow(held.item, "待", "holding", { key: `holding:${executionItemKey(held.item)}`, items: [held.item] }, -1, undefined, held))}</ol>}</section>}
     </div> : <p className="muted">順番を設定できる作業はありません。</p>}
     {executionUnset.length > 0 && <div className="execution-order-unset"><h4>順番未設定 <small>{executionUnset.length}件</small></h4>{executionUnset.map((item) => { const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task; const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title; return <button type="button" key={executionItemKey(item)} disabled={finalized} onClick={() => addToExecutionOrder(item)}><span>＋</span><strong>{title}</strong><small>順番の最後へ追加</small></button>; })}</div>}
     {executionGroupDialogOpen && <div className="move-dialog-backdrop" onPointerDown={() => setExecutionGroupDialogOpen(false)}><section className="move-panel execution-group-dialog" role="dialog" aria-modal="true" aria-label="作業グループを作成" onPointerDown={(event) => event.stopPropagation()}><header><div><small>並行して対応するタスクをまとめる</small><h3>作業グループを作成</h3></div><button type="button" aria-label="閉じる" onClick={() => setExecutionGroupDialogOpen(false)}>×</button></header><label>グループ名<input autoFocus value={executionGroupName} onChange={(event) => setExecutionGroupName(event.target.value)} placeholder="例：マージ依頼まとめ" /></label><div className="execution-group-candidates">{groupableExecutionItems.map((item) => { const key = executionItemKey(item); const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task; const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title; return <label className={selectedExecutionGroupKeys.has(key) ? "selected" : ""} key={key}><input type="checkbox" checked={selectedExecutionGroupKeys.has(key)} onChange={(event) => setSelectedExecutionGroupKeys((current) => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next; })} /><span><strong>{title}</strong><small className="execution-group-related-task">関連Task：{task.title}</small><small className="execution-group-candidate-tag">案件タグ：{tags.find((tag) => tag.id === task.projectTagId)?.name || "タグなし"}</small></span></label>; })}</div><footer><span>2件以上選択してください</span><button type="button" onClick={() => setExecutionGroupDialogOpen(false)}>キャンセル</button><button type="button" className="primary" disabled={selectedExecutionGroupKeys.size < 2} onClick={createExecutionGroup}>グループを作成（{selectedExecutionGroupKeys.size}件）</button></footer></section></div>}

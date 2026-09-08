@@ -23,6 +23,7 @@ interface Props {
   onProfile: () => void;
   onDataManagement: () => void;
   onAchievements: () => void;
+  onTools: () => void;
   hideRecurring: boolean;
   openTodayOnStartup: boolean;
   onHideRecurring: (value: boolean) => void;
@@ -60,6 +61,7 @@ export function Header(props: Props) {
           <button onClick={() => { props.onNonWorking(); setSettings(false); }}>休暇・祝日設定</button>
           <button onClick={() => { props.onTags(); setSettings(false); }}>案件タグ設定</button>
           <button onClick={() => { props.onTemplates(); setSettings(false); }}>タスクテンプレート管理</button>
+          <button onClick={() => { props.onTools(); setSettings(false); }}>ツール</button>
           <label><input type="checkbox" checked={props.hideRecurring} onChange={(event) => props.onHideRecurring(event.target.checked)} /><span>定期タスクを一覧で非表示</span></label>
           <label><input type="checkbox" checked={props.openTodayOnStartup} onChange={(event) => props.onOpenTodayOnStartup(event.target.checked)} /><span>起動時に今日を開く</span></label>
           <button onClick={() => { props.onHelp(); setSettings(false); }}>ヘルプ</button>
