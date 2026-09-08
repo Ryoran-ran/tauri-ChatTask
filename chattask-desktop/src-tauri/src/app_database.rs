@@ -185,6 +185,8 @@ fn save_in_transaction(tx: &Transaction<'_>, data: &Value) -> Result<(), String>
         ("organization_seed", root.get("organizationSeed").cloned().unwrap_or_else(|| json!(0))),
         ("inbox_items", root.get("inboxItems").cloned().unwrap_or_else(|| json!([]))),
         ("today_task_orders", root.get("todayTaskOrders").cloned().unwrap_or_else(|| json!({}))),
+        ("local_tools", root.get("localTools").cloned().unwrap_or_else(|| json!([]))),
+        ("local_tools_storage_path", root.get("localToolsStoragePath").cloned().unwrap_or_else(|| json!(""))),
         ("version", root.get("version").cloned().unwrap_or(json!(1))),
     ] {
         tx.execute("INSERT INTO app_settings(key, data_json) VALUES (?1, ?2)", params![key, value_string(&value)?]).map_err(|error| error.to_string())?;
@@ -293,6 +295,8 @@ fn load_from_connection(connection: &Connection) -> Result<Option<Value>, String
         "issues": query_values(connection, "SELECT data_json FROM issues ORDER BY sort_order")?
         ,"inboxItems": setting("inbox_items", json!([]))?
         ,"todayTaskOrders": setting("today_task_orders", json!({}))?
+        ,"localTools": setting("local_tools", json!([]))?
+        ,"localToolsStoragePath": setting("local_tools_storage_path", json!(""))?
     })))
 }
 

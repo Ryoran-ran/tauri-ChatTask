@@ -350,6 +350,16 @@ export interface InboxItem {
   archivedAt?: string;
 }
 
+export interface LocalTool {
+  id: string;
+  name: string;
+  folderPath: string;
+  entryFile: string;
+  createdAt: string;
+  updatedAt: string;
+  managedCopy?: boolean;
+}
+
 export interface AppData {
   version: number;
   organizationSeed: number;
@@ -364,6 +374,8 @@ export interface AppData {
   issues: AppIssue[];
   inboxItems: InboxItem[];
   todayTaskOrders: Record<string, string[]>;
+  localTools: LocalTool[];
+  localToolsStoragePath: string;
 }
 
 export type TaskFilter = "all" | "all-with-done" | "today" | "today-waiting" | "my-turn" | "waiting" | "deadline" | "done";
