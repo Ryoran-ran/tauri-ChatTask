@@ -286,6 +286,6 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       </section>
     </div>}
 
-    {activeView === "checklist" && <div className="code-review-checklist-view"><TaskReviewChecklist items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} allowImport={false} /></div>}
+    {activeView === "checklist" && <div className="code-review-checklist-view"><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} allowImport={false} /></div>}
   </main>;
 }
