@@ -119,7 +119,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       const value = group && typeof group === "object" ? group as unknown as Record<string, unknown> : {};
       const branchNames = Array.isArray(value.branchNames) ? [...new Set(value.branchNames.map((name) => String(name).trim()).filter(Boolean))] : [];
       const pullRequestTargets = Array.isArray(value.pullRequestTargets) ? [...new Set(value.pullRequestTargets.map((name) => String(name).trim()).filter(Boolean))] : [];
-      return { repositoryId: String(value.repositoryId || ""), branchNames, pullRequestTargets };
+      return { ...value, repositoryId: String(value.repositoryId || ""), branchNames, pullRequestTargets };
     }).filter((group) => group.branchNames.length || group.pullRequestTargets.length)
     : legacyBranchNames.length ? [{ repositoryId: "", branchNames: legacyBranchNames }] : [];
   const reviewChecklist: NonNullable<Task["reviewChecklist"]> = Array.isArray(source.reviewChecklist)
@@ -135,6 +135,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         ? String(item.reviewStatus) as "pending" | "in-progress" | "completed" | "ignored"
         : item.completed === true ? "completed" : "pending";
       return [{
+        ...item,
         id: String(item.id || generateId()),
         title,
         file: item.file ? String(item.file) : undefined,
@@ -166,6 +167,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       const id = String(run.id || "").trim();
       if (!id) return [];
       return [{
+        ...run,
         id,
         repositoryId: String(run.repositoryId || ""),
         repositoryName: String(run.repositoryName || "未設定"),
@@ -177,6 +179,9 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     })
     : [];
   const task: Task = {
+    // Retain fields introduced by a newer app version. Known fields below are
+    // still normalized, while unknown fields survive a load/save round trip.
+    ...source,
     id: String(source.id || generateId()), title: String(source.title || "無題のタスク"), description: String(source.description || ""),
     priority, status,
     progressStatus: (source.progressStatus as TaskProgressStatus) || classification.progressStatus,
@@ -234,10 +239,10 @@ const historyActivity = (tasks: Task[]): ActivityEvent[] => tasks.flatMap((task)
 const normalizeTags = (tags: ProjectTag[]): ProjectTag[] => tags.map((tag) => ({
   ...tag,
   githubRepositories: Array.isArray(tag.githubRepositories)
-    ? tag.githubRepositories.map((repository) => ({ id: String(repository.id || generateId()), name: String(repository.name || ""), url: String(repository.url || ""), pullRequestTargets: Array.isArray(repository.pullRequestTargets) ? [...new Set(repository.pullRequestTargets.map((name) => String(name).trim()).filter(Boolean))] : [] }))
+    ? tag.githubRepositories.map((repository) => ({ ...repository, id: String(repository.id || generateId()), name: String(repository.name || ""), url: String(repository.url || ""), pullRequestTargets: Array.isArray(repository.pullRequestTargets) ? [...new Set(repository.pullRequestTargets.map((name) => String(name).trim()).filter(Boolean))] : [] }))
     : tag.githubRepositoryUrl ? [{ id: generateId(), name: "GitHub", url: String(tag.githubRepositoryUrl) }] : [],
   githubRepositoryUrl: undefined,
-  quickLinkRules: Array.isArray(tag.quickLinkRules) ? tag.quickLinkRules.map((rule) => ({ id: String(rule.id || generateId()), name: String(rule.name || ""), urlPrefix: String(rule.urlPrefix || "") })) : [],
+  quickLinkRules: Array.isArray(tag.quickLinkRules) ? tag.quickLinkRules.map((rule) => ({ ...rule, id: String(rule.id || generateId()), name: String(rule.name || ""), urlPrefix: String(rule.urlPrefix || "") })) : [],
   color: /^#[0-9a-f]{6}$/i.test(tag.color || "") ? tag.color : randomTagColor(),
   iconType: tag.iconType === "image" && tag.logoAttachmentId ? "image" : "color",
   sharedLinks: Array.isArray(tag.sharedLinks) ? tag.sharedLinks : [],
@@ -251,7 +256,7 @@ const normalizeLocalTools = (tools: unknown): LocalTool[] => Array.isArray(tools
   const entryFile = String(item.entryFile || "").trim();
   if (!folderPath || !entryFile) return [];
   const now = new Date().toISOString();
-  return [{ id: String(item.id || generateId()), name: String(item.name || "名称未設定のツール"), folderPath, entryFile, createdAt: String(item.createdAt || now), updatedAt: String(item.updatedAt || now), managedCopy: item.managedCopy === true }];
+  return [{ ...item, id: String(item.id || generateId()), name: String(item.name || "名称未設定のツール"), folderPath, entryFile, createdAt: String(item.createdAt || now), updatedAt: String(item.updatedAt || now), managedCopy: item.managedCopy === true }];
 }) : [];
 
 const createOrganizationSeed = (environment: AppEnvironment = getActiveEnvironment()) => {
@@ -379,6 +384,8 @@ export const parseImportedData = (text: string): AppData => {
   const normalizedTasks = tasks.map((item) => normalizeTask(item as Record<string, unknown>));
   const importedActivity = !Array.isArray(imported) && Array.isArray(imported.activityLog) ? imported.activityLog : [];
   return {
+    // Keep newer top-level sections even when this version does not render them.
+    ...(!Array.isArray(imported) ? imported : {}),
     version: 14,
     organizationSeed: !Array.isArray(imported) && Number.isInteger(Number(imported.organizationSeed)) && Number(imported.organizationSeed) > 0
       ? Number(imported.organizationSeed)

@@ -89,12 +89,14 @@ const detailParts = (item: TaskChecklistItem) => {
   return { reason, suggestion, other: !reason && !suggestion ? item.details.trim() : "" };
 };
 
-export function TaskReviewChecklist({ taskId = "default", items, runs = [], repositories: configuredRepositories = [], selectedRepositoryId = "", onSelectRepository, onChange, allowImport = true, section = "all" }: { taskId?: string; items: TaskChecklistItem[]; runs?: TaskCodeReviewRun[]; repositories?: GithubRepository[]; selectedRepositoryId?: string; onSelectRepository?: (repositoryId: string) => void; onChange: (items: TaskChecklistItem[], historyText?: string) => void; allowImport?: boolean; section?: "all" | "active" | "closed" | "history" }) {
+export function TaskReviewChecklist({ taskId = "default", items, runs = [], repositories: configuredRepositories = [], selectedRepositoryId = "", onSelectRepository, onChange, onChangeReviewData, allowImport = true, section = "all" }: { taskId?: string; items: TaskChecklistItem[]; runs?: TaskCodeReviewRun[]; repositories?: GithubRepository[]; selectedRepositoryId?: string; onSelectRepository?: (repositoryId: string) => void; onChange: (items: TaskChecklistItem[], historyText?: string) => void; onChangeReviewData?: (items: TaskChecklistItem[], runs: TaskCodeReviewRun[], historyText?: string) => void; allowImport?: boolean; section?: "all" | "active" | "closed" | "history" }) {
   const [importOpen, setImportOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [source, setSource] = useState("");
   const [message, setMessage] = useState("");
   const [copiedAction, setCopiedAction] = useState("");
+  const [editingRunRepositoryId, setEditingRunRepositoryId] = useState("");
+  const [deletingRunId, setDeletingRunId] = useState("");
   const copiedTimer = useRef<number | null>(null);
   const sortStorageKey = `chatTaskCodeReviewSortRules:${taskId}`;
   const [sortRules, setSortRules] = useState<ReviewSortRule[]>(() => {
@@ -106,6 +108,7 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
     }
   });
   const repositories = [...new Map([...configuredRepositories.map((repository) => [repository.id || "unassigned", repository.name || "リポジトリ未設定"] as const), ...runs.map((run) => [run.repositoryId || "unassigned", run.repositoryName || "リポジトリ未設定"] as const), ...items.map((item) => [item.repositoryId || "unassigned", item.repositoryName || "リポジトリ未設定"] as const)]).entries()];
+  const repositoryChoices = [...new Map<string, string>([["unassigned", "リポジトリ未設定"], ...repositories]).entries()];
   const activeRepositoryKey = selectedRepositoryId === "unassigned" ? "unassigned" : selectedRepositoryId || configuredRepositories[0]?.id || repositories[0]?.[0] || "unassigned";
   const scopedItems = items.filter((item) => (item.repositoryId || "unassigned") === activeRepositoryKey);
   const scopedRuns = runs.filter((run) => (run.repositoryId || "unassigned") === activeRepositoryKey);
@@ -200,6 +203,66 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
     }
   };
 
+  const moveReviewRun = (run: TaskCodeReviewRun, repositoryId: string) => {
+    if (!onChangeReviewData) return;
+    const repositoryName = repositoryChoices.find(([id]) => id === repositoryId)?.[1] || "リポジトリ未設定";
+    const movedItemIds = new Map<string, string>();
+    const nextItems = items.flatMap((item) => {
+      if (!run.itemIds.includes(item.id)) return [item];
+      const previousRunIds = item.reviewRunIds?.length ? item.reviewRunIds : item.reviewRunId ? [item.reviewRunId] : [run.id];
+      const remainingRunIds = previousRunIds.filter((id) => id !== run.id);
+      if (!remainingRunIds.length) {
+        return [{ ...item, repositoryId: repositoryId === "unassigned" ? undefined : repositoryId, repositoryName }];
+      }
+      const movedId = generateId();
+      movedItemIds.set(item.id, movedId);
+      const latestRemainingRun = [...runs].reverse().find((candidate) => remainingRunIds.includes(candidate.id));
+      return [{
+        ...item,
+        reviewRunId: remainingRunIds[0],
+        reviewRunIds: remainingRunIds,
+        reviewOccurrenceCount: Math.max(1, remainingRunIds.length),
+        lastReviewedAt: latestRemainingRun?.createdAt || item.lastReviewedAt,
+      }, {
+        ...item,
+        id: movedId,
+        repositoryId: repositoryId === "unassigned" ? undefined : repositoryId,
+        repositoryName,
+        reviewRunId: run.id,
+        reviewRunIds: [run.id],
+        reviewOccurrenceCount: 1,
+        lastReviewedAt: run.createdAt,
+      }];
+    });
+    const nextRuns = runs.map((current) => current.id === run.id
+      ? { ...current, repositoryId: repositoryId === "unassigned" ? "" : repositoryId, repositoryName, itemIds: current.itemIds.map((id) => movedItemIds.get(id) || id) }
+      : current);
+    onChangeReviewData(nextItems, nextRuns, `コードレビューの取り込み先を「${repositoryName}」へ変更しました。`);
+    setEditingRunRepositoryId("");
+  };
+
+  const deleteReviewRun = (run: TaskCodeReviewRun) => {
+    if (!onChangeReviewData) return;
+    const nextRuns = runs.filter((current) => current.id !== run.id);
+    const runItemIds = new Set(run.itemIds);
+    const nextItems = items.flatMap((item) => {
+      if (!runItemIds.has(item.id)) return [item];
+      const previousRunIds = item.reviewRunIds?.length ? item.reviewRunIds : item.reviewRunId ? [item.reviewRunId] : [];
+      const remainingRunIds = previousRunIds.filter((id) => id !== run.id);
+      if (!remainingRunIds.length) return [];
+      const latestRemainingRun = [...nextRuns].reverse().find((candidate) => remainingRunIds.includes(candidate.id));
+      return [{
+        ...item,
+        reviewRunId: remainingRunIds[0],
+        reviewRunIds: remainingRunIds,
+        reviewOccurrenceCount: Math.max(1, remainingRunIds.length),
+        lastReviewedAt: latestRemainingRun?.createdAt || item.lastReviewedAt,
+      }];
+    });
+    onChangeReviewData(nextItems, nextRuns, `${run.repositoryName || "リポジトリ未設定"}のレビュー取り込みを1回分削除しました。`);
+    setDeletingRunId("");
+  };
+
   const renderItem = (item: TaskChecklistItem) => <article className={itemStatus(item)} key={item.id}>
     <div className="review-checklist-item-main"><span>{displayLocation(item) && <code>{displayLocation(item)}</code>}<strong>{displayTitle(item)}</strong><small>{item.repositoryName && <em className="review-repository-badge">{item.repositoryName}</em>}<em>{item.category}</em>{item.severity && <em className={`severity-${item.severity}`}>重要度 {severityLabel[item.severity]}</em>}{(item.reviewOccurrenceCount || item.reviewRunIds?.length || 1) > 1 && <em className="review-repeat-badge">再指摘 {(item.reviewOccurrenceCount || item.reviewRunIds?.length || 1) - 1}回</em>}</small></span></div>
     <select className={`review-checklist-status status-${itemStatus(item)}`} aria-label={`${displayTitle(item)}の対応状態`} value={itemStatus(item)} onChange={(event) => { const reviewStatus = event.target.value as NonNullable<TaskChecklistItem["reviewStatus"]>; const isCompleted = reviewStatus === "completed"; onChange(items.map((current) => current.id === item.id ? { ...current, reviewStatus, completed: isCompleted, completedAt: isCompleted ? new Date().toISOString() : undefined } : current)); }}><option value="pending">未対応</option><option value="in-progress">対応中</option><option value="completed">対応済み</option><option value="ignored">対応しない</option></select>
@@ -223,7 +286,18 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
         const repositoryRuns = runs.filter((candidate) => (candidate.repositoryId || "unassigned") === (run.repositoryId || "unassigned"));
         const runNumber = repositoryRuns.findIndex((candidate) => candidate.id === run.id) + 1;
         const runItems = run.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is TaskChecklistItem => Boolean(item));
-        return <details className="review-run-card" key={run.id}><summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・指摘{run.itemIds.length}件</small></summary>{runItems.length ? <ul>{runItems.map((item) => <li key={item.id}><span className={`review-history-status ${itemStatus(item)}`}>{itemStatus(item) === "in-progress" ? "対応中" : itemStatus(item) === "completed" ? "対応済み" : itemStatus(item) === "ignored" ? "対象外" : "未対応"}</span><span>{displayTitle(item)}</span></li>)}</ul> : <p>このレビューの指摘は削除されています。</p>}</details>;
+        return <details className="review-run-card" key={run.id}>
+          <summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・指摘{run.itemIds.length}件</small></summary>
+          {onChangeReviewData && <div className="review-run-actions">
+            {editingRunRepositoryId === run.id
+              ? <label><span>移動先</span><select autoFocus value={run.repositoryId || "unassigned"} onChange={(event) => moveReviewRun(run, event.target.value)} onBlur={() => setEditingRunRepositoryId("")}>{repositoryChoices.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
+              : <button type="button" onClick={() => setEditingRunRepositoryId(run.id)}>リポジトリを変更</button>}
+            {deletingRunId === run.id
+              ? <div className="review-run-delete-confirm"><span>この取り込みを削除しますか？</span><button type="button" onClick={() => setDeletingRunId("")}>やめる</button><button type="button" className="danger" onClick={() => deleteReviewRun(run)}>削除する</button></div>
+              : <button type="button" className="danger-text" onClick={() => setDeletingRunId(run.id)}>取り込み単位で削除</button>}
+          </div>}
+          {runItems.length ? <ul>{runItems.map((item) => <li key={item.id}><span className={`review-history-status ${itemStatus(item)}`}>{itemStatus(item) === "in-progress" ? "対応中" : itemStatus(item) === "completed" ? "対応済み" : itemStatus(item) === "ignored" ? "対象外" : "未対応"}</span><span>{displayTitle(item)}</span></li>)}</ul> : <p>このレビューの指摘は削除されています。</p>}
+        </details>;
       })}</div></section>}
       {section === "history" && !scopedRuns.length && <p>選択したリポジトリのレビュー履歴はありません。</p>}
     </section>

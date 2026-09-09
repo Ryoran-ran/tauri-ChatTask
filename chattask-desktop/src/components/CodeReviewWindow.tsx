@@ -117,6 +117,9 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const updateChecklist = (items: TaskChecklistItem[], historyText?: string) => {
     onUpdate({ reviewChecklist: items }, historyText);
   };
+  const updateReviewData = (items: TaskChecklistItem[], runs: NonNullable<Task["codeReviewRuns"]>, historyText?: string) => {
+    onUpdate({ reviewChecklist: items, codeReviewRuns: runs }, historyText);
+  };
 
   const selectRepository = (repositoryId: string) => {
     localStorage.setItem(branchStorageKey, JSON.stringify({ base, target }));
@@ -292,6 +295,6 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       </section>
     </div>}
 
-    {activeView !== "prompt" && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} allowImport={false} section={activeView === "checklist" ? "active" : activeView} /></div>}
+    {activeView !== "prompt" && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} onChangeReviewData={updateReviewData} allowImport={false} section={activeView === "checklist" ? "active" : activeView} /></div>}
   </main>;
 }
