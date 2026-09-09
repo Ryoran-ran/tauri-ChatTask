@@ -32,7 +32,7 @@ import { WaitingBoxModal } from "./components/WaitingBoxModal";
 import { ToolsModal } from "./components/ToolsModal";
 import { Modal } from "./components/Modal";
 import { CodeReviewWindow } from "./components/CodeReviewWindow";
-import { classifyLegacyStatus, getActiveEnvironment, initializeAppStorage, loadAppData, parseImportedData, saveAppData, saveLocalToolsMirror, setActiveEnvironment, type AppEnvironment, type StorageBackend } from "./services/storage";
+import { classifyLegacyStatus, getActiveEnvironment, initializeAppStorage, loadAppData, parseImportedData, saveAppData, setActiveEnvironment, type AppEnvironment, type StorageBackend } from "./services/storage";
 import { removeTaskAttachments } from "./services/attachments";
 import { taskProjectContexts } from "./projectContext";
 import type { AdvancedTaskFilter, AppData, Goal, GoalStatus, InboxItem, Priority, RecurrenceRecord, SavedTaskView, Task, TaskFilter, TaskSortRule, TaskStatus, TaskTemplate } from "./types";
@@ -255,16 +255,8 @@ function App() {
     }, 250);
     return () => window.clearTimeout(timer);
   }, [data, storageBackend, environment]);
-  const updateLocalTools = (localTools: AppData["localTools"]) => setData((current) => {
-    const next = { ...current, localTools };
-    saveLocalToolsMirror(next, environment);
-    return next;
-  });
-  const updateLocalToolsStoragePath = (localToolsStoragePath: string) => setData((current) => {
-    const next = { ...current, localToolsStoragePath };
-    saveLocalToolsMirror(next, environment);
-    return next;
-  });
+  const updateLocalTools = (localTools: AppData["localTools"]) => setData((current) => ({ ...current, localTools }));
+  const updateLocalToolsStoragePath = (localToolsStoragePath: string) => setData((current) => ({ ...current, localToolsStoragePath }));
   useEffect(() => localStorage.setItem("chatTaskCurrentFilter", filter), [filter]);
   useEffect(() => localStorage.setItem("chatTaskCurrentTagFilter", tagFilter), [tagFilter]);
   useEffect(() => localStorage.setItem("chatTaskCurrentPriorityFilter", priorityFilter), [priorityFilter]);
