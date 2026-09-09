@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Diff Studio</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        code, pre, .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+        
+        .diff-line-add { background-color: rgba(34, 197, 94, 0.12); color: #15803d; }
+        .diff-line-del { background-color: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+        .diff-line-hunk { background-color: rgba(99, 102, 241, 0.1); color: #4f46e5; }
+        .diff-line-meta { background-color: rgba(241, 245, 249, 1); color: #64748b; }
+
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-lg bg-orange-500 flex items-center justify-center text-white shadow-sm shadow-orange-200">
+                    <i class="fa-brands fa-git-alt text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-slate-900 text-base leading-tight">Git Diff Studio</h1>
+                    <p class="text-xs text-slate-500">Git Diff から AIレビュー文 & Markdownチェックリストを自動生成</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+                <button id="loadSampleBtn" class="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-1 text-amber-500"></i> サンプル差分を読込
+                </button>
+                <a href="#phpGuideModal" id="openPhpGuideBtn" class="px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition">
+                    <i class="fa-brands fa-php mr-1"></i> PHPで完全自動化するには？
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+
+        <!-- コマンドジェネレーター Card -->
+        <section class="bg-white rounded-xl shadow-xs border border-slate-200 p-5">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 inline-flex items-center justify-center text-xs font-bold">1</span>
+                    比較ブランチとコマンド生成
+                </h2>
+                <span class="text-xs text-slate-500">設定を変更するとコマンドがリアルタイムに更新されます</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">比較元ブランチ (Base)</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-code-branch absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                        <input type="text" id="baseBranchInput" value="main" class="w-full pl-9 pr-3 py-2 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-lg text-sm transition outline-none font-mono">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">比較先ブランチ (Target)</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-code-commit absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                        <input type="text" id="targetBranchInput" value="HEAD" class="w-full pl-9 pr-3 py-2 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-lg text-sm transition outline-none font-mono">
+                    </div>
+                </div>
+            </div>
+
+            <!-- コマンドバー & ワンクリックコピー -->
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900 rounded-xl p-3 text-slate-200">
+                <div class="flex items-center space-x-3 overflow-x-auto text-xs font-mono py-1 px-2">
+                    <span class="text-emerald-400 select-none">$</span>
+                    <span id="cmdText" class="text-slate-100 font-medium whitespace-nowrap">git --no-pager diff main...HEAD | pbcopy</span>
+                </div>
+                <button id="copyCmdBtn" class="flex-shrink-0 inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg text-xs font-medium transition shadow-xs">
+                    <i class="fa-regular fa-copy mr-1.5"></i> コマンドをコピー
+                </button>
+            </div>
+            <p class="mt-2 text-xs text-slate-500 flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-info text-blue-500"></i>
+                Macの場合、末尾に <code class="bg-slate-100 text-slate-700 px-1 py-0.5 rounded font-mono">| pbcopy</code> を付けて実行すると、結果が直接クリップボードに格納されます。
+            </p>
+        </section>
+
+        <section class="bg-white rounded-xl shadow-xs border border-slate-200 p-5">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 inline-flex items-center justify-center text-xs font-bold">2</span>
+                    Diff の入力 & プロンプト生成
+                </h2>
+                <div class="flex items-center space-x-2">
+                    <button id="pasteFromClipboardBtn" class="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition inline-flex items-center gap-1.5">
+                        <i class="fa-regular fa-clipboard"></i> クリップボードから貼付
+                    </button>
+                    <button id="clearBtn" class="px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-lg transition">
+                        クリア
+                    </button>
+                </div>
+            </div>
+
+            <div class="relative">
+                <textarea id="rawDiffInput" rows="6" placeholder="ここにターミナルで出力した 'git diff' のテキストを貼り付けてください..." class="w-full p-3.5 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-xl text-xs font-mono transition outline-none resize-y"></textarea>
+            </div>
+
+            <div class="mt-3 flex justify-end">
+                <button id="renderBtn" class="inline-flex items-center px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white rounded-lg text-sm font-medium transition shadow-sm">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2 text-amber-300"></i> AIレビュー文 & Markdownを生成
+                </button>
+            </div>
+        </section>
+
+        <!-- ステップ3: AI レビュー依頼 & Markdownチェックリスト生成 -->
+        <section id="aiPromptSection" class="hidden bg-white rounded-xl shadow-xs border border-indigo-100 p-5 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 inline-flex items-center justify-center text-xs font-bold">3</span>
+                    <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                        <i class="fa-solid fa-robot text-indigo-500"></i>
+                        AIへの質問文章・レビュー依頼生成
+                    </h2>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-[11px] text-slate-400">レビュー種別：</span>
+                    <select id="reviewModeSelect" class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 focus:outline-none focus:border-indigo-500">
+                        <option value="comprehensive">総合コードレビュー</option>
+                        <option value="bug_security">バグ・脆弱性・境界値の重点チェック</option>
+                        <option value="pr_summary">PR（プルリクエスト）説明文の作成</option>
+                        <option value="refactor">リファクタリング・設計の改善提案</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- レビュー観点オプション -->
+            <div class="flex flex-wrap items-center gap-3 text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                <span class="font-semibold text-slate-700">含める観点:</span>
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="chkLogic" checked class="rounded text-indigo-600 focus:ring-indigo-500 mr-1.5">
+                    ロジック不備・例外処理
+                </label>
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="chkSecurity" checked class="rounded text-indigo-600 focus:ring-indigo-500 mr-1.5">
+                    セキュリティ・バリデーション
+                </label>
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="chkPerf" checked class="rounded text-indigo-600 focus:ring-indigo-500 mr-1.5">
+                    パフォーマンス・N+1
+                </label>
+                <label class="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="chkQuality" checked class="rounded text-indigo-600 focus:ring-indigo-500 mr-1.5">
+                    可読性・保守性・命名規約
+                </label>
+            </div>
+
+            <!-- タブ切り替え: Markdown形式 (コピペ・保存用) と AIプロンプト (質問用) -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-200">
+                    <div class="flex space-x-1" role="tablist">
+                        <button id="tabPromptMdBtn" type="button" class="px-4 py-2.5 text-xs font-semibold border-b-2 border-indigo-600 text-indigo-700 flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-terminal text-sm"></i>
+                            <span>① AI質問文 (Markdown形式)</span>
+                        </button>
+                        <button id="tabPromptJsonBtn" type="button" class="px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-code text-sm text-amber-500"></i>
+                            <span>② AI質問文 (JSON形式)</span>
+                        </button>
+                        <button id="tabMdBtn" type="button" class="px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition">
+                            <i class="fa-brands fa-markdown text-sm text-emerald-600"></i>
+                            <span>③ PR用チェックリスト (.md)</span>
+                        </button>
+                    </div>
+                    <span class="text-[11px] text-slate-400 hidden sm:inline">目的の形式をクリックして切り替え</span>
+                </div>
+
+                <!-- タブ1: AI質問用プロンプトエリア (Markdown形式) -->
+                <div id="panelPromptMd" class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-600 font-medium flex items-center gap-1">
+                            <i class="fa-solid fa-robot text-indigo-500"></i>
+                            ChatGPT / Claude / Gemini に貼り付けて「Markdownチェックリスト」で回答を得るプロンプト
+                        </span>
+                        <div class="flex items-center space-x-2">
+                            <button id="copyPromptBtn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium transition shadow-xs flex items-center gap-1">
+                                <i class="fa-regular fa-copy"></i> プロンプト全文をコピー
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="aiPromptTextarea" rows="11" readonly class="w-full p-3.5 bg-slate-900 text-slate-200 rounded-xl text-xs font-mono leading-relaxed outline-none resize-y border border-slate-800 shadow-inner"></textarea>
+                </div>
+
+                <!-- タブ2: AI質問用プロンプトエリア (JSON形式) -->
+                <div id="panelPromptJson" class="hidden space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-600 font-medium flex items-center gap-1">
+                            <i class="fa-solid fa-file-code text-amber-500"></i>
+                            AIに前置きなしの完全な「JSONオブジェクト」として出力させるプロンプト
+                        </span>
+                        <div class="flex items-center space-x-2">
+                            <button id="copyPromptJsonBtn" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-medium transition shadow-xs flex items-center gap-1">
+                                <i class="fa-regular fa-copy"></i> JSONプロンプトをコピー
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-slate-500 flex items-center gap-1">
+                        <i class="fa-solid fa-circle-info text-amber-500"></i>
+                        <span>回答を前置きなしの単一JSON（\`summary\` / \`severity\` / \`reviews\`）で出力するよう厳格に指定しています。</span>
+                    </div>
+                    <textarea id="aiPromptJsonTextarea" rows="11" readonly class="w-full p-3.5 bg-slate-900 text-amber-200 rounded-xl text-xs font-mono leading-relaxed outline-none resize-y border border-slate-800 shadow-inner"></textarea>
+                </div>
+
+                <!-- タブ3: 純粋なMarkdownファイル用エリア -->
+                <div id="panelMd" class="hidden space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-600 font-medium flex items-center gap-1">
+                            <i class="fa-solid fa-list-check text-emerald-600"></i>
+                            PR冒頭やチケットにそのまま貼れる目次形式サマリー
+                        </span>
+                        <div class="flex items-center space-x-2">
+                            <button id="downloadMdBtn" class="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-xs font-medium transition flex items-center gap-1">
+                                <i class="fa-solid fa-download text-slate-400"></i> .md保存
+                            </button>
+                            <button id="copyPureMdBtn" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-xs flex items-center gap-1" title="ChatTaskのコードレビューへ取り込めます">
+                                <i class="fa-solid fa-square-check"></i> ChatTask用にコピー
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-slate-500 flex items-center gap-1">
+                        <i class="fa-solid fa-circle-info text-emerald-600"></i>
+                        <span>コピー後、ChatTaskで対象タスクの「コードレビュー」→「取り込む」から貼り付けると、作業項目として管理できます。</span>
+                    </div>
+                    <textarea id="markdownDocTextarea" rows="11" readonly class="w-full p-3.5 bg-slate-900 text-emerald-300 rounded-xl text-xs font-mono leading-relaxed outline-none resize-y border border-slate-800 shadow-inner"></textarea>
+                </div>
+            </div>
+        </section>
+
+        <!-- メッセージトースト通知 -->
+        <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-lg text-xs font-medium flex items-center space-x-2">
+            <i id="toastIcon" class="fa-solid fa-check text-emerald-400"></i>
+            <span id="toastMsg">通知メッセージ</span>
+        </div>
+    </main>
+
+    <div id="phpModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto shadow-2xl border border-slate-200 p-6 space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="flex items-center space-x-2 text-slate-900">
+                    <i class="fa-brands fa-php text-2xl text-indigo-600"></i>
+                    <h3 class="font-bold text-base">PHP を使ってブラウザからボタン1つで自動実行する</h3>
+                </div>
+                <button id="closePhpModalBtn" class="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs text-slate-600 leading-relaxed">
+                <p>
+                    Laravel（PHP）を開発されているため、Macのターミナルで <code class="bg-slate-100 text-slate-800 px-1 py-0.5 rounded font-mono">php -v</code> を打つとPHPが既に利用できます。
+                </p>
+                <p>
+                    プロジェクトフォルダ内に <code class="bg-slate-100 text-slate-800 px-1 py-0.5 rounded font-mono">diff_server.php</code> を1つ置くだけで、ブラウザからボタン1つで即実行できるようになります：
+                </p>
+
+                <div class="bg-slate-900 rounded-xl p-3 text-slate-200 font-mono text-[11px] overflow-x-auto">
+                    <span class="text-slate-500 select-none"># ターミナルで起動するコマンド:</span><br>
+                    <span class="text-emerald-400 select-none">$ </span>php -S 127.0.0.1:8000
+                </div>
+
+                <p class="text-slate-500">
+                    ※ ご希望の場合は、PHP 組み込みサーバー用のコード（1ファイル完結型）もいつでもご提供できますのでお申し付けください。
+                </p>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+                <button id="closePhpModalBtn2" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg transition">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // サンプル差分（先ほどユーザーが提示された実際のDiffデータ）
+        const SAMPLE_DIFF = `diff --git a/app/Http/Controllers/Area/ZipcodeKokudoController.php b/app/Http/Controllers/Area/ZipcodeKokudoController.php
+index fa46f5f..adbccaa 100644
+--- a/app/Http/Controllers/Area/ZipcodeKokudoController.php
++++ b/app/Http/Controllers/Area/ZipcodeKokudoController.php
+@@ -86,4 +86,37 @@ public function getGroupCities(Request $request, int $prefectureId): JsonResponse
+              ], 500);
+          }
+      }
++
++    /**
++     * 都道府県と市区町村に基づいてグルーピングした町丁目を取得
++     */
++    public function getGroupTowns(Request $request): JsonResponse
++    {
++        try {
++            $prefectureId = (int) $request->input('prefecture_id');
++            $city = $request->input('city');
++
++            if (! $prefectureId || ! $city) {
++                return response()->json(['message' => 'パラメータが不足しています。'], 400);
++            }
++
++            // 既存のサービスに groupTowns メソッドを追加して呼び出す
++            $groupedTowns = $this->zipcodeKokudoService->groupTowns($prefectureId, $city);
++
++            return response()->json([
++                'success' => 'ok',
++                'data' => $groupedTowns,
++            ], 200);
++
++        } catch (\\Throwable $e) {
++            Log::error('町丁目取得中にエラーが発生しました', [
++                'message' => $e->getMessage(),
++            ]);
++
++            return response()->json([
++                'success' => false,
++                'message' => '町丁目情報の取得に失敗しました。',
++            ], 500);
++        }
++    }
+ }
+diff --git a/app/Services/Area/ZipcodeKokudoService.php b/app/Services/Area/ZipcodeKokudoService.php
+index e197b9d..3356c4d 100644
+--- a/app/Services/Area/ZipcodeKokudoService.php
++++ b/app/Services/Area/ZipcodeKokudoService.php
+@@ -121,7 +121,89 @@ public function groupCities(int $prefectureId)
+                  'cities' => $groupedCities['その他'],
+              ];
+          }
+-
++         
+          return $sortedGroupedCities;
+      }
++
++    /**
++     * 指定された都道府県IDと市区町村名から町丁目を取得し、五十音順にグループ化する
++     */
++    public function groupTowns(int $prefectureId, string $city): array
++    {
++        $towns = Kokudo::where('prefecture_id', $prefectureId)
++            ->where('city', $city)
++            ->select('town', 'town_chome', 'town_initial', 'town_kana')
++            ->distinct()
++            ->get();
++
++        return [];
++    }
+ }
+diff --git a/routes/api.php b/routes/api.php
+index 7ae8b9d..d9fe178 100644
+--- a/routes/api.php
++++ b/routes/api.php
+@@ -69,6 +69,8 @@
+          // 町丁目一覧取得
+          Route::get('/towns', [ZipcodeKokudoController::class, 'getTowns']);
+          Route::get('/group/cities/{prefectureId}', [ZipcodeKokudoController::class, 'getGroupCities']);
++        // グループ化町丁目一覧取得
++        Route::get('/group/towns', [ZipcodeKokudoController::class, 'getGroupTowns']);
+      });
+  
+      // 物件関連ルーティング`;
+
+        // DOM要素
+        const baseBranchInput = document.getElementById('baseBranchInput');
+        const targetBranchInput = document.getElementById('targetBranchInput');
+        const cmdText = document.getElementById('cmdText');
+        const copyCmdBtn = document.getElementById('copyCmdBtn');
+        const rawDiffInput = document.getElementById('rawDiffInput');
+        const renderBtn = document.getElementById('renderBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const loadSampleBtn = document.getElementById('loadSampleBtn');
+        const pasteFromClipboardBtn = document.getElementById('pasteFromClipboardBtn');
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toastMsg');
+        const toastIcon = document.getElementById('toastIcon');
+
+        const aiPromptSection = document.getElementById('aiPromptSection');
+        const aiPromptTextarea = document.getElementById('aiPromptTextarea');
+        const aiPromptJsonTextarea = document.getElementById('aiPromptJsonTextarea');
+        const markdownDocTextarea = document.getElementById('markdownDocTextarea');
+        const copyPromptBtn = document.getElementById('copyPromptBtn');
+        const copyPromptJsonBtn = document.getElementById('copyPromptJsonBtn');
+        const copyPureMdBtn = document.getElementById('copyPureMdBtn');
+        const downloadMdBtn = document.getElementById('downloadMdBtn');
+        
+        const tabPromptMdBtn = document.getElementById('tabPromptMdBtn');
+        const tabPromptJsonBtn = document.getElementById('tabPromptJsonBtn');
+        const tabMdBtn = document.getElementById('tabMdBtn');
+
+        const panelPromptMd = document.getElementById('panelPromptMd');
+        const panelPromptJson = document.getElementById('panelPromptJson');
+        const panelMd = document.getElementById('panelMd');
+
+        const reviewModeSelect = document.getElementById('reviewModeSelect');
+        const chkLogic = document.getElementById('chkLogic');
+        const chkSecurity = document.getElementById('chkSecurity');
+        const chkPerf = document.getElementById('chkPerf');
+        const chkQuality = document.getElementById('chkQuality');
+
+        // タブ切り替え処理 (3タブ構成)
+        function switchTab(activeTab) {
+            const tabs = [
+                { btn: tabPromptMdBtn, panel: panelPromptMd },
+                { btn: tabPromptJsonBtn, panel: panelPromptJson },
+                { btn: tabMdBtn, panel: panelMd }
+            ];
+
+            tabs.forEach(t => {
+                if (!t.btn || !t.panel) return;
+                if (t.btn === activeTab) {
+                    t.btn.className = 'px-4 py-2 text-xs font-semibold border-b-2 border-indigo-600 text-indigo-700 flex items-center gap-1.5';
+                    t.panel.classList.remove('hidden');
+                } else {
+                    t.btn.className = 'px-4 py-2 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-1.5';
+                    t.panel.classList.add('hidden');
+                }
+            });
+        }
+
+        if (tabPromptMdBtn) tabPromptMdBtn.addEventListener('click', () => switchTab(tabPromptMdBtn));
+        if (tabPromptJsonBtn) tabPromptJsonBtn.addEventListener('click', () => switchTab(tabPromptJsonBtn));
+        if (tabMdBtn) tabMdBtn.addEventListener('click', () => switchTab(tabMdBtn));
+
+        // 解析された差分のキャッシュ
+        let parsedFilesCache = [];
+        let rawDiffCache = "";
+
+        // モーダル関連
+        const openPhpGuideBtn = document.getElementById('openPhpGuideBtn');
+        const phpModal = document.getElementById('phpModal');
+        const closePhpModalBtn = document.getElementById('closePhpModalBtn');
+        const closePhpModalBtn2 = document.getElementById('closePhpModalBtn2');
+
+        function copyTextToClipboard(text) {
+            if (!text) return;
+            try {
+                // iFrame環境に対応するため document.execCommand('copy') を第一優先で使用
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                textarea.style.top = '0';
+                textarea.setAttribute('readonly', '');
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textarea);
+
+                if (!successful && navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).catch(() => {});
+                }
+            } catch (err) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).catch(() => {});
+                }
+            }
+        }
+
+        function showToast(message, isError = false) {
+            toastMsg.textContent = message;
+            toastIcon.className = isError ? "fa-solid fa-circle-exclamation text-rose-400" : "fa-solid fa-check text-emerald-400";
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 2500);
+        }
+
+        function updateCommand() {
+            const base = baseBranchInput.value.trim() || 'main';
+            const target = targetBranchInput.value.trim() || 'HEAD';
+            cmdText.textContent = `git --no-pager diff ${base}...${target} | pbcopy`;
+        }
+
+        if (baseBranchInput) baseBranchInput.addEventListener('input', updateCommand);
+        if (targetBranchInput) targetBranchInput.addEventListener('input', updateCommand);
+
+        if (copyCmdBtn) {
+            copyCmdBtn.addEventListener('click', () => {
+                const textToCopy = cmdText.textContent;
+                copyTextToClipboard(textToCopy);
+                showToast('コマンドをクリップボードにコピーしました！');
+            });
+        }
+
+        if (pasteFromClipboardBtn) {
+            pasteFromClipboardBtn.addEventListener('click', async () => {
+                try {
+                    if (navigator.clipboard && navigator.clipboard.readText) {
+                        const clipText = await navigator.clipboard.readText();
+                        if (clipText) {
+                            rawDiffInput.value = clipText;
+                            processDiff(clipText);
+                            showToast('貼り付けとプロンプト生成が完了しました');
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    // ブラウザ制限等で読み取れない場合
+                }
+                rawDiffInput.focus();
+                showToast('Cmd + V でテキストエリアに貼り付けてください');
+            });
+        }
+
+        if (loadSampleBtn) {
+            loadSampleBtn.addEventListener('click', () => {
+                rawDiffInput.value = SAMPLE_DIFF;
+                processDiff(SAMPLE_DIFF);
+                showToast('サンプル差分を読み込みました');
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                rawDiffInput.value = '';
+                aiPromptSection.classList.add('hidden');
+                showToast('クリアしました');
+            });
+        }
+
+        if (renderBtn) {
+            renderBtn.addEventListener('click', () => {
+                const text = rawDiffInput.value.trim();
+                if (!text) {
+                    showToast('差分テキストを入力してください', true);
+                    return;
+                }
+                processDiff(text);
+            });
+        }
+
+        function parseGitDiff(diffText) {
+            const lines = diffText.split('\n');
+            const files = [];
+            let currentFile = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+
+                if (line.startsWith('diff --git')) {
+                    if (currentFile) files.push(currentFile);
+
+                    const match = line.match(/diff --git a\/(.*?) b\/(.*)$/);
+                    const filename = match ? match[2] : line.replace('diff --git ', '');
+
+                    currentFile = {
+                        filename: filename,
+                        added: 0,
+                        removed: 0
+                    };
+                } else if (currentFile) {
+                    if (line.startsWith('+') && !line.startsWith('+++')) {
+                        currentFile.added++;
+                    } else if (line.startsWith('-') && !line.startsWith('---')) {
+                        currentFile.removed++;
+                    }
+                }
+            }
+
+            if (currentFile) files.push(currentFile);
+            return files;
+        }
+
+        function processDiff(rawText) {
+            const files = parseGitDiff(rawText);
+
+            if (files.length === 0) {
+                showToast('有効な git diff 差分が見つかりませんでした', true);
+                return;
+            }
+
+            rawDiffCache = rawText;
+            parsedFilesCache = files;
+
+            generateAndDisplayAiPrompt();
+            aiPromptSection.classList.remove('hidden');
+            aiPromptSection.scrollIntoView({ behavior: 'smooth' });
+            showToast('AI質問プロンプトを生成しました');
+        }
+
+        function generateAndDisplayAiPrompt() {
+            if (!parsedFilesCache || parsedFilesCache.length === 0) return;
+
+            const mode = reviewModeSelect.value;
+            const fileSummaries = parsedFilesCache.map(f => `- \`${f.filename}\` (+${f.added} / -${f.removed})`).join('\n');
+
+            // 観点カテゴリーの定義
+            const selectedCategories = [];
+            if (chkLogic && chkLogic.checked) {
+                selectedCategories.push({
+                    catName: 'ロジック・境界値の検証',
+                    desc: 'null、空配列、未定義パラメータ、条件分岐の網羅性、ビジネスロジックの正確性'
+                });
+            }
+            if (chkSecurity && chkSecurity.checked) {
+                selectedCategories.push({
+                    catName: 'バリデーション・セキュリティ',
+                    desc: 'Requestの型・必須・文字長検証、SQLインジェクション、認可・権限チェック'
+                });
+            }
+            if (chkPerf && chkPerf.checked) {
+                selectedCategories.push({
+                    catName: 'パフォーマンス・クエリ最適化',
+                    desc: 'N+1問題、不要な全件取得の有無、DBインデックス活用、メモリ効率'
+                });
+            }
+            if (chkQuality && chkQuality.checked) {
+                selectedCategories.push({
+                    catName: '品質・保守性・命名規約',
+                    desc: 'PSR準拠、単一責任の原則、Controller/Serviceの責務分離、例外処理・ログの適切性'
+                });
+            }
+
+            const categoryListPrompt = selectedCategories.map((c, idx) => `  ${idx + 1}. **${c.catName}**（${c.desc}）`).join('\n');
+
+            const modeLabels = {
+                comprehensive: '総合コードレビュー',
+                bug_security: 'バグ・セキュリティ重点検証',
+                pr_summary: 'プルリクエスト（PR）変更概要',
+                refactor: 'リファクタリング提案'
+            };
+
+            // 1. Markdown用 テンプレート（カテゴリ別 ＆ 修正箇所ごとの見出し形式）
+            let sampleChecklistMd = selectedCategories.map(c => {
+                return `### ■ ${c.catName}
+- [ ] \`対象ファイル名 / メソッド名\`: 指摘箇所の概要
+  > **指摘理由**: 現状のコードにおける問題点や潜在リスク  
+  > **修正案**: 推奨される実装方針や対応策`;
+            }).join('\n\n');
+
+            const markdownDoc = `# コードレビュー & 変更概要
+
+- **レビュー種別**: ${modeLabels[mode] || mode}
+- **変更ファイル数**: ${parsedFilesCache.length} 件
+- **更新ブランチ**: \`${baseBranchInput.value || 'main'}...${targetBranchInput.value || 'HEAD'}\`
+
+## 📋 カテゴリー別 修正箇所チェックリスト
+${sampleChecklistMd}
+
+## 📁 変更対象ファイル
+${fileSummaries}
+
+## 📝 判定メモ・レビュアー記録
+- 判定結果: [ ] 承認 / [ ] 差戻し
+- 特記事項:`;
+
+            if (markdownDocTextarea) {
+                markdownDocTextarea.value = markdownDoc;
+            }
+
+            // 2-A. AI向け Markdown形式 質問プロンプト (引用記号 > 採用、チェックリスト崩れ防止)
+            let promptMd = `以下の git diff についてコードレビューを実施してください。
+
+【出力要件（極めて重要・厳守）】
+回答は必ず以下の2つのセクションに明確に分けて出力してください。
+
+※最重要ルール1（網羅性の徹底・厳選禁止）:
+懸念点や指摘事項を「重要度が高いものだけに絞る」「代表的なものだけ厳選する」ことは絶対に避けてください。
+重大なバグ・セキュリティ脆弱性はもちろんのこと、境界値・エッジケースの考慮漏れ、軽微な仕様不備、リファクタリング余地、型安全性の懸念、命名規則や可読性の違和感に至るまで、気付いた点・懸念される点は【大小問わず、あるだけ全て網羅的に】余すことなく出力してください。
+
+※最重要ルール2:
+GitHubや各種Markdownエディタに貼り付けた際に、字下げ（インデント）が消えるのを完全に防ぐため、各チェック項目の「指摘理由」と「修正案」には、箇条書き記号（* や -）を絶対に使わず、必ず【引用記号「> 」】を使用してください。
+
+※最重要ルール3:
+クリック可能な本物のチェックボックスとして機能させるため、チェックボックス行は「* [ ]」ではなく必ず【「- [ ]」（ハイフン）】で記述してください。また、コードブロック記号（\`\`\`markdown や \`\`\`）は【一切使わず】、生のMarkdownテキストとして出力してください。
+
+### 1. 📋 Markdown チェックリスト判定（目次形式）
+★「\`\`\`」のコードブロックで囲まず、生のMarkdownとして直接出力してください。
+★観点ごとにカテゴリー分け（大見出し ### ■ カテゴリー名）を行ってください。
+★懸念点は厳選せず、気づいたものは漏れなくすべて【\`ファイル名: 修正箇所\`】の単位で個別項目（- [ ]）としてリストアップしてください。
+★各項目の直下には、必ず引用ブロック（> ）で「指摘理由」と「修正案」を記載してください。
+
+【出力フォーマットの厳格な見本】:
+### ■ ロジック・境界値の検証
+- [ ] \`ZipcodeKokudoService::groupTowns\`: 戻り値が空配列 \`return []\` のまま実装が未完了
+  > **指摘理由**: データベースから町丁目レコードを取得しているものの、結果を返さず空配列を返却しているため機能しません。  
+  > **修正案**: 取得したレコードを五十音グループごとに分類・ソートした配列を返却するロジックを実装してください。
+
+### ■ バリデーション・セキュリティ
+- [ ] \`ZipcodeKokudoController::getGroupTowns\`: クエリパラメータの型・存在検証の不足
+  > **指摘理由**: \`(int)\` キャストと簡易な \`if\` 文のみで、負の値や文字列混入、不正なパラメータ値への厳密な検証が不十分です。  
+  > **修正案**: Laravel の \`$request->validate()\` または FormRequest を用い、\`'prefecture_id' => 'required|integer|min:1'\` 等の厳格な検証を導入してください。
+
+レビュー対象カテゴリー:
+${categoryListPrompt}
+
+### 2. 💡 詳細解説・修正提案コード
+上記のチェックリストで挙げたすべての懸念点について、具体的な技術的背景、理由、および修正後の完全なコード（Before / After）を詳しく解説してください。
+
+---
+### 📁 変更対象ファイル (${parsedFilesCache.length} 件)
+${fileSummaries}
+
+### 差分データ (git diff)
+\`\`\`diff
+${rawDiffCache.trim()}
+\`\`\``;
+
+            if (aiPromptTextarea) {
+                aiPromptTextarea.value = promptMd;
+            }
+
+            // 2-B. AI向け JSON形式 質問プロンプト (スキーマ厳格指定)
+            let promptJson = `以下の git diff についてコードレビューを実施してください。
+
+【出力要件（極めて重要・厳守）】
+
+1. 出力フォーマット:
+回答は解説文や前置きなどのテキストを一切含めず、単一のJSONオブジェクト（\`\`\`json ... \`\`\`）のみで出力してください。
+必ずマークダウンのコードブロック形式（\`\`\`json ... \`\`\`）で出力してください。
+
+2. 網羅性の徹底（厳選禁止）:
+懸念点や指摘事項を「重要度が高いものだけに絞る」「代表的なものだけ厳選する」ことは絶対に避けてください。
+重大なバグ・セキュリティ脆弱性はもちろんのこと、境界値・エッジケースの考慮漏れ、軽微な仕様不備、リファクタリング余地、型安全性の懸念、命名規則や可読性の違和感に至るまで、気付いた点は【大小問わず、あるだけ全て網羅的に】抽出してください。
+
+【レビュー対象カテゴリー】
+${categoryListPrompt}
+
+【出力JSONスキーマ】
+以下のJSON構造に厳格に従って出力してください。
+
+\`\`\`json
+{
+  "summary": {
+    "total_issues": 0,
+    "severity_counts": {
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    }
+  },
+  "reviews": [
+    {
+      "id": "REV-001",
+      "category": "ロジック・境界値の検証",
+      "severity": "high",
+      "file": "ファイル名",
+      "location": "該当する関数名・行番号など",
+      "title": "指摘事項の簡潔なタイトル",
+      "reason": "指摘の具体的な理由や発生し得る問題点",
+      "suggestion": "改善案・修正方針の説明",
+      "code_snippet": {
+        "before": "修正前の該当コード（短く抜粋）",
+        "after": "修正後の提案コード（短く抜粋）"
+      }
+    }
+  ]
+}
+\`\`\`
+※ severity は high（重大なバグ・セキュリティ）, medium（仕様不備・パフォーマンス・エッジケース）, low（可読性・命名・リファクタリング）の3段階で判定してください。
+
+---
+### 📁 変更対象ファイル (${parsedFilesCache.length} 件)
+${fileSummaries}
+
+### 差分データ (git diff)
+\`\`\`diff
+${rawDiffCache.trim()}
+\`\`\``;
+
+            if (aiPromptJsonTextarea) {
+                aiPromptJsonTextarea.value = promptJson;
+            }
+        }
+
+        // 設定変更時にプロンプトを再生成
+        if (reviewModeSelect) reviewModeSelect.addEventListener('change', generateAndDisplayAiPrompt);
+        if (chkLogic) chkLogic.addEventListener('change', generateAndDisplayAiPrompt);
+        if (chkSecurity) chkSecurity.addEventListener('change', generateAndDisplayAiPrompt);
+        if (chkPerf) chkPerf.addEventListener('change', generateAndDisplayAiPrompt);
+        if (chkQuality) chkQuality.addEventListener('change', generateAndDisplayAiPrompt);
+
+        // 前後の ```markdown や ``` を取り除いて純粋なMarkdownにするヘルパー関数
+        function stripCodeFences(text) {
+            let cleaned = text.trim();
+            cleaned = cleaned.replace(/^```(?:markdown)?\s*\n?/i, '');
+            cleaned = cleaned.replace(/\n?```\s*$/i, '');
+            return cleaned.trim();
+        }
+        // プロンプトをクリップボードにコピー (MD形式)
+        if (copyPromptBtn) {
+            copyPromptBtn.addEventListener('click', () => {
+                const text = aiPromptTextarea.value;
+                if (!text) return;
+                copyTextToClipboard(text);
+                showToast('Markdown形式プロンプトをコピーしました！');
+            });
+        }
+
+        // プロンプトをクリップボードにコピー (JSON形式)
+        if (copyPromptJsonBtn) {
+            copyPromptJsonBtn.addEventListener('click', () => {
+                const text = aiPromptJsonTextarea.value;
+                if (!text) return;
+                copyTextToClipboard(text);
+                showToast('JSON形式プロンプトをコピーしました！');
+            });
+        }
+
+        // 純粋なMarkdown（直貼りチェックリスト用）のコピー
+        if (copyPureMdBtn) {
+            copyPureMdBtn.addEventListener('click', () => {
+                const raw = markdownDocTextarea.value;
+                if (!raw) return;
+                const pureMd = stripCodeFences(raw);
+                copyTextToClipboard(pureMd);
+                showToast('ChatTaskへ取り込めるチェックリストをコピーしました');
+            });
+        }
+
+        // .md ファイルとしてダウンロード
+        if (downloadMdBtn) {
+            downloadMdBtn.addEventListener('click', () => {
+                const text = markdownDocTextarea.value;
+                if (!text) return;
+                const pureMd = stripCodeFences(text);
+                const blob = new Blob([pureMd], { type: 'text/markdown;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `diff_checklist_${Date.now()}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast('Markdownファイルをダウンロードしました！');
+            });
+        }
+
+        // モーダル開閉
+        if (openPhpGuideBtn) {
+            openPhpGuideBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                phpModal.classList.remove('hidden');
+            });
+        }
+        if (closePhpModalBtn) closePhpModalBtn.addEventListener('click', () => phpModal.classList.add('hidden'));
+        if (closePhpModalBtn2) closePhpModalBtn2.addEventListener('click', () => phpModal.classList.add('hidden'));
+        if (phpModal) {
+            phpModal.addEventListener('click', (e) => {
+                if (e.target === phpModal) phpModal.classList.add('hidden');
+            });
+        }
+
+        // 初期表示時は2の入力欄を空にして待機
+        window.addEventListener('load', () => {
+            rawDiffInput.value = '';
+            updateCommand();
+        });
+    </script>
+</body>
+</html>
