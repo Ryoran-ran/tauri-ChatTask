@@ -57,6 +57,7 @@ export function ToolsModal({ tools, storagePath, onSave, onStoragePath, onClose 
   const [openMenuId, setOpenMenuId] = useState("");
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const [editingId, setEditingId] = useState("");
+  const [folderNameDraft, setFolderNameDraft] = useState("");
 
   useEffect(() => {
     const closeMenu = (event: MouseEvent) => {
@@ -108,6 +109,26 @@ export function ToolsModal({ tools, storagePath, onSave, onStoragePath, onClose 
   const updateTool = (id: string, changes: Partial<LocalTool>) => {
     const updatedAt = new Date().toISOString();
     onSave(tools.map((tool) => tool.id === id ? { ...tool, ...changes, updatedAt } : tool));
+  };
+
+  const renameToolFolder = async (tool: LocalTool) => {
+    const nextName = folderNameDraft.trim();
+    if (!nextName) {
+      setNotice({ text: "保存フォルダ名を入力してください。", error: true });
+      return;
+    }
+    setLoadingIds((current) => new Set(current).add(tool.id));
+    setNotice(null);
+    try {
+      const folderPath = await invoke<string>("rename_managed_tool_folder", { folderPath: tool.folderPath, toolId: tool.id, folderName: nextName });
+      updateTool(tool.id, { folderPath });
+      setFolderNameDraft(folderName(folderPath));
+      setNotice({ text: `保存フォルダ名を「${folderName(folderPath)}」へ変更しました。` });
+    } catch (error) {
+      setNotice({ text: errorText(error), error: true });
+    } finally {
+      setLoadingIds((current) => { const next = new Set(current); next.delete(tool.id); return next; });
+    }
   };
 
   const chooseStoragePath = async () => {
@@ -299,8 +320,8 @@ export function ToolsModal({ tools, storagePath, onSave, onStoragePath, onClose 
             <button type="button" className="tool-launch-button" disabled={loading || entryMissing || !tool.entryFile} onClick={() => void launch(tool)}><span className="tool-launch-icon" aria-hidden="true">&lt;/&gt;</span><span><strong>{tool.name || "名称未設定のツール"}</strong><small>{tool.entryFile}</small></span><b>Chromeで開く ↗</b></button>
             <div className="tool-menu-area"><button type="button" className="tool-menu-trigger" aria-label={`${tool.name}の設定`} aria-expanded={openMenuId === tool.id} onClick={(event) => toggleToolMenu(tool.id, event.currentTarget)}>…</button></div>
           </div>
-          {openMenuId === tool.id && createPortal(<div className="tool-action-menu" style={menuPosition}><button type="button" onClick={() => { setEditingId(tool.id); setDeleteId(""); setOpenMenuId(""); }}>設定を編集</button><button type="button" onClick={() => { setOpenMenuId(""); void openFolder(tool); }}>フォルダを開く</button><button type="button" onClick={() => { setEditingId(tool.id); setOpenMenuId(""); void loadFiles(tool); }}>HTML一覧を更新</button><button type="button" className="danger-text" onClick={() => { setDeleteId(tool.id); setEditingId(""); setOpenMenuId(""); }}>削除</button></div>, document.body)}
-          {editingId === tool.id && <div className="tool-inline-settings"><label>ツール名<input value={tool.name} onChange={(event) => updateTool(tool.id, { name: event.target.value })} /></label><label>起動HTML<select value={entryMissing ? "" : tool.entryFile} disabled={loading || !files?.length} onChange={(event) => updateTool(tool.id, { entryFile: event.target.value })}>{entryMissing && <option value="">ファイルが見つかりません</option>}{loading && <option value="">確認中…</option>}{!loading && !files?.length && <option value="">HTMLがありません</option>}{files?.map((file) => <option value={file} key={file}>{file}</option>)}</select></label><code title={tool.folderPath}>{tool.folderPath}</code><button type="button" onClick={() => setEditingId("")}>閉じる</button></div>}
+          {openMenuId === tool.id && createPortal(<div className="tool-action-menu" style={menuPosition}><button type="button" onClick={() => { setEditingId(tool.id); setFolderNameDraft(folderName(tool.folderPath)); setDeleteId(""); setOpenMenuId(""); }}>設定を編集</button><button type="button" onClick={() => { setOpenMenuId(""); void openFolder(tool); }}>フォルダを開く</button><button type="button" onClick={() => { setEditingId(tool.id); setFolderNameDraft(folderName(tool.folderPath)); setOpenMenuId(""); void loadFiles(tool); }}>HTML一覧を更新</button><button type="button" className="danger-text" onClick={() => { setDeleteId(tool.id); setEditingId(""); setOpenMenuId(""); }}>削除</button></div>, document.body)}
+          {editingId === tool.id && <div className="tool-inline-settings"><label>ツール名<input value={tool.name} onChange={(event) => updateTool(tool.id, { name: event.target.value })} /></label><label>起動HTML<select value={entryMissing ? "" : tool.entryFile} disabled={loading || !files?.length} onChange={(event) => updateTool(tool.id, { entryFile: event.target.value })}>{entryMissing && <option value="">ファイルが見つかりません</option>}{loading && <option value="">確認中…</option>}{!loading && !files?.length && <option value="">HTMLがありません</option>}{files?.map((file) => <option value={file} key={file}>{file}</option>)}</select></label><label className="tool-folder-name-setting">保存フォルダ名<span><input value={folderNameDraft} disabled={loading || !tool.managedCopy} onChange={(event) => setFolderNameDraft(event.target.value)} /><button type="button" disabled={loading || !tool.managedCopy || !folderNameDraft.trim() || folderNameDraft.trim() === folderName(tool.folderPath)} onClick={() => void renameToolFolder(tool)}>変更</button></span></label><button type="button" onClick={() => setEditingId("")}>閉じる</button><code title={tool.folderPath}>{tool.folderPath}</code>{!tool.managedCopy && <small>ChatTaskがコピーしたフォルダだけ名前を変更できます。</small>}</div>}
           {deleteId === tool.id && <div className="tool-delete-confirm"><span>削除方法を選択してください</span><button type="button" onClick={() => setDeleteId("")}>戻る</button><button type="button" onClick={() => void deleteTool(tool, false)}>登録だけ削除</button>{tool.managedCopy && <button type="button" className="danger" onClick={() => void deleteTool(tool, true)}>ファイルも削除</button>}</div>}
         </article>;
       })}

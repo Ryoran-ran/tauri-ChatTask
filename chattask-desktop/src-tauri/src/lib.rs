@@ -411,6 +411,29 @@ fn delete_managed_tool_folder(folder_path: String, tool_id: String) -> Result<()
 }
 
 #[tauri::command]
+fn rename_managed_tool_folder(folder_path: String, tool_id: String, folder_name: String) -> Result<String, String> {
+    let folder = fs::canonicalize(folder_path).map_err(|_| "ツールの保存フォルダが見つかりません。".to_string())?;
+    if !folder.is_dir() { return Err("ツールの保存先がフォルダではありません。".into()); }
+    let marker = fs::read_to_string(folder.join(".chattask-tool")).map_err(|_| "ChatTaskが取り込んだフォルダであることを確認できません。".to_string())?;
+    if marker != tool_id { return Err("ツールの管理情報が一致しないため名前を変更できません。".into()); }
+
+    let requested_name = folder_name.trim();
+    let requested_path = Path::new(requested_name);
+    let mut components = requested_path.components();
+    let valid_name = matches!(components.next(), Some(std::path::Component::Normal(_))) && components.next().is_none();
+    if !valid_name || requested_name == ".chattask-tool" { return Err("フォルダ名に使用できない文字が含まれています。".into()); }
+    if folder.file_name().and_then(|value| value.to_str()) == Some(requested_name) {
+        return Ok(folder.to_string_lossy().into_owned());
+    }
+
+    let parent = folder.parent().ok_or_else(|| "保存先の親フォルダを確認できません。".to_string())?;
+    let destination = parent.join(requested_name);
+    if destination.exists() { return Err("同じ名前のフォルダがすでにあります。".into()); }
+    fs::rename(&folder, &destination).map_err(|error| format!("フォルダ名を変更できませんでした。{error}"))?;
+    Ok(destination.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 fn import_dropped_tool_files(storage_path: String, tool_id: String, folder_name: String, files: Vec<DroppedToolFile>) -> Result<String, String> {
     if tool_id.trim().is_empty() || files.is_empty() { return Err("取り込むツールのファイルがありません。".into()); }
     if files.len() > 10_000 { return Err("ツール内のファイル数が上限（10,000件）を超えています。".into()); }
@@ -556,7 +579,7 @@ pub fn run() {
             list_attachments, add_attachment, rename_attachment, get_attachment, open_attachment, copy_attachment,
             download_attachment, delete_attachment, delete_task_attachments, save_avatar, get_avatar, delete_avatar,
             export_markdown, select_tool_folder, select_tool_html_file, validate_tool_html_entry,
-            copy_tool_folder, delete_managed_tool_folder, import_dropped_tool_files,
+            copy_tool_folder, delete_managed_tool_folder, rename_managed_tool_folder, import_dropped_tool_files,
             list_tool_html_files, open_tool_in_chrome, open_tool_folder,
             report_frontend_error, app_database::initialize_app_database,
             app_database::load_app_data_sqlite, app_database::save_app_data_sqlite,

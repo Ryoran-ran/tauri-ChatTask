@@ -2968,7 +2968,11 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .tool-inline-settings { display: grid; grid-template-columns: minmax(160px, .65fr) minmax(210px, 1fr) minmax(0, 1.4fr) auto; align-items: end; gap: .5rem; border-top: 1px solid #dbeafe; padding: .55rem .65rem; background: #f8fafc; }
 .tool-inline-settings label { display: grid; gap: .2rem; color: #475569; font-size: .58rem; font-weight: 700; }
 .tool-inline-settings input, .tool-inline-settings select { width: 100%; min-width: 0; min-height: 34px; }
-.tool-inline-settings code { align-self: center; overflow: hidden; color: #64748b; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
+.tool-folder-name-setting > span { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem; }
+.tool-folder-name-setting button { width: auto; min-height: 34px; border: 1px solid #93c5fd; border-radius: 7px; padding: .3rem .55rem; background: #eff6ff; box-shadow: none; color: #1d4ed8; font-size: .62rem; font-weight: 700; white-space: nowrap; }
+.tool-folder-name-setting button:disabled { border-color: #dbe3ef; background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+.tool-inline-settings code { grid-column: 1 / -1; align-self: center; overflow: hidden; color: #64748b; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
+.tool-inline-settings > small { grid-column: 1 / -1; color: #b45309; font-size: .56rem; }
 .tool-inline-settings > button { width: auto; min-height: 34px; padding: .3rem .55rem; }
 .tool-delete-confirm { display: flex; align-items: center; justify-content: flex-end; gap: .35rem; border-top: 1px solid #fecaca; padding: .45rem .6rem; background: #fef2f2; color: #991b1b; font-size: .62rem; }
 .tool-delete-confirm span { margin-right: auto; }
