@@ -1,4 +1,4 @@
-import type { Goal } from "./types";
+import type { Goal, PlannedRange } from "./types";
 
 export interface TaskProjectContext {
   projectId: string;
@@ -32,3 +32,24 @@ export const taskProjectContexts = (projects: Goal[], taskId: string): TaskProje
   });
   return contexts.sort((a, b) => Number(a.kind !== "origin") - Number(b.kind !== "origin"));
 };
+
+/** A project schedule is managed only while its source still points at this task. */
+export const isActiveProjectScheduleSource = (
+  projects: Goal[],
+  taskId: string,
+  sourceType: PlannedRange["sourceType"],
+  sourceId: string | undefined,
+) => {
+  if (!sourceType || !sourceId) return false;
+  if (sourceType === "project-milestone") {
+    return projects.some((project) => project.milestones.some((milestone) =>
+      milestone.id === sourceId && milestone.linkedTaskId === taskId));
+  }
+  return projects.some((project) => (project.workItems || []).some((work) =>
+    work.id === sourceId && work.linkedTaskId === taskId));
+};
+
+export const isTaskScheduleManagedByProject = (projects: Goal[], taskId: string) =>
+  projects.some((project) =>
+    project.milestones.some((milestone) => milestone.linkedTaskId === taskId)
+    || (project.workItems || []).some((work) => work.linkedTaskId === taskId));

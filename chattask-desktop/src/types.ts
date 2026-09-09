@@ -159,6 +159,39 @@ export interface TaskRepositoryBranches {
   pullRequestTargets?: string[];
 }
 
+export interface TaskChecklistItem {
+  id: string;
+  title: string;
+  file?: string;
+  location?: string;
+  category: string;
+  details: string;
+  reason?: string;
+  suggestion?: string;
+  severity?: "high" | "medium" | "low";
+  reviewStatus?: "pending" | "in-progress" | "completed" | "ignored";
+  repositoryId?: string;
+  repositoryName?: string;
+  reviewRunId?: string;
+  /** この指摘が検出されたレビュー回。再指摘も同じ項目へ集約する。 */
+  reviewRunIds?: string[];
+  reviewOccurrenceCount?: number;
+  lastReviewedAt?: string;
+  completed: boolean;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface TaskCodeReviewRun {
+  id: string;
+  repositoryId: string;
+  repositoryName: string;
+  baseBranch: string;
+  targetBranch: string;
+  itemIds: string[];
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -177,6 +210,10 @@ export interface Task {
   parentTaskId: string;
   /** リポジトリごとに記録したGitブランチ名。 */
   repositoryBranches: TaskRepositoryBranches[];
+  /** Git Diffレビューなどから取り込んだ、タスク単位の実施チェックリスト。 */
+  reviewChecklist?: TaskChecklistItem[];
+  /** リポジトリ単位で実施したコードレビューの履歴。 */
+  codeReviewRuns?: TaskCodeReviewRun[];
   links: TaskLink[];
   relatedTasks: RelatedTaskLink[];
   nextAction: string;

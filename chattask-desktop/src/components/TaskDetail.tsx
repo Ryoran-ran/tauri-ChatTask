@@ -29,6 +29,7 @@ interface Props {
   onCreateChild: () => void;
   onCreateSibling: () => void;
   onDocuments: () => void;
+  onCodeReview: () => void;
   onSharedDocuments: (projectId: string, documentId?: string) => void;
   onTagDocuments: () => void;
   onOpenTagSettings: () => void;
@@ -44,7 +45,7 @@ interface Props {
   onEditMemo: (id: string, text: string) => void;
 }
 
-export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onCreateSibling, onDocuments, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
+export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onCreateSibling, onDocuments, onCodeReview, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
   const [rangeStart, setRangeStart] = useState(todayValue());
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeTitle, setRangeTitle] = useState("");
@@ -574,6 +575,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
           <button onClick={() => { closeTaskMenu(); window.dispatchEvent(new CustomEvent("chattask-open-waiting", { detail: { taskId: task.id } })); }}>{task.waitingFollowUp ? "待ち情報を編集" : "待ち箱へ入れる"}</button>
           {!task.waitingFollowUp && task.lastReleasedWaitingFollowUp && <button onClick={() => { closeTaskMenu(); onUpdate({ waitingFollowUp: task.lastReleasedWaitingFollowUp, status: task.lastReleasedWaitingStatus || "waiting-general", lastReleasedWaitingFollowUp: undefined, lastReleasedWaitingStatus: undefined }, "直前に解除した待ち状態を復元しました。"); }}>直前の待ち解除を取り消す</button>}
           <button onClick={() => { closeTaskMenu(); onDocuments(); }}>ドキュメント</button>
+          <button onClick={() => { closeTaskMenu(); onCodeReview(); }}>コードレビュー{task.reviewChecklist?.length ? `（${task.reviewChecklist.filter((item) => item.completed).length}/${task.reviewChecklist.length}）` : ""}</button>
           <button onClick={() => { closeTaskMenu(); onSaveTemplate(); }}>テンプレートとして保存</button>
           <button onClick={() => { closeTaskMenu(); onPromote(); }}>{promoted ? "起点プロジェクトを開く" : "プロジェクトへ昇華"}</button>
           {!!projectContexts.length && <><span className="task-menu-group-label">表示設定</span><button onClick={() => { const visible = !projectContextVisible; setProjectContextVisible(visible); localStorage.setItem("chatTaskProjectContextVisible", String(visible)); closeTaskMenu(); }}>{projectContextVisible ? "プロジェクト情報を非表示" : "プロジェクト情報を表示"}</button></>}

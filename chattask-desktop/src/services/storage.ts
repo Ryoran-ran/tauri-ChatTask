@@ -23,12 +23,21 @@ const KEYS = {
 
 export type AppEnvironment = "production" | "test";
 const ENVIRONMENT_KEY = "chatTaskActiveEnvironment";
+const LOCAL_TOOLS_MIRROR_READY_KEY = "chatTaskLocalToolsMirrorReady";
+const LOCAL_TOOLS_SQLITE_MIGRATED_KEY = "chatTaskLocalToolsSqliteMigratedV1";
 export const getActiveEnvironment = (): AppEnvironment =>
   localStorage.getItem(ENVIRONMENT_KEY) === "test" ? "test" : "production";
 export const setActiveEnvironment = (environment: AppEnvironment) =>
   localStorage.setItem(ENVIRONMENT_KEY, environment);
 const environmentKey = (key: string, environment: AppEnvironment) =>
   environment === "test" ? `${key}:test` : key;
+
+const hasLocalToolsMirror = (environment: AppEnvironment) =>
+  localStorage.getItem(environmentKey(LOCAL_TOOLS_MIRROR_READY_KEY, environment)) === "true";
+const hasMigratedLocalToolsToSqlite = (environment: AppEnvironment) =>
+  localStorage.getItem(environmentKey(LOCAL_TOOLS_SQLITE_MIGRATED_KEY, environment)) === "true";
+const markLocalToolsSqliteMigrationComplete = (environment: AppEnvironment) =>
+  localStorage.setItem(environmentKey(LOCAL_TOOLS_SQLITE_MIGRATED_KEY, environment), "true");
 
 const parse = <T,>(value: string | null, fallback: T): T => {
   if (!value) return fallback;
@@ -113,6 +122,60 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       return { repositoryId: String(value.repositoryId || ""), branchNames, pullRequestTargets };
     }).filter((group) => group.branchNames.length || group.pullRequestTargets.length)
     : legacyBranchNames.length ? [{ repositoryId: "", branchNames: legacyBranchNames }] : [];
+  const reviewChecklist: NonNullable<Task["reviewChecklist"]> = Array.isArray(source.reviewChecklist)
+    ? source.reviewChecklist.flatMap((rawItem) => {
+      if (!rawItem || typeof rawItem !== "object") return [];
+      const item = rawItem as unknown as Record<string, unknown>;
+      const title = String(item.title || "").trim();
+      if (!title) return [];
+      const severity = ["high", "medium", "low"].includes(String(item.severity))
+        ? String(item.severity) as "high" | "medium" | "low"
+        : undefined;
+      const reviewStatus = ["pending", "in-progress", "completed", "ignored"].includes(String(item.reviewStatus))
+        ? String(item.reviewStatus) as "pending" | "in-progress" | "completed" | "ignored"
+        : item.completed === true ? "completed" : "pending";
+      return [{
+        id: String(item.id || generateId()),
+        title,
+        file: item.file ? String(item.file) : undefined,
+        location: item.location ? String(item.location) : undefined,
+        category: String(item.category || "その他"),
+        details: String(item.details || ""),
+        reason: item.reason ? String(item.reason) : undefined,
+        suggestion: item.suggestion ? String(item.suggestion) : undefined,
+        severity,
+        reviewStatus,
+        repositoryId: item.repositoryId ? String(item.repositoryId) : undefined,
+        repositoryName: item.repositoryName ? String(item.repositoryName) : undefined,
+        reviewRunId: item.reviewRunId ? String(item.reviewRunId) : undefined,
+        reviewRunIds: Array.isArray(item.reviewRunIds)
+          ? [...new Set(item.reviewRunIds.map(String).filter(Boolean))]
+          : item.reviewRunId ? [String(item.reviewRunId)] : [],
+        reviewOccurrenceCount: Math.max(1, Number(item.reviewOccurrenceCount) || (Array.isArray(item.reviewRunIds) ? item.reviewRunIds.length : 1)),
+        lastReviewedAt: item.lastReviewedAt ? String(item.lastReviewedAt) : undefined,
+        completed: reviewStatus === "completed",
+        createdAt: String(item.createdAt || now),
+        completedAt: item.completedAt ? String(item.completedAt) : undefined,
+      }];
+    })
+    : [];
+  const codeReviewRuns: NonNullable<Task["codeReviewRuns"]> = Array.isArray(source.codeReviewRuns)
+    ? source.codeReviewRuns.flatMap((rawRun) => {
+      if (!rawRun || typeof rawRun !== "object") return [];
+      const run = rawRun as unknown as Record<string, unknown>;
+      const id = String(run.id || "").trim();
+      if (!id) return [];
+      return [{
+        id,
+        repositoryId: String(run.repositoryId || ""),
+        repositoryName: String(run.repositoryName || "未設定"),
+        baseBranch: String(run.baseBranch || "main"),
+        targetBranch: String(run.targetBranch || "HEAD"),
+        itemIds: Array.isArray(run.itemIds) ? run.itemIds.map(String) : [],
+        createdAt: String(run.createdAt || now),
+      }];
+    })
+    : [];
   const task: Task = {
     id: String(source.id || generateId()), title: String(source.title || "無題のタスク"), description: String(source.description || ""),
     priority, status,
@@ -132,7 +195,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     waitingHistory: Array.isArray(source.waitingHistory) ? source.waitingHistory as Task["waitingHistory"] : [],
     taskKind: (source.taskKind as TaskKind) || classification.taskKind,
     projectTagId: String(source.projectTagId || ""), parentTaskId: String(source.parentTaskId || ""),
-    repositoryBranches,
+    repositoryBranches, reviewChecklist, codeReviewRuns,
     links: Array.isArray(source.links) ? source.links as Task["links"] : [],
     relatedTasks: Array.isArray(source.relatedTasks) ? source.relatedTasks as Task["relatedTasks"] : [], nextAction: String(source.nextAction || ""),
     reminderDate: String(source.reminderDate || ""), dueDate: String(source.dueDate || ""), isToday: false, plannedRanges: normalizedRanges,
@@ -254,10 +317,31 @@ export const initializeAppStorage = async (legacyData: AppData, environment: App
   if (!isTauriRuntime()) return { data: legacyData, backend: "localStorage" };
   if (!initializationPromises.has(environment)) {
     initializationPromises.set(environment, invoke<AppData>("initialize_app_database", { legacyData, environment })
-      .then((stored) => ({
-        data: parseImportedData(JSON.stringify(stored)),
-        backend: "sqlite" as const,
-      }))
+      .then(async (stored) => {
+        const data = parseImportedData(JSON.stringify(stored));
+        if (!hasMigratedLocalToolsToSqlite(environment) && hasLocalToolsMirror(environment)) {
+          const mirror = loadAppData(environment);
+          let migrated = false;
+          if (!data.localTools.length && mirror.localTools.length) {
+            data.localTools = mirror.localTools;
+            migrated = true;
+          }
+          if (!data.localToolsStoragePath && mirror.localToolsStoragePath) {
+            data.localToolsStoragePath = mirror.localToolsStoragePath;
+            migrated = true;
+          }
+          if (migrated) {
+            try {
+              await invoke<void>("save_app_data_sqlite", { data: structuredClone(data), environment });
+            } catch (error) {
+              console.error("ローカルツールのSQLite移行保存に失敗しました。次回起動時に再試行します。", error);
+              return { data, backend: "sqlite" as const };
+            }
+          }
+        }
+        markLocalToolsSqliteMigrationComplete(environment);
+        return { data, backend: "sqlite" as const };
+      })
       .catch((error) => {
         initializationPromises.delete(environment);
         throw error;

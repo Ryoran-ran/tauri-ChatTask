@@ -1,4 +1,5 @@
 import type { AppData, HistoryEntry, Task } from "./types";
+import { isActiveProjectScheduleSource } from "./projectContext";
 import { generateId } from "./utils";
 
 export const createTask = (parent?: Task): Task => {
@@ -71,25 +72,37 @@ const canRepairScheduleDuplicate = (range: Task["plannedRanges"][number], canoni
   return !rangeSource || !canonicalSource || rangeSource === canonicalSource;
 };
 
-/** Repairs duplicate schedules left by older project-linking flows. */
+/** Repairs orphaned and duplicate schedules left by older project-linking flows. */
 export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
   let repaired = false;
   const tasks = data.tasks.map((task) => {
+    const normalizedProjectRanges = task.plannedRanges.map((range) => {
+      const hasProjectMetadata = Boolean(range.sourceType || range.sourceId);
+      if (!hasProjectMetadata || isActiveProjectScheduleSource(data.goals, task.id, range.sourceType, range.sourceId)) return range;
+
+      // Keep the user's schedule itself. Only release the stale project ownership
+      // so it can be edited or deleted in the same way as an ordinary plan.
+      const ordinaryRange = { ...range };
+      delete ordinaryRange.sourceType;
+      delete ordinaryRange.sourceId;
+      repaired = true;
+      return ordinaryRange;
+    });
     const canonicalByKey = new Map<string, Task["plannedRanges"][number]>();
-    task.plannedRanges.forEach((range) => {
+    normalizedProjectRanges.forEach((range) => {
       const key = scheduleDuplicateKey(range);
       const current = canonicalByKey.get(key);
       if (!current || (range.sourceId && !current.sourceId)) canonicalByKey.set(key, range);
     });
     const migratedIds = new Map<string, string>();
-    const plannedRanges = task.plannedRanges.filter((range) => {
+    const plannedRanges = normalizedProjectRanges.filter((range) => {
       const canonical = canonicalByKey.get(scheduleDuplicateKey(range));
       if (!canonical || canonical.id === range.id || !canRepairScheduleDuplicate(range, canonical)) return true;
       migratedIds.set(range.id, canonical.id);
       repaired = true;
       return false;
     });
-    if (!migratedIds.size) return task;
+    if (!migratedIds.size && plannedRanges.every((range, index) => range === task.plannedRanges[index])) return task;
     const migrateRecord = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(
       Object.entries(record || {}).map(([key, value]) => {
         const separator = key.indexOf("::");
