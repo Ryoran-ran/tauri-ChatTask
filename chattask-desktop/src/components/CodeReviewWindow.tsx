@@ -60,10 +60,14 @@ ${reviewPoints.filter(([id]) => selectedPoints.includes(id)).map(([, label]) => 
 ${diff}`;
 
 export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task; repositories: GithubRepository[]; onUpdate: (changes: Partial<Task>, historyText?: string) => void }) {
+  type ReviewView = "prompt" | "checklist" | "closed" | "history";
   const taskId = task.id;
   const viewStorageKey = `chatTaskCodeReviewView:${taskId}`;
   const repositoryStorageKey = `chatTaskCodeReviewRepository:${taskId}`;
-  const [activeView, setActiveView] = useState<"prompt" | "checklist">(() => localStorage.getItem(viewStorageKey) === "checklist" ? "checklist" : "prompt");
+  const [activeView, setActiveView] = useState<ReviewView>(() => {
+    const saved = localStorage.getItem(viewStorageKey);
+    return saved === "checklist" || saved === "closed" || saved === "history" ? saved : "prompt";
+  });
   const [selectedRepositoryId, setSelectedRepositoryId] = useState(() => {
     const saved = localStorage.getItem(repositoryStorageKey) || "";
     return saved === "unassigned" || repositories.some((repository) => repository.id === saved) ? saved : repositories[0]?.id || "";
@@ -105,7 +109,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     }
   }, [repositories, selectedRepositoryId]);
 
-  const selectView = (view: "prompt" | "checklist") => {
+  const selectView = (view: ReviewView) => {
     setActiveView(view);
     localStorage.setItem(viewStorageKey, view);
   };
@@ -258,6 +262,8 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     <nav className="code-review-view-tabs" aria-label="コードレビュー画面">
       <button type="button" className={activeView === "prompt" ? "active" : ""} aria-pressed={activeView === "prompt"} onClick={() => selectView("prompt")}><span>⌘</span><div><strong>プロンプト生成</strong><small>Diffからレビュー結果を作成</small></div></button>
       <button type="button" className={activeView === "checklist" ? "active" : ""} aria-pressed={activeView === "checklist"} onClick={() => selectView("checklist")}><span>✓</span><div><strong>チェックリスト</strong><small>{checklist.length ? `${inProgress ? `${inProgress}件対応中・` : ""}未対応${checklist.length - reviewed - inProgress}件` : "レビュー結果の対応を管理"}</small></div></button>
+      <button type="button" className={activeView === "closed" ? "active" : ""} aria-pressed={activeView === "closed"} onClick={() => selectView("closed")}><span>○</span><div><strong>完了・対象外</strong><small>{reviewed ? `${reviewed}件` : "完了した指摘を確認"}</small></div></button>
+      <button type="button" className={activeView === "history" ? "active" : ""} aria-pressed={activeView === "history"} onClick={() => selectView("history")}><span>↶</span><div><strong>過去のレビュー</strong><small>{task.codeReviewRuns?.length ? `${task.codeReviewRuns.length}回` : "レビュー履歴を確認"}</small></div></button>
     </nav>
 
     {activeView === "prompt" && <div className="code-review-workspace">
@@ -286,6 +292,6 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       </section>
     </div>}
 
-    {activeView === "checklist" && <div className="code-review-checklist-view"><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} allowImport={false} /></div>}
+    {activeView !== "prompt" && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} allowImport={false} section={activeView === "checklist" ? "active" : activeView} /></div>}
   </main>;
 }

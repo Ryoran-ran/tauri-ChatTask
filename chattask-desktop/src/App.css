@@ -5089,6 +5089,7 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 
 /* コードレビュー: ナビゲーションと作業領域のスクロールを分離 */
 .modal-body>.code-review-window{overflow:hidden}.code-review-view-tabs{overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}.code-review-workspace{overflow:hidden}.code-review-workspace>section{overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.code-review-checklist-view{overflow:hidden}.code-review-checklist-view>.task-review-checklist{overflow:hidden}.code-review-checklist-view .current-review-items{overscroll-behavior:contain;scrollbar-gutter:stable}.code-review-checklist-view .review-history-section>div,.code-review-checklist-view .review-closed-section>.task-review-checklist-items{overscroll-behavior:contain;scrollbar-gutter:stable}
+.code-review-checklist-view.section-history .review-history-section{min-height:0;max-height:none;flex:1;border-top:0;background:#fff}.code-review-checklist-view.section-history .review-history-section>header{display:none}.code-review-checklist-view.section-history .review-history-section>div{max-height:none;min-height:0;flex:1;padding:.7rem;overflow-y:auto}.code-review-checklist-view.section-closed .current-review-items{min-height:0;flex:1;overflow-y:auto}
 @media(max-width:950px){.code-review-workspace{grid-template-rows:repeat(2,minmax(0,1fr));overflow:hidden}.code-review-workspace>section{min-height:0}}
 @media(max-width:820px){.code-review-view-tabs{overflow-x:auto;overflow-y:hidden}}
 

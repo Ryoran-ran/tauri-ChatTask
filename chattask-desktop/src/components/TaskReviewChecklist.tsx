@@ -89,7 +89,7 @@ const detailParts = (item: TaskChecklistItem) => {
   return { reason, suggestion, other: !reason && !suggestion ? item.details.trim() : "" };
 };
 
-export function TaskReviewChecklist({ taskId = "default", items, runs = [], repositories: configuredRepositories = [], selectedRepositoryId = "", onSelectRepository, onChange, allowImport = true }: { taskId?: string; items: TaskChecklistItem[]; runs?: TaskCodeReviewRun[]; repositories?: GithubRepository[]; selectedRepositoryId?: string; onSelectRepository?: (repositoryId: string) => void; onChange: (items: TaskChecklistItem[], historyText?: string) => void; allowImport?: boolean }) {
+export function TaskReviewChecklist({ taskId = "default", items, runs = [], repositories: configuredRepositories = [], selectedRepositoryId = "", onSelectRepository, onChange, allowImport = true, section = "all" }: { taskId?: string; items: TaskChecklistItem[]; runs?: TaskCodeReviewRun[]; repositories?: GithubRepository[]; selectedRepositoryId?: string; onSelectRepository?: (repositoryId: string) => void; onChange: (items: TaskChecklistItem[], historyText?: string) => void; allowImport?: boolean; section?: "all" | "active" | "closed" | "history" }) {
   const [importOpen, setImportOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [source, setSource] = useState("");
@@ -210,19 +210,22 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
 
   return <>
     <section className="task-review-checklist">
-      <header><div><strong>現在の対応</strong><small>{activeItems.length ? `${inProgress ? `対応中${inProgress}件・` : ""}未対応${pending}件` : "対応が必要な指摘はありません"}</small></div><div className="review-checklist-header-actions"><button type="button" onClick={() => setSortOpen(true)}>↕ 並び替え <small>{sortRules.length}条件</small></button>{allowImport && <button type="button" onClick={() => { setMessage(""); setImportOpen(true); }}>＋ 取り込む</button>}</div></header>
+      <header><div><strong>{section === "closed" ? "完了・対象外" : section === "history" ? "過去のレビュー" : "現在の対応"}</strong><small>{section === "closed" ? `${closedItems.length}件` : section === "history" ? `${scopedRuns.length}回` : activeItems.length ? `${inProgress ? `対応中${inProgress}件・` : ""}未対応${pending}件` : "対応が必要な指摘はありません"}</small></div>{section !== "history" && <div className="review-checklist-header-actions"><button type="button" onClick={() => setSortOpen(true)}>↕ 並び替え <small>{sortRules.length}条件</small></button>{allowImport && <button type="button" onClick={() => { setMessage(""); setImportOpen(true); }}>＋ 取り込む</button>}</div>}</header>
       {!!repositories.length && <nav className="review-repository-tabs" aria-label="リポジトリ別チェックリスト">{repositories.map(([id, name]) => <button type="button" className={activeRepositoryKey === id ? "active" : ""} onClick={() => onSelectRepository?.(id)} key={id}>{name} <small>{repositoryActiveCount(id)}</small></button>)}</nav>}
-      {!!activeItems.length && <div className="task-review-checklist-items current-review-items">{sortedActiveItems.map(renderItem)}</div>}
-      {!items.length && <p>Git Diff Studioのレビュー結果を取り込むと、ここで進捗を確認できます。</p>}
-      {!!items.length && !scopedItems.length && <p>選択したリポジトリのチェック項目はありません。</p>}
-      {!!scopedItems.length && !activeItems.length && <p>この範囲に対応が必要な指摘はありません。</p>}
-      {!!closedItems.length && <details className="review-closed-section"><summary>完了・対象外 <small>{closedItems.length}件</small></summary><div className="task-review-checklist-items">{sortedClosedItems.map(renderItem)}</div></details>}
-      {!!scopedRuns.length && <section className="review-history-section"><header><strong>過去のレビュー</strong><small>{scopedRuns.length}回</small></header><div>{[...scopedRuns].reverse().map((run) => {
+      {(section === "all" || section === "active") && !!activeItems.length && <div className="task-review-checklist-items current-review-items">{sortedActiveItems.map(renderItem)}</div>}
+      {(section === "all" || section === "active") && !items.length && <p>Git Diff Studioのレビュー結果を取り込むと、ここで進捗を確認できます。</p>}
+      {(section === "all" || section === "active") && !!items.length && !scopedItems.length && <p>選択したリポジトリのチェック項目はありません。</p>}
+      {(section === "all" || section === "active") && !!scopedItems.length && !activeItems.length && <p>この範囲に対応が必要な指摘はありません。</p>}
+      {section === "closed" && !!closedItems.length && <div className="task-review-checklist-items current-review-items">{sortedClosedItems.map(renderItem)}</div>}
+      {section === "closed" && !closedItems.length && <p>選択したリポジトリに完了・対象外の指摘はありません。</p>}
+      {section === "all" && !!closedItems.length && <details className="review-closed-section"><summary>完了・対象外 <small>{closedItems.length}件</small></summary><div className="task-review-checklist-items">{sortedClosedItems.map(renderItem)}</div></details>}
+      {(section === "all" || section === "history") && !!scopedRuns.length && <section className="review-history-section"><header><strong>過去のレビュー</strong><small>{scopedRuns.length}回</small></header><div>{[...scopedRuns].reverse().map((run) => {
         const repositoryRuns = runs.filter((candidate) => (candidate.repositoryId || "unassigned") === (run.repositoryId || "unassigned"));
         const runNumber = repositoryRuns.findIndex((candidate) => candidate.id === run.id) + 1;
         const runItems = run.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is TaskChecklistItem => Boolean(item));
         return <details className="review-run-card" key={run.id}><summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・指摘{run.itemIds.length}件</small></summary>{runItems.length ? <ul>{runItems.map((item) => <li key={item.id}><span className={`review-history-status ${itemStatus(item)}`}>{itemStatus(item) === "in-progress" ? "対応中" : itemStatus(item) === "completed" ? "対応済み" : itemStatus(item) === "ignored" ? "対象外" : "未対応"}</span><span>{displayTitle(item)}</span></li>)}</ul> : <p>このレビューの指摘は削除されています。</p>}</details>;
       })}</div></section>}
+      {section === "history" && !scopedRuns.length && <p>選択したリポジトリのレビュー履歴はありません。</p>}
     </section>
     {sortOpen && <Modal title="チェックリストの並び替え" onClose={() => setSortOpen(false)}><div className="sort-editor-dialog review-sort-dialog">
       <header><div><strong>並び替え条件</strong><p>タスク一覧と同じく、上にある条件から順番に適用します。</p></div></header>
