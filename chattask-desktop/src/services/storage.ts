@@ -23,12 +23,22 @@ const KEYS = {
 
 export type AppEnvironment = "production" | "test";
 const ENVIRONMENT_KEY = "chatTaskActiveEnvironment";
+const LOCAL_TOOLS_MIRROR_READY_KEY = "chatTaskLocalToolsMirrorReady";
 export const getActiveEnvironment = (): AppEnvironment =>
   localStorage.getItem(ENVIRONMENT_KEY) === "test" ? "test" : "production";
 export const setActiveEnvironment = (environment: AppEnvironment) =>
   localStorage.setItem(ENVIRONMENT_KEY, environment);
 const environmentKey = (key: string, environment: AppEnvironment) =>
   environment === "test" ? `${key}:test` : key;
+
+const hasLocalToolsMirror = (environment: AppEnvironment) =>
+  localStorage.getItem(environmentKey(LOCAL_TOOLS_MIRROR_READY_KEY, environment)) === "true";
+
+export const saveLocalToolsMirror = (data: Pick<AppData, "localTools" | "localToolsStoragePath">, environment: AppEnvironment = getActiveEnvironment()) => {
+  localStorage.setItem(environmentKey(KEYS.localTools, environment), JSON.stringify(data.localTools));
+  localStorage.setItem(environmentKey(KEYS.localToolsStoragePath, environment), data.localToolsStoragePath);
+  localStorage.setItem(environmentKey(LOCAL_TOOLS_MIRROR_READY_KEY, environment), "true");
+};
 
 const parse = <T,>(value: string | null, fallback: T): T => {
   if (!value) return fallback;
@@ -254,10 +264,17 @@ export const initializeAppStorage = async (legacyData: AppData, environment: App
   if (!isTauriRuntime()) return { data: legacyData, backend: "localStorage" };
   if (!initializationPromises.has(environment)) {
     initializationPromises.set(environment, invoke<AppData>("initialize_app_database", { legacyData, environment })
-      .then((stored) => ({
-        data: parseImportedData(JSON.stringify(stored)),
-        backend: "sqlite" as const,
-      }))
+      .then((stored) => {
+        const data = parseImportedData(JSON.stringify(stored));
+        if (hasLocalToolsMirror(environment)) {
+          const mirror = loadAppData(environment);
+          data.localTools = mirror.localTools;
+          data.localToolsStoragePath = mirror.localToolsStoragePath;
+        } else {
+          saveLocalToolsMirror(data, environment);
+        }
+        return { data, backend: "sqlite" as const };
+      })
       .catch((error) => {
         initializationPromises.delete(environment);
         throw error;
@@ -267,6 +284,7 @@ export const initializeAppStorage = async (legacyData: AppData, environment: App
 };
 
 export const saveAppData = async (data: AppData, backend: StorageBackend, environment: AppEnvironment = getActiveEnvironment()) => {
+  saveLocalToolsMirror(data, environment);
   if (backend === "sqlite") {
     const snapshot = structuredClone(data);
     sqliteSaveQueue = sqliteSaveQueue

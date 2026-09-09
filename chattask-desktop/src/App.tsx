@@ -30,7 +30,7 @@ import { AdvancedFilterModal } from "./components/AdvancedFilterModal";
 import { InboxModal } from "./components/InboxModal";
 import { WaitingBoxModal } from "./components/WaitingBoxModal";
 import { ToolsModal } from "./components/ToolsModal";
-import { classifyLegacyStatus, getActiveEnvironment, initializeAppStorage, loadAppData, parseImportedData, saveAppData, setActiveEnvironment, type AppEnvironment, type StorageBackend } from "./services/storage";
+import { classifyLegacyStatus, getActiveEnvironment, initializeAppStorage, loadAppData, parseImportedData, saveAppData, saveLocalToolsMirror, setActiveEnvironment, type AppEnvironment, type StorageBackend } from "./services/storage";
 import { removeTaskAttachments } from "./services/attachments";
 import { taskProjectContexts } from "./projectContext";
 import type { AdvancedTaskFilter, AppData, Goal, GoalStatus, InboxItem, Priority, RecurrenceRecord, SavedTaskView, Task, TaskFilter, TaskSortRule, TaskStatus, TaskTemplate } from "./types";
@@ -248,6 +248,16 @@ function App() {
     }, 250);
     return () => window.clearTimeout(timer);
   }, [data, storageBackend, environment]);
+  const updateLocalTools = (localTools: AppData["localTools"]) => setData((current) => {
+    const next = { ...current, localTools };
+    saveLocalToolsMirror(next, environment);
+    return next;
+  });
+  const updateLocalToolsStoragePath = (localToolsStoragePath: string) => setData((current) => {
+    const next = { ...current, localToolsStoragePath };
+    saveLocalToolsMirror(next, environment);
+    return next;
+  });
   useEffect(() => localStorage.setItem("chatTaskCurrentFilter", filter), [filter]);
   useEffect(() => localStorage.setItem("chatTaskCurrentTagFilter", tagFilter), [tagFilter]);
   useEffect(() => localStorage.setItem("chatTaskCurrentPriorityFilter", priorityFilter), [priorityFilter]);
@@ -964,7 +974,7 @@ function App() {
     {creatingTaskParentId !== null && <TaskCreateModal tasks={data.tasks} tags={data.projectTags} templates={taskTemplates} parentId={creatingTaskParentId} projectTagId={creatingTaskTagId} onCreate={(values) => createNewTask(values, creatingTaskParentId)} onClose={() => { setCreatingTaskParentId(null); setCreatingTaskTagId(undefined); }} />}
     {templateSourceTask && <TaskTemplateSaveModal task={templateSourceTask} onSave={(name, keywords) => saveTaskAsTemplate(templateSourceTask, name, keywords)} onClose={() => setTemplateSourceTask(null)} />}
     {templatesOpen && <TaskTemplateManagerModal templates={taskTemplates} tags={data.projectTags} onChange={setTaskTemplates} onClose={() => setTemplatesOpen(false)} />}
-    {toolsOpen && <ToolsModal tools={data.localTools} storagePath={data.localToolsStoragePath} onSave={(localTools) => setData((current) => ({ ...current, localTools }))} onStoragePath={(localToolsStoragePath) => setData((current) => ({ ...current, localToolsStoragePath }))} onClose={() => setToolsOpen(false)} />}
+    {toolsOpen && <ToolsModal tools={data.localTools} storagePath={data.localToolsStoragePath} onSave={updateLocalTools} onStoragePath={updateLocalToolsStoragePath} onClose={() => setToolsOpen(false)} />}
     {tagsOpen && <TagSettingsModal tags={data.projectTags} onSave={(projectTags) => setData((current) => {
       const ids = new Set(projectTags.map((tag) => tag.id));
       return {
