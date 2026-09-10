@@ -178,6 +178,69 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       }];
     })
     : [];
+  const testRuns: NonNullable<Task["testRuns"]> = Array.isArray(source.testRuns)
+    ? source.testRuns.flatMap((rawRun) => {
+      if (!rawRun || typeof rawRun !== "object") return [];
+      const run = rawRun as unknown as Record<string, unknown>;
+      const id = String(run.id || "").trim();
+      const content = String(run.content || "").trim();
+      if (!id || !content) return [];
+      const testStatus = ["planned", "implemented", "passed", "failed"].includes(String(run.status))
+        ? String(run.status) as NonNullable<Task["testRuns"]>[number]["status"]
+        : "planned";
+      const frameworkSource = run.framework && typeof run.framework === "object" ? run.framework as Record<string, unknown> : null;
+      const framework = frameworkSource ? {
+        ...frameworkSource,
+        name: String(frameworkSource.name || "未特定"),
+        setupRequired: frameworkSource.setupRequired === true,
+        installCommands: Array.isArray(frameworkSource.installCommands) ? frameworkSource.installCommands.map(String) : [],
+      } : undefined;
+      const tests = Array.isArray(run.tests) ? run.tests.flatMap((rawTest) => {
+        if (!rawTest || typeof rawTest !== "object") return [];
+        const test = rawTest as Record<string, unknown>;
+        const title = String(test.title || "").trim();
+        if (!title) return [];
+        return [{ ...test, category: String(test.category || "その他"), title, file: String(test.file || ""), reason: String(test.reason || ""), code: String(test.code || "") }];
+      }) : undefined;
+      const checks = Array.isArray(run.checks) ? run.checks.flatMap((rawCheck) => {
+        if (!rawCheck || typeof rawCheck !== "object") return [];
+        const check = rawCheck as Record<string, unknown>;
+        const title = String(check.title || "").trim();
+        if (!title) return [];
+        return [{
+          ...check,
+          category: String(check.category || "基本動作"),
+          title,
+          screen: String(check.screen || ""),
+          preconditions: Array.isArray(check.preconditions) ? check.preconditions.map(String) : [],
+          steps: Array.isArray(check.steps) ? check.steps.map(String) : [],
+          expectedResult: String(check.expectedResult || ""),
+          status: ["pending", "in-progress", "passed", "failed", "ignored"].includes(String(check.status))
+            ? String(check.status) as "pending" | "in-progress" | "passed" | "failed" | "ignored"
+            : testStatus === "implemented" ? "in-progress" : testStatus === "passed" || testStatus === "failed" ? testStatus : "pending",
+        }];
+      }) : undefined;
+      return [{
+        ...run,
+        id,
+        repositoryId: String(run.repositoryId || ""),
+        repositoryName: String(run.repositoryName || "リポジトリ未設定"),
+        baseBranch: String(run.baseBranch || "main"),
+        targetBranch: String(run.targetBranch || "HEAD"),
+        testPoints: Array.isArray(run.testPoints) ? run.testPoints.map(String) : [],
+        content,
+        framework,
+        tests,
+        runCommands: Array.isArray(run.runCommands) ? run.runCommands.map(String) : undefined,
+        assumptions: Array.isArray(run.assumptions) ? run.assumptions.map(String) : undefined,
+        environment: Array.isArray(run.environment) ? run.environment.map(String) : undefined,
+        checks,
+        status: testStatus,
+        createdAt: String(run.createdAt || now),
+        updatedAt: String(run.updatedAt || run.createdAt || now),
+      }];
+    })
+    : [];
   const task: Task = {
     // Retain fields introduced by a newer app version. Known fields below are
     // still normalized, while unknown fields survive a load/save round trip.
@@ -200,7 +263,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     waitingHistory: Array.isArray(source.waitingHistory) ? source.waitingHistory as Task["waitingHistory"] : [],
     taskKind: (source.taskKind as TaskKind) || classification.taskKind,
     projectTagId: String(source.projectTagId || ""), parentTaskId: String(source.parentTaskId || ""),
-    repositoryBranches, reviewChecklist, codeReviewRuns,
+    repositoryBranches, reviewChecklist, codeReviewRuns, testRuns,
     links: Array.isArray(source.links) ? source.links as Task["links"] : [],
     relatedTasks: Array.isArray(source.relatedTasks) ? source.relatedTasks as Task["relatedTasks"] : [], nextAction: String(source.nextAction || ""),
     reminderDate: String(source.reminderDate || ""), dueDate: String(source.dueDate || ""), isToday: false, plannedRanges: normalizedRanges,

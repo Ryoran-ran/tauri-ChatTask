@@ -192,6 +192,43 @@ export interface TaskCodeReviewRun {
   createdAt: string;
 }
 
+export interface TaskTestRun {
+  id: string;
+  repositoryId: string;
+  repositoryName: string;
+  baseBranch: string;
+  targetBranch: string;
+  testPoints: string[];
+  content: string;
+  framework?: {
+    name: string;
+    setupRequired: boolean;
+    installCommands: string[];
+  };
+  tests?: {
+    category: string;
+    title: string;
+    file: string;
+    reason: string;
+    code: string;
+  }[];
+  runCommands?: string[];
+  assumptions?: string[];
+  environment?: string[];
+  checks?: {
+    category: string;
+    title: string;
+    screen: string;
+    preconditions: string[];
+    steps: string[];
+    expectedResult: string;
+    status: "pending" | "in-progress" | "passed" | "failed" | "ignored";
+  }[];
+  status: "planned" | "implemented" | "passed" | "failed";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -214,6 +251,8 @@ export interface Task {
   reviewChecklist?: TaskChecklistItem[];
   /** リポジトリ単位で実施したコードレビューの履歴。 */
   codeReviewRuns?: TaskCodeReviewRun[];
+  /** Diffから作成したテスト内容と実施状況の記録。 */
+  testRuns?: TaskTestRun[];
   links: TaskLink[];
   relatedTasks: RelatedTaskLink[];
   nextAction: string;
