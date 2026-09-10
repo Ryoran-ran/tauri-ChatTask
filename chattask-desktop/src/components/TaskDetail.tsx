@@ -160,6 +160,9 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const currentTag = tags.find((tag) => tag.id === task.projectTagId);
   const projectContexts = taskProjectContexts(projects, task.id);
   const branchCount = task.repositoryBranches.reduce((total, group) => total + group.branchNames.length, 0);
+  const actionableReviewItems = (task.reviewChecklist || []).filter((item) => item.reviewStatus !== "ignored");
+  const completedReviewCount = actionableReviewItems.filter((item) =>
+    item.reviewStatus ? item.reviewStatus === "completed" : item.completed).length;
   const sharedProjects = projectContexts.reduce<Goal[]>((items, context) => {
     const project = projects.find((candidate) => candidate.id === context.projectId);
     return project && !items.some((item) => item.id === project.id) ? [...items, project] : items;
@@ -575,7 +578,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
           <button onClick={() => { closeTaskMenu(); window.dispatchEvent(new CustomEvent("chattask-open-waiting", { detail: { taskId: task.id } })); }}>{task.waitingFollowUp ? "待ち情報を編集" : "待ち箱へ入れる"}</button>
           {!task.waitingFollowUp && task.lastReleasedWaitingFollowUp && <button onClick={() => { closeTaskMenu(); onUpdate({ waitingFollowUp: task.lastReleasedWaitingFollowUp, status: task.lastReleasedWaitingStatus || "waiting-general", lastReleasedWaitingFollowUp: undefined, lastReleasedWaitingStatus: undefined }, "直前に解除した待ち状態を復元しました。"); }}>直前の待ち解除を取り消す</button>}
           <button onClick={() => { closeTaskMenu(); onDocuments(); }}>ドキュメント</button>
-          <button onClick={() => { closeTaskMenu(); onCodeReview(); }}>コードレビュー{task.reviewChecklist?.length ? `（${task.reviewChecklist.filter((item) => item.completed).length}/${task.reviewChecklist.length}）` : ""}</button>
+          <button onClick={() => { closeTaskMenu(); onCodeReview(); }}>コードレビュー{task.reviewChecklist?.length ? `（${completedReviewCount}/${actionableReviewItems.length}）` : ""}</button>
           <button onClick={() => { closeTaskMenu(); onSaveTemplate(); }}>テンプレートとして保存</button>
           <button onClick={() => { closeTaskMenu(); onPromote(); }}>{promoted ? "起点プロジェクトを開く" : "プロジェクトへ昇華"}</button>
           {!!projectContexts.length && <><span className="task-menu-group-label">表示設定</span><button onClick={() => { const visible = !projectContextVisible; setProjectContextVisible(visible); localStorage.setItem("chatTaskProjectContextVisible", String(visible)); closeTaskMenu(); }}>{projectContextVisible ? "プロジェクト情報を非表示" : "プロジェクト情報を表示"}</button></>}
