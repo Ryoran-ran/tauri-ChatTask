@@ -139,6 +139,8 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         id: String(item.id || generateId()),
         title,
         file: item.file ? String(item.file) : undefined,
+        line: item.line ? String(item.line) : undefined,
+        functionName: item.functionName ? String(item.functionName) : undefined,
         location: item.location ? String(item.location) : undefined,
         category: String(item.category || "その他"),
         details: String(item.details || ""),
@@ -212,6 +214,10 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
           category: String(check.category || "基本動作"),
           title,
           screen: String(check.screen || ""),
+          file: String(check.file || ""),
+          line: String(check.line || ""),
+          functionName: String(check.functionName || ""),
+          repositories: Array.isArray(check.repositories) ? check.repositories.map(String).filter(Boolean) : undefined,
           preconditions: Array.isArray(check.preconditions) ? check.preconditions.map(String) : [],
           steps: Array.isArray(check.steps) ? check.steps.map(String) : [],
           expectedResult: String(check.expectedResult || ""),
@@ -227,6 +233,11 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         repositoryName: String(run.repositoryName || "リポジトリ未設定"),
         baseBranch: String(run.baseBranch || "main"),
         targetBranch: String(run.targetBranch || "HEAD"),
+        repositories: Array.isArray(run.repositories) ? run.repositories.flatMap((rawRepository) => {
+          if (!rawRepository || typeof rawRepository !== "object") return [];
+          const repository = rawRepository as Record<string, unknown>;
+          return [{ id: String(repository.id || ""), name: String(repository.name || "リポジトリ未設定"), baseBranch: String(repository.baseBranch || "main"), targetBranch: String(repository.targetBranch || "HEAD") }];
+        }) : undefined,
         testPoints: Array.isArray(run.testPoints) ? run.testPoints.map(String) : [],
         content,
         framework,

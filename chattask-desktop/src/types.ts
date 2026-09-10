@@ -163,6 +163,8 @@ export interface TaskChecklistItem {
   id: string;
   title: string;
   file?: string;
+  line?: string;
+  functionName?: string;
   location?: string;
   category: string;
   details: string;
@@ -198,6 +200,13 @@ export interface TaskTestRun {
   repositoryName: string;
   baseBranch: string;
   targetBranch: string;
+  /** 動作確認1回分の対象リポジトリ。旧データは上の単一リポジトリ項目を使用する。 */
+  repositories?: {
+    id: string;
+    name: string;
+    baseBranch: string;
+    targetBranch: string;
+  }[];
   testPoints: string[];
   content: string;
   framework?: {
@@ -219,6 +228,10 @@ export interface TaskTestRun {
     category: string;
     title: string;
     screen: string;
+    file: string;
+    line: string;
+    functionName: string;
+    repositories?: string[];
     preconditions: string[];
     steps: string[];
     expectedResult: string;

@@ -1,0 +1,351 @@
+.modal-backdrop:has(.code-review-window) {
+  padding: 2vh 1vw;
+}
+
+.modal:has(.code-review-window) {
+  width: min(1920px, 98vw);
+  height: min(1080px, 94vh);
+  max-height: 94vh;
+}
+
+.code-review-window .code-review-workspace {
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+}
+
+.verification-command-panel {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.verification-command-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.verification-command-heading > strong {
+  color: #475569;
+  font-size: 0.65rem;
+}
+
+.verification-command-heading label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #64748b;
+  font-size: 0.56rem;
+  font-weight: 700;
+}
+
+.verification-command-heading select {
+  min-width: 140px;
+  min-height: 30px;
+  border-radius: 7px;
+  padding: 0.25rem 1.6rem 0.25rem 0.45rem;
+  background: #fff;
+  font-size: 0.57rem;
+}
+
+.verification-command-panel > small {
+  color: #64748b;
+  font-size: 0.55rem;
+}
+
+.modal-body > .code-review-window {
+  grid-template-columns: 52px 220px minmax(0, 1fr);
+  column-gap: 0;
+}
+
+.code-review-window-header {
+  grid-column: 1 / -1;
+}
+
+.code-review-navigation {
+  grid-column: 1 / 3;
+  grid-row: 2;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: 52px 220px;
+  overflow: visible;
+}
+
+.code-review-activity-bar {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid #d7e1ee;
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+  padding: 0.45rem 0.25rem;
+  background: #edf3fa;
+}
+
+.code-review-activity-bar button {
+  position: relative;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  place-items: center;
+  background: transparent;
+  box-shadow: none;
+  color: #64748b;
+}
+
+.code-review-activity-bar button:hover,
+.code-review-activity-bar button:focus-visible {
+  background: #fff;
+  color: #2563eb;
+}
+
+.code-review-activity-bar button.active {
+  background: #fff;
+  color: #2563eb;
+  box-shadow: 0 2px 8px #1e3a5f14;
+}
+
+.code-review-activity-bar button:nth-child(2):hover,
+.code-review-activity-bar button:nth-child(2):focus-visible,
+.code-review-activity-bar button:nth-child(2).active {
+  color: #7c3aed;
+}
+
+.code-review-activity-bar button.active::before {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: -4px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #60a5fa;
+  content: "";
+}
+
+.code-review-activity-bar button:nth-child(2).active::before {
+  background: #8b5cf6;
+}
+
+.code-review-activity-bar svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.code-review-activity-bar button::after {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 9px);
+  z-index: 20;
+  padding: 0.36rem 0.5rem;
+  transform: translateY(-50%) translateX(-3px);
+  border-radius: 6px;
+  background: #0f172a;
+  color: #fff;
+  content: attr(data-tooltip);
+  font-size: 0.56rem;
+  font-weight: 750;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  white-space: nowrap;
+}
+
+.code-review-activity-bar button:hover::after,
+.code-review-activity-bar button:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
+}
+
+.code-review-navigation > .code-review-view-tabs {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+  padding: 0.45rem;
+}
+
+.code-review-navigation .code-review-nav-group:first-child {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.code-review-navigation .code-review-nav-group {
+  gap: 0.35rem;
+}
+
+.code-review-navigation .code-review-nav-group > p {
+  margin: 0 0 0.25rem 0.45rem;
+}
+
+.code-review-navigation .code-review-view-tabs button {
+  height: 52px;
+  min-height: 52px;
+  padding: 0.42rem 0.5rem;
+}
+
+.code-review-navigation .code-review-view-tabs button > span {
+  width: 26px;
+  height: 26px;
+}
+
+.code-review-workspace,
+.code-review-checklist-view,
+.code-review-test-history {
+  grid-column: 3;
+  margin-left: 1rem;
+}
+
+.code-review-window.navigation-collapsed {
+  grid-template-columns: 52px 0 minmax(0, 1fr);
+  column-gap: 0;
+}
+
+.navigation-collapsed .code-review-navigation {
+  grid-template-columns: 52px 0;
+}
+
+.navigation-collapsed .code-review-view-tabs {
+  display: none;
+}
+
+.navigation-collapsed .code-review-activity-bar {
+  border-radius: 12px;
+}
+
+@media (max-width: 950px) {
+  .code-review-window .code-review-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .modal-body > .code-review-window {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: 0;
+    row-gap: 0.7rem;
+  }
+
+  .code-review-window-header {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .code-review-navigation {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    height: 58px;
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .code-review-activity-bar {
+    flex-direction: row;
+    border-radius: 10px 0 0 10px;
+    padding: 0.25rem;
+  }
+
+  .code-review-activity-bar button {
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+  }
+
+  .code-review-activity-bar button.active::before {
+    top: auto;
+    right: 7px;
+    bottom: -4px;
+    left: 7px;
+    width: auto;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+  }
+
+  .code-review-activity-bar button::after {
+    top: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-3px);
+  }
+
+  .code-review-activity-bar button:hover::after,
+  .code-review-activity-bar button:focus-visible::after {
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .code-review-navigation > .code-review-view-tabs {
+    grid-column: 2;
+    grid-row: 1;
+    height: 58px;
+    border: 1px solid #d7e1ee;
+    border-left: 0;
+    border-radius: 0 10px 10px 0;
+    padding: 0 0.25rem;
+  }
+
+  .code-review-navigation .code-review-nav-group {
+    flex-direction: row;
+  }
+
+  .code-review-navigation .code-review-nav-group > p {
+    display: none;
+  }
+
+  .code-review-navigation .code-review-view-tabs button {
+    min-width: 170px;
+    height: 48px;
+    min-height: 48px;
+  }
+
+  .code-review-workspace,
+  .code-review-checklist-view,
+  .code-review-test-history {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-left: 0;
+  }
+
+  .code-review-window.navigation-collapsed {
+    grid-template-columns: 44px minmax(0, 1fr);
+    column-gap: 0;
+  }
+
+  .navigation-collapsed .code-review-navigation {
+    width: 44px;
+    grid-template-columns: 44px 0;
+  }
+
+  .navigation-collapsed .code-review-activity-bar {
+    border-radius: 10px;
+  }
+
+  .code-review-window .code-review-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .modal-backdrop:has(.code-review-window) {
+    padding: 0;
+  }
+
+  .modal:has(.code-review-window) {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+}
