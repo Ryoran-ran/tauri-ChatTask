@@ -257,7 +257,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     ? source.verificationTimeline.flatMap((rawEntry) => {
       if (!rawEntry || typeof rawEntry !== "object") return [];
       const entry = rawEntry as unknown as Record<string, unknown>;
-      const kind = ["note", "issue", "retest", "status", "system"].includes(String(entry.kind))
+      const kind = ["note", "issue", "retest", "status", "system", "reply"].includes(String(entry.kind))
         ? String(entry.kind) as NonNullable<Task["verificationTimeline"]>[number]["kind"]
         : "note";
       const normalizeStatus = (value: unknown) => ["pending", "in-progress", "passed", "failed", "ignored"].includes(String(value))
@@ -267,6 +267,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         id: String(entry.id || generateId()),
         kind,
         text: String(entry.text || ""),
+        parentEntryId: entry.parentEntryId ? String(entry.parentEntryId) : undefined,
         checkId: entry.checkId ? String(entry.checkId) : undefined,
         checkTitle: entry.checkTitle ? String(entry.checkTitle) : undefined,
         checkIds: Array.isArray(entry.checkIds) ? entry.checkIds.map(String).filter(Boolean) : entry.checkId ? [String(entry.checkId)] : [],

@@ -245,8 +245,10 @@ export interface TaskTestRun {
 
 export interface TaskVerificationTimelineEntry {
   id: string;
-  kind: "note" | "issue" | "retest" | "status" | "system";
+  kind: "note" | "issue" | "retest" | "status" | "system" | "reply";
   text: string;
+  /** 返信元のタイムライン記録。返信は1階層で表示する。 */
+  parentEntryId?: string;
   checkId?: string;
   checkTitle?: string;
   /** 関連する複数の動作確認項目。checkId/checkTitleは旧データとの互換用。 */
