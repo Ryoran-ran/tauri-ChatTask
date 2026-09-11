@@ -211,6 +211,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         if (!title) return [];
         return [{
           ...check,
+          id: String(check.id || generateId()),
           category: String(check.category || "基本動作"),
           title,
           screen: String(check.screen || ""),
@@ -252,6 +253,31 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       }];
     })
     : [];
+  const verificationTimeline: NonNullable<Task["verificationTimeline"]> = Array.isArray(source.verificationTimeline)
+    ? source.verificationTimeline.flatMap((rawEntry) => {
+      if (!rawEntry || typeof rawEntry !== "object") return [];
+      const entry = rawEntry as unknown as Record<string, unknown>;
+      const kind = ["note", "issue", "retest", "status", "system"].includes(String(entry.kind))
+        ? String(entry.kind) as NonNullable<Task["verificationTimeline"]>[number]["kind"]
+        : "note";
+      const normalizeStatus = (value: unknown) => ["pending", "in-progress", "passed", "failed", "ignored"].includes(String(value))
+        ? String(value) as NonNullable<Task["verificationTimeline"]>[number]["fromStatus"]
+        : undefined;
+      return [{
+        id: String(entry.id || generateId()),
+        kind,
+        text: String(entry.text || ""),
+        checkId: entry.checkId ? String(entry.checkId) : undefined,
+        checkTitle: entry.checkTitle ? String(entry.checkTitle) : undefined,
+        checkIds: Array.isArray(entry.checkIds) ? entry.checkIds.map(String).filter(Boolean) : entry.checkId ? [String(entry.checkId)] : [],
+        checkTitles: Array.isArray(entry.checkTitles) ? entry.checkTitles.map(String).filter(Boolean) : entry.checkTitle ? [String(entry.checkTitle)] : [],
+        attachmentIds: Array.isArray(entry.attachmentIds) ? entry.attachmentIds.map(String).filter(Boolean) : [],
+        fromStatus: normalizeStatus(entry.fromStatus),
+        toStatus: normalizeStatus(entry.toStatus),
+        createdAt: String(entry.createdAt || now),
+      }];
+    })
+    : [];
   const task: Task = {
     // Retain fields introduced by a newer app version. Known fields below are
     // still normalized, while unknown fields survive a load/save round trip.
@@ -274,7 +300,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     waitingHistory: Array.isArray(source.waitingHistory) ? source.waitingHistory as Task["waitingHistory"] : [],
     taskKind: (source.taskKind as TaskKind) || classification.taskKind,
     projectTagId: String(source.projectTagId || ""), parentTaskId: String(source.parentTaskId || ""),
-    repositoryBranches, reviewChecklist, codeReviewRuns, testRuns,
+    repositoryBranches, reviewChecklist, codeReviewRuns, testRuns, verificationTimeline,
     links: Array.isArray(source.links) ? source.links as Task["links"] : [],
     relatedTasks: Array.isArray(source.relatedTasks) ? source.relatedTasks as Task["relatedTasks"] : [], nextAction: String(source.nextAction || ""),
     reminderDate: String(source.reminderDate || ""), dueDate: String(source.dueDate || ""), isToday: false, plannedRanges: normalizedRanges,

@@ -225,6 +225,7 @@ export interface TaskTestRun {
   assumptions?: string[];
   environment?: string[];
   checks?: {
+    id: string;
     category: string;
     title: string;
     screen: string;
@@ -240,6 +241,21 @@ export interface TaskTestRun {
   status: "planned" | "implemented" | "passed" | "failed";
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TaskVerificationTimelineEntry {
+  id: string;
+  kind: "note" | "issue" | "retest" | "status" | "system";
+  text: string;
+  checkId?: string;
+  checkTitle?: string;
+  /** 関連する複数の動作確認項目。checkId/checkTitleは旧データとの互換用。 */
+  checkIds?: string[];
+  checkTitles?: string[];
+  attachmentIds?: string[];
+  fromStatus?: "pending" | "in-progress" | "passed" | "failed" | "ignored";
+  toStatus?: "pending" | "in-progress" | "passed" | "failed" | "ignored";
+  createdAt: string;
 }
 
 export interface Task {
@@ -266,6 +282,8 @@ export interface Task {
   codeReviewRuns?: TaskCodeReviewRun[];
   /** Diffから作成したテスト内容と実施状況の記録。 */
   testRuns?: TaskTestRun[];
+  /** 動作確認中の状態変更、不具合メモ、画像などの時系列記録。 */
+  verificationTimeline?: TaskVerificationTimelineEntry[];
   links: TaskLink[];
   relatedTasks: RelatedTaskLink[];
   nextAction: string;
