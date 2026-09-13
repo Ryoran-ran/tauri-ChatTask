@@ -139,6 +139,8 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         id: String(item.id || generateId()),
         title,
         file: item.file ? String(item.file) : undefined,
+        line: item.line ? String(item.line) : undefined,
+        functionName: item.functionName ? String(item.functionName) : undefined,
         location: item.location ? String(item.location) : undefined,
         category: String(item.category || "その他"),
         details: String(item.details || ""),
@@ -178,6 +180,105 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       }];
     })
     : [];
+  const testRuns: NonNullable<Task["testRuns"]> = Array.isArray(source.testRuns)
+    ? source.testRuns.flatMap((rawRun) => {
+      if (!rawRun || typeof rawRun !== "object") return [];
+      const run = rawRun as unknown as Record<string, unknown>;
+      const id = String(run.id || "").trim();
+      const content = String(run.content || "").trim();
+      if (!id || !content) return [];
+      const testStatus = ["planned", "implemented", "passed", "failed"].includes(String(run.status))
+        ? String(run.status) as NonNullable<Task["testRuns"]>[number]["status"]
+        : "planned";
+      const frameworkSource = run.framework && typeof run.framework === "object" ? run.framework as Record<string, unknown> : null;
+      const framework = frameworkSource ? {
+        ...frameworkSource,
+        name: String(frameworkSource.name || "未特定"),
+        setupRequired: frameworkSource.setupRequired === true,
+        installCommands: Array.isArray(frameworkSource.installCommands) ? frameworkSource.installCommands.map(String) : [],
+      } : undefined;
+      const tests = Array.isArray(run.tests) ? run.tests.flatMap((rawTest) => {
+        if (!rawTest || typeof rawTest !== "object") return [];
+        const test = rawTest as Record<string, unknown>;
+        const title = String(test.title || "").trim();
+        if (!title) return [];
+        return [{ ...test, category: String(test.category || "その他"), title, file: String(test.file || ""), reason: String(test.reason || ""), code: String(test.code || "") }];
+      }) : undefined;
+      const checks = Array.isArray(run.checks) ? run.checks.flatMap((rawCheck) => {
+        if (!rawCheck || typeof rawCheck !== "object") return [];
+        const check = rawCheck as Record<string, unknown>;
+        const title = String(check.title || "").trim();
+        if (!title) return [];
+        return [{
+          ...check,
+          id: String(check.id || generateId()),
+          category: String(check.category || "基本動作"),
+          title,
+          screen: String(check.screen || ""),
+          file: String(check.file || ""),
+          line: String(check.line || ""),
+          functionName: String(check.functionName || ""),
+          repositories: Array.isArray(check.repositories) ? check.repositories.map(String).filter(Boolean) : undefined,
+          preconditions: Array.isArray(check.preconditions) ? check.preconditions.map(String) : [],
+          steps: Array.isArray(check.steps) ? check.steps.map(String) : [],
+          expectedResult: String(check.expectedResult || ""),
+          status: ["pending", "in-progress", "passed", "failed", "ignored"].includes(String(check.status))
+            ? String(check.status) as "pending" | "in-progress" | "passed" | "failed" | "ignored"
+            : testStatus === "implemented" ? "in-progress" : testStatus === "passed" || testStatus === "failed" ? testStatus : "pending",
+        }];
+      }) : undefined;
+      return [{
+        ...run,
+        id,
+        repositoryId: String(run.repositoryId || ""),
+        repositoryName: String(run.repositoryName || "リポジトリ未設定"),
+        baseBranch: String(run.baseBranch || "main"),
+        targetBranch: String(run.targetBranch || "HEAD"),
+        repositories: Array.isArray(run.repositories) ? run.repositories.flatMap((rawRepository) => {
+          if (!rawRepository || typeof rawRepository !== "object") return [];
+          const repository = rawRepository as Record<string, unknown>;
+          return [{ id: String(repository.id || ""), name: String(repository.name || "リポジトリ未設定"), baseBranch: String(repository.baseBranch || "main"), targetBranch: String(repository.targetBranch || "HEAD") }];
+        }) : undefined,
+        testPoints: Array.isArray(run.testPoints) ? run.testPoints.map(String) : [],
+        content,
+        framework,
+        tests,
+        runCommands: Array.isArray(run.runCommands) ? run.runCommands.map(String) : undefined,
+        assumptions: Array.isArray(run.assumptions) ? run.assumptions.map(String) : undefined,
+        environment: Array.isArray(run.environment) ? run.environment.map(String) : undefined,
+        checks,
+        status: testStatus,
+        createdAt: String(run.createdAt || now),
+        updatedAt: String(run.updatedAt || run.createdAt || now),
+      }];
+    })
+    : [];
+  const verificationTimeline: NonNullable<Task["verificationTimeline"]> = Array.isArray(source.verificationTimeline)
+    ? source.verificationTimeline.flatMap((rawEntry) => {
+      if (!rawEntry || typeof rawEntry !== "object") return [];
+      const entry = rawEntry as unknown as Record<string, unknown>;
+      const kind = ["note", "issue", "retest", "status", "system", "reply"].includes(String(entry.kind))
+        ? String(entry.kind) as NonNullable<Task["verificationTimeline"]>[number]["kind"]
+        : "note";
+      const normalizeStatus = (value: unknown) => ["pending", "in-progress", "passed", "failed", "ignored"].includes(String(value))
+        ? String(value) as NonNullable<Task["verificationTimeline"]>[number]["fromStatus"]
+        : undefined;
+      return [{
+        id: String(entry.id || generateId()),
+        kind,
+        text: String(entry.text || ""),
+        parentEntryId: entry.parentEntryId ? String(entry.parentEntryId) : undefined,
+        checkId: entry.checkId ? String(entry.checkId) : undefined,
+        checkTitle: entry.checkTitle ? String(entry.checkTitle) : undefined,
+        checkIds: Array.isArray(entry.checkIds) ? entry.checkIds.map(String).filter(Boolean) : entry.checkId ? [String(entry.checkId)] : [],
+        checkTitles: Array.isArray(entry.checkTitles) ? entry.checkTitles.map(String).filter(Boolean) : entry.checkTitle ? [String(entry.checkTitle)] : [],
+        attachmentIds: Array.isArray(entry.attachmentIds) ? entry.attachmentIds.map(String).filter(Boolean) : [],
+        fromStatus: normalizeStatus(entry.fromStatus),
+        toStatus: normalizeStatus(entry.toStatus),
+        createdAt: String(entry.createdAt || now),
+      }];
+    })
+    : [];
   const task: Task = {
     // Retain fields introduced by a newer app version. Known fields below are
     // still normalized, while unknown fields survive a load/save round trip.
@@ -200,7 +301,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     waitingHistory: Array.isArray(source.waitingHistory) ? source.waitingHistory as Task["waitingHistory"] : [],
     taskKind: (source.taskKind as TaskKind) || classification.taskKind,
     projectTagId: String(source.projectTagId || ""), parentTaskId: String(source.parentTaskId || ""),
-    repositoryBranches, reviewChecklist, codeReviewRuns,
+    repositoryBranches, reviewChecklist, codeReviewRuns, testRuns, verificationTimeline,
     links: Array.isArray(source.links) ? source.links as Task["links"] : [],
     relatedTasks: Array.isArray(source.relatedTasks) ? source.relatedTasks as Task["relatedTasks"] : [], nextAction: String(source.nextAction || ""),
     reminderDate: String(source.reminderDate || ""), dueDate: String(source.dueDate || ""), isToday: false, plannedRanges: normalizedRanges,

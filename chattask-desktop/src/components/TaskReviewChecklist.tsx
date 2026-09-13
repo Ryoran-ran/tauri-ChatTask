@@ -7,6 +7,8 @@ type ReviewRecord = {
   category?: unknown;
   severity?: unknown;
   file?: unknown;
+  line?: unknown;
+  functionName?: unknown;
   location?: unknown;
   title?: unknown;
   reason?: unknown;
@@ -33,12 +35,14 @@ const parseJsonChecklist = (text: string): TaskChecklistItem[] | null => {
       const title = String(review.title || "").trim();
       if (!title) return [];
       const file = String(review.file || "").trim();
+      const line = String(review.line || "").trim();
+      const functionName = String(review.functionName || "").trim();
       const location = String(review.location || "").trim();
       const rawSeverity = String(review.severity || "").toLowerCase();
       const severity = (["high", "medium", "low"].includes(rawSeverity) ? rawSeverity : undefined) as TaskChecklistItem["severity"];
       const reason = String(review.reason || "").trim();
       const suggestion = String(review.suggestion || "").trim();
-      return [{ id: generateId(), title, file: file || undefined, location: location || undefined, category: String(review.category || "その他"), details: "", reason: reason || undefined, suggestion: suggestion || undefined, severity, reviewStatus: "pending", completed: false, createdAt: now }];
+      return [{ id: generateId(), title, file: file || undefined, line: line || undefined, functionName: functionName || undefined, location: location || undefined, category: String(review.category || "その他"), details: "", reason: reason || undefined, suggestion: suggestion || undefined, severity, reviewStatus: "pending", completed: false, createdAt: now }];
     });
   } catch {
     return null;
@@ -77,8 +81,10 @@ const itemKey = (item: Pick<TaskChecklistItem, "category" | "title">) => `${item
 const severityLabel = { high: "高", medium: "中", low: "低" } as const;
 const legacyTitleParts = (item: TaskChecklistItem) => !item.file && !item.location ? item.title.match(/^(.+[/\\][^:]*)\s+\/\s+([^:]+):\s+(.+)$/) : null;
 const displayFile = (item: TaskChecklistItem) => item.file || legacyTitleParts(item)?.[1] || "";
-const displayCodeLocation = (item: TaskChecklistItem) => item.location || legacyTitleParts(item)?.[2] || "";
-const displayLocation = (item: TaskChecklistItem) => [item.file, item.location].filter(Boolean).join(" › ") || (() => { const parts = legacyTitleParts(item); return parts ? `${parts[1]} › ${parts[2]}` : ""; })();
+const legacyLocationIsLine = (item: TaskChecklistItem) => /^L?\d+(?:\s*[-–—:]\s*L?\d+)?$/i.test(item.location?.trim() || "");
+const displayLine = (item: TaskChecklistItem) => item.line || (legacyLocationIsLine(item) ? item.location?.replace(/^L/i, "") || "" : "");
+const displayFunctionName = (item: TaskChecklistItem) => item.functionName || (!item.line && !legacyLocationIsLine(item) ? item.location : "") || legacyTitleParts(item)?.[2] || "";
+const displayLocation = (item: TaskChecklistItem) => [displayFile(item), displayLine(item) && `L${displayLine(item).replace(/^L/i, "")}`, displayFunctionName(item)].filter(Boolean).join(" › ");
 const displayTitle = (item: TaskChecklistItem) => legacyTitleParts(item)?.[3] || item.title;
 const itemStatus = (item: TaskChecklistItem) => item.reviewStatus || (item.completed ? "completed" : "pending");
 const detailParts = (item: TaskChecklistItem) => {
@@ -167,7 +173,8 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
     "",
     item.repositoryName && `リポジトリ: ${item.repositoryName}`,
     displayFile(item) && `ファイル: ${displayFile(item)}`,
-    displayCodeLocation(item) && `場所: ${displayCodeLocation(item)}`,
+    displayLine(item) && `行: ${displayLine(item)}`,
+    displayFunctionName(item) && `関数・メソッド: ${displayFunctionName(item)}`,
     `チェック項目: ${displayTitle(item)}`,
     detailParts(item).reason && `指摘理由: ${detailParts(item).reason}`,
     detailParts(item).suggestion && `修正案: ${detailParts(item).suggestion}`,

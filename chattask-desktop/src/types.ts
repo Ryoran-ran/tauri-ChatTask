@@ -163,6 +163,8 @@ export interface TaskChecklistItem {
   id: string;
   title: string;
   file?: string;
+  line?: string;
+  functionName?: string;
   location?: string;
   category: string;
   details: string;
@@ -192,6 +194,72 @@ export interface TaskCodeReviewRun {
   createdAt: string;
 }
 
+export interface TaskTestRun {
+  id: string;
+  repositoryId: string;
+  repositoryName: string;
+  baseBranch: string;
+  targetBranch: string;
+  /** 動作確認1回分の対象リポジトリ。旧データは上の単一リポジトリ項目を使用する。 */
+  repositories?: {
+    id: string;
+    name: string;
+    baseBranch: string;
+    targetBranch: string;
+  }[];
+  testPoints: string[];
+  content: string;
+  framework?: {
+    name: string;
+    setupRequired: boolean;
+    installCommands: string[];
+  };
+  tests?: {
+    category: string;
+    title: string;
+    file: string;
+    reason: string;
+    code: string;
+  }[];
+  runCommands?: string[];
+  assumptions?: string[];
+  environment?: string[];
+  checks?: {
+    id: string;
+    category: string;
+    title: string;
+    screen: string;
+    file: string;
+    line: string;
+    functionName: string;
+    repositories?: string[];
+    preconditions: string[];
+    steps: string[];
+    expectedResult: string;
+    status: "pending" | "in-progress" | "passed" | "failed" | "ignored";
+  }[];
+  status: "planned" | "implemented" | "passed" | "failed";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskVerificationTimelineEntry {
+  id: string;
+  kind: "note" | "issue" | "retest" | "status" | "system" | "reply";
+  text: string;
+  /** 返信元のタイムライン記録。返信は1階層で表示する。 */
+  parentEntryId?: string;
+  checkId?: string;
+  checkTitle?: string;
+  /** 関連する複数の動作確認項目。checkId/checkTitleは旧データとの互換用。 */
+  checkIds?: string[];
+  checkTitles?: string[];
+  attachmentIds?: string[];
+  fromStatus?: "pending" | "in-progress" | "passed" | "failed" | "ignored";
+  toStatus?: "pending" | "in-progress" | "passed" | "failed" | "ignored";
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -214,6 +282,10 @@ export interface Task {
   reviewChecklist?: TaskChecklistItem[];
   /** リポジトリ単位で実施したコードレビューの履歴。 */
   codeReviewRuns?: TaskCodeReviewRun[];
+  /** Diffから作成したテスト内容と実施状況の記録。 */
+  testRuns?: TaskTestRun[];
+  /** 動作確認中の状態変更、不具合メモ、画像などの時系列記録。 */
+  verificationTimeline?: TaskVerificationTimelineEntry[];
   links: TaskLink[];
   relatedTasks: RelatedTaskLink[];
   nextAction: string;

@@ -42,12 +42,12 @@ export function AttachmentCard({ attachment, onRemove, onPreview, onRenamed }: {
     }
   };
 
-  return <div className={`memo-attachment-card ${isImage ? "image-card" : "file-card"}`}>
+  return <div className={`memo-attachment-card ${isImage ? "image-card" : "file-card"}${editing ? " editing" : ""}`}>
     <button type="button" className="attachment-open-card" onClick={onPreview} title={`${attachment.name}をプレビュー`}>
       {isImage && imageUrl ? <img src={imageUrl} alt={attachment.name} /> : <span className={`file-type-icon file-type-${icon.type}`} aria-hidden="true">{icon.label}</span>}
       <span>{attachment.name}</span>
     </button>
-    {editing ? <div className="memo-attachment-name-editor"><div className="attachment-fixed-extension-input"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); if (event.key === "Escape") setEditing(false); }} />{attachmentNameParts(attachment.name).extension && <span>{attachmentNameParts(attachment.name).extension}</span>}</div><button type="button" title="保存" aria-label="表示名を保存" onClick={() => void saveName()}>✓</button><button type="button" title="取消" aria-label="表示名の変更を取り消す" onClick={() => setEditing(false)}>×</button></div> : <div className="memo-attachment-card-actions"><button type="button" className="attachment-card-icon" title="コピー" aria-label={`${attachment.name}をコピー`} onClick={copy}>{copied ? "✓" : "⧉"}</button><button type="button" className="attachment-card-icon" title="表示名を変更" aria-label={`${attachment.name}の表示名を変更`} onClick={() => { setName(attachmentNameParts(attachment.name).baseName); setEditing(true); }}>✎</button></div>}
+    {editing ? <div className="memo-attachment-name-editor"><div className="attachment-fixed-extension-input"><input autoFocus value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); if (event.key === "Escape") setEditing(false); }} />{attachmentNameParts(attachment.name).extension && <span>{attachmentNameParts(attachment.name).extension}</span>}</div><button type="button" title="保存" aria-label="表示名を保存" onClick={() => void saveName()}>✓</button><button type="button" title="取消" aria-label="表示名の変更を取り消す" onClick={() => setEditing(false)}>×</button></div> : <div className="memo-attachment-card-actions"><button type="button" className="attachment-card-icon" title="コピー" aria-label={`${attachment.name}をコピー`} onClick={copy}>{copied ? "✓" : "⧉"}</button><button type="button" className="attachment-card-icon" aria-label={`${attachment.name}の表示名を変更`} onClick={() => { setName(attachmentNameParts(attachment.name).baseName); setEditing(true); }}>✎</button></div>}
     {onRemove && <button type="button" className="attachment-remove-card" aria-label={`${attachment.name}を取り消す`} onClick={onRemove}>×</button>}
     {error && <small>{error}</small>}
   </div>;
