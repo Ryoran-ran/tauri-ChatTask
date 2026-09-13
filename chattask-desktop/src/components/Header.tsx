@@ -54,17 +54,23 @@ export function Header(props: Props) {
       <div className="settings-menu" ref={menuRef}>
         <button className="settings-trigger" onClick={() => setSettings(!settings)} aria-expanded={settings}>設定 <span>▼</span></button>
         {settings && <div className="settings-panel">
+          <span className="settings-group-label">記録・出力</span>
           <button onClick={() => { props.onAchievements(); setSettings(false); }}>頑張りの記録</button>
           <button onClick={() => { props.onIssues(); setSettings(false); }}>課題一覧</button>
           <button onClick={() => { props.onReport(); setSettings(false); }}>まとめ出力</button>
+          <span className="settings-group-label">個人設定</span>
           <button onClick={() => { props.onProfile(); setSettings(false); }}>プロフィール設定</button>
           <button onClick={() => { props.onNonWorking(); setSettings(false); }}>休暇・祝日設定</button>
+          <span className="settings-group-label">タスク設定</span>
           <button onClick={() => { props.onTags(); setSettings(false); }}>案件タグ設定</button>
           <button onClick={() => { props.onTemplates(); setSettings(false); }}>タスクテンプレート管理</button>
           <button onClick={() => { props.onTools(); setSettings(false); }}>ツール</button>
+          <span className="settings-group-label">表示設定</span>
           <label><input type="checkbox" checked={props.hideRecurring} onChange={(event) => props.onHideRecurring(event.target.checked)} /><span>定期タスクを一覧で非表示</span></label>
           <label><input type="checkbox" checked={props.openTodayOnStartup} onChange={(event) => props.onOpenTodayOnStartup(event.target.checked)} /><span>起動時に今日を開く</span></label>
+          <span className="settings-group-label">サポート</span>
           <button onClick={() => { props.onHelp(); setSettings(false); }}>ヘルプ</button>
+          <span className="settings-group-label">データ管理</span>
           <button onClick={() => { props.onDataManagement(); setSettings(false); }}>データ管理・バックアップ</button>
           <button onClick={() => { props.onExport(); setSettings(false); }}>データをエクスポート</button>
           <button type="button" onClick={() => { if (props.importRef.current) { props.importRef.current.value = ""; props.importRef.current.click(); } setSettings(false); }}>データをインポート</button>

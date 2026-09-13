@@ -1769,6 +1769,11 @@ nav.header-actions .settings-panel > button:disabled { color: #94a3b8; cursor: n
 nav.header-actions .settings-panel > button:disabled:hover { background: white; }
 nav.header-actions .settings-panel > label { display: flex; width: 100%; align-items: flex-start; gap: .5rem; margin: 0; padding: .65rem 1rem; background: white; color: #334155; font-size: .8rem; line-height: 1.4; cursor: pointer; }
 nav.header-actions .settings-panel input { flex: none; width: 15px; height: 15px; margin: .08rem 0 0; padding: 0; box-shadow: none; }
+.settings-panel { max-height: calc(100vh - 80px); overflow-y: auto; overscroll-behavior: contain; }
+.settings-panel > .settings-group-label { display: block; flex: none; border-top: 1px solid #e2e8f0; padding: .42rem 1rem .22rem; background: #f8fafc; color: #94a3b8; font-size: .6rem; font-weight: 800; letter-spacing: .06em; }
+.settings-panel > .settings-group-label:first-child { border-top: 0; }
+nav.header-actions .settings-panel > .settings-group-label + button,
+nav.header-actions .settings-panel > .settings-group-label + label { padding-top: .55rem; }
 .sidebar { width: 384px; max-width: 42vw; }.sidebar-tools { padding: .75rem; gap: .7rem; }.task-list { padding: .5rem; background: #f8fafc80; }
 .sidebar .task-list { padding-bottom: 5rem; }
 @media (max-width: 900px) { .header-actions > button:first-child { display: none; }.app-header { height: 56px; }.settings-panel { right: 0; } }

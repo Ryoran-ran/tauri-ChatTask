@@ -166,6 +166,7 @@
 }
 
 .verification-timeline-list {
+  --verification-timeline-date-gutter: 7.5rem;
   position: relative;
   display: flex;
   min-height: 0;
@@ -174,36 +175,44 @@
   gap: 0;
   overflow-y: auto;
   padding: 0.8rem 1rem 1rem;
+  background-image: linear-gradient(#dbe3ee, #dbe3ee);
+  background-position: calc(1rem + var(--verification-timeline-date-gutter) + 12px) 0;
+  background-repeat: no-repeat;
+  background-size: 1px 100%;
   scrollbar-gutter: stable;
 }
 
 .verification-timeline-list::before {
-  position: absolute;
-  top: 1rem;
-  bottom: 1rem;
-  left: calc(1rem + 12px);
-  width: 1px;
-  background: #dbe3ee;
-  content: "";
+  display: none;
 }
 
 .verification-timeline-date {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: 24px auto;
-  align-items: center;
-  gap: 0.65rem;
-  justify-content: start;
-  margin: 0.15rem 0 0.65rem;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  align-self: flex-start;
+  margin: 0 0 0.45rem;
+  padding: 0.35rem 0;
+  background: transparent;
   pointer-events: none;
 }
 
-.verification-timeline-date::before {
-  z-index: 1;
+.verification-timeline-date-anchor {
+  position: relative;
+  z-index: 2;
+  height: 0;
+  pointer-events: none;
+}
+
+.verification-timeline-date-anchor::before {
+  position: absolute;
+  top: 0.75rem;
+  left: calc(var(--verification-timeline-date-gutter) + 6px);
   width: 12px;
   height: 12px;
-  margin: auto;
   border: 2px solid #fff;
   border-radius: 50%;
   background: #2563eb;
@@ -211,9 +220,10 @@
   content: "";
 }
 
-.verification-timeline-date::after {
+.verification-timeline-date-anchor::after {
   position: absolute;
-  left: 18px;
+  top: calc(0.75rem + 6px);
+  left: calc(var(--verification-timeline-date-gutter) - 0.85rem + 6px);
   width: 0.85rem;
   height: 1px;
   background: #93c5fd;
@@ -230,6 +240,7 @@
   color: #1d4ed8;
   font-size: 0.64rem;
   font-weight: 800;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.12);
 }
 
 .verification-timeline-list > article {
@@ -237,6 +248,7 @@
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 0.65rem;
+  margin-left: var(--verification-timeline-date-gutter);
   padding: 0 0 0.8rem;
 }
 
@@ -282,12 +294,19 @@
 }
 
 .verification-timeline-entry > header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
-.verification-timeline-entry > header > span {
+.verification-timeline-entry-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.verification-timeline-entry-meta > span {
   border-radius: 999px;
   padding: 0.14rem 0.42rem;
   background: #e2e8f0;
@@ -296,14 +315,64 @@
   font-weight: 800;
 }
 
-.timeline-kind-issue .verification-timeline-entry > header > span {
+.timeline-kind-issue .verification-timeline-entry-meta > span {
   background: #fee2e2;
   color: #b91c1c;
 }
 
-.timeline-kind-retest .verification-timeline-entry > header > span {
+.timeline-kind-retest .verification-timeline-entry-meta > span {
   background: #ede9fe;
   color: #6d28d9;
+}
+
+.verification-timeline-entry-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.verification-timeline-entry-title > button,
+.verification-timeline-entry-title > strong {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  color: #1d4ed8;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.verification-timeline-entry-title > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.verification-timeline-entry-title > button:hover {
+  color: #1e40af;
+  text-decoration: underline;
+}
+
+.verification-timeline-entry-title > strong {
+  color: #64748b;
+}
+
+.verification-timeline-entry-title > small {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.1rem 0.32rem;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.48rem;
+  font-weight: 750;
 }
 
 .verification-timeline-entry time {
@@ -311,19 +380,9 @@
   font-size: 0.53rem;
 }
 
-.verification-timeline-entry > header button {
-  min-height: 24px;
-  margin-left: auto;
-  border: 0;
-  padding: 0.15rem 0.3rem;
-  background: transparent;
-  box-shadow: none;
-  font-size: 0.52rem;
-}
-
 .verification-timeline-entry-actions {
   display: flex;
-  margin-left: auto;
+  margin-left: 0;
   align-items: center;
   gap: 0.25rem;
 }
@@ -513,6 +572,12 @@
   gap: 0.45rem;
   color: #475569;
   font-size: 0.58rem;
+}
+
+.verification-status-change small {
+  color: #64748b;
+  font-size: 0.53rem;
+  font-weight: 750;
 }
 
 .verification-status-change span {
@@ -1167,20 +1232,21 @@
 }
 
 .verification-timeline-related {
-  margin-top: 0.1rem;
-  border-top: 1px solid #edf2f7;
-  padding-top: 0.35rem;
+  margin: 0.05rem 0 0.1rem;
+  border-bottom: 1px solid #edf2f7;
+  padding-bottom: 0.35rem;
 }
 
 .verification-timeline-related > summary {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  color: #64748b;
-  font-size: 0.53rem;
+  color: #475569;
+  font-size: 0.56rem;
   font-weight: 700;
-  cursor: pointer;
+  cursor: default;
   list-style: none;
+  pointer-events: none;
 }
 
 .verification-timeline-related > summary::-webkit-details-marker {
@@ -1188,12 +1254,11 @@
 }
 
 .verification-timeline-related > summary::before {
-  color: #94a3b8;
-  content: "▸";
+  content: none;
 }
 
 .verification-timeline-related[open] > summary::before {
-  content: "▾";
+  content: none;
 }
 
 .verification-timeline-related > summary small {
@@ -1208,18 +1273,23 @@
   margin-top: 0.35rem;
 }
 
+/* 対象が分からなくならないよう、details の開閉状態にかかわらず常時表示する。 */
+.verification-timeline-related:not([open]) > .verification-timeline-checks {
+  display: flex;
+}
+
 .verification-timeline-checks .verification-timeline-check {
   display: inline-flex;
   min-height: 0;
   align-items: center;
   gap: 0.3rem;
-  border: 0;
-  border-radius: 999px;
-  padding: 0.18rem 0.45rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.45rem;
+  padding: 0.3rem 0.55rem;
   background: #eff6ff;
   box-shadow: none;
-  color: #2563eb;
-  font-size: 0.52rem;
+  color: #1d4ed8;
+  font-size: 0.58rem;
   font-weight: 700;
 }
 
