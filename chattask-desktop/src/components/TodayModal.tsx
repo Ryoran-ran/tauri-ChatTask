@@ -151,8 +151,12 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     .filter((range) => range.startDate > date && range.status !== "completed"
       && !isCompletedProjectSource(range)
       && (!range.sourceId || range.sourceType === "project-work"))
-    .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate))
-    .map((range) => ({ task, range, planKey: `${range.startDate}::${range.id}` })));
+    .map((range) => ({ task, range, planKey: `${range.startDate}::${range.id}` })))
+    .sort((a, b) => a.range.startDate.localeCompare(b.range.startDate)
+      || a.range.endDate.localeCompare(b.range.endDate)
+      || (a.range.title || a.range.note || a.task.title).localeCompare(b.range.title || b.range.note || b.task.title, "ja")
+      || a.task.title.localeCompare(b.task.title, "ja")
+      || a.range.id.localeCompare(b.range.id));
   const normalizedAdvanceSearch = advanceSearch.trim().toLocaleLowerCase("ja");
   const visibleAdvanceCandidates = advanceCandidates.filter(({ task, range }) => !normalizedAdvanceSearch || [
     task.title, range.title, range.description, range.note, range.startDate, range.endDate, range.sourceType === "project-work" ? "プロジェクト 作業項目" : "",
