@@ -17,6 +17,51 @@
   gap: 0.35rem;
 }
 
+.code-review-diff-mode {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.15rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 0.18rem;
+  background: #f1f5f9;
+}
+
+.code-review-diff-mode > span {
+  padding: 0 0.4rem;
+  color: #64748b;
+  font-size: 0.54rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.code-review-diff-mode > button {
+  min-height: 29px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  background: transparent;
+  box-shadow: none;
+  color: #64748b;
+  font-size: 0.55rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.code-review-diff-mode > button:hover {
+  background: rgba(255, 255, 255, 0.7);
+  color: #1d4ed8;
+}
+
+.code-review-diff-mode > button.active {
+  border-color: #bfdbfe;
+  background: #fff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 3px rgba(30, 64, 175, 0.1);
+}
+
 .verification-command-heading {
   display: flex;
   align-items: center;

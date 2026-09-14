@@ -293,8 +293,9 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
         const repositoryRuns = runs.filter((candidate) => (candidate.repositoryId || "unassigned") === (run.repositoryId || "unassigned"));
         const runNumber = repositoryRuns.findIndex((candidate) => candidate.id === run.id) + 1;
         const runItems = run.itemIds.map((id) => items.find((item) => item.id === id)).filter((item): item is TaskChecklistItem => Boolean(item));
+        const noFindings = Boolean(run.noFindings || run.itemIds.length === 0);
         return <details className="review-run-card" key={run.id}>
-          <summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・指摘{run.itemIds.length}件</small></summary>
+          <summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・{noFindings ? <b className="review-no-findings-label">指摘なし</b> : `指摘${run.itemIds.length}件`}</small></summary>
           {onChangeReviewData && <div className="review-run-actions">
             {editingRunRepositoryId === run.id
               ? <label><span>移動先</span><select autoFocus value={run.repositoryId || "unassigned"} onChange={(event) => moveReviewRun(run, event.target.value)} onBlur={() => setEditingRunRepositoryId("")}>{repositoryChoices.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
@@ -303,7 +304,7 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
               ? <div className="review-run-delete-confirm"><span>この取り込みを削除しますか？</span><button type="button" onClick={() => setDeletingRunId("")}>やめる</button><button type="button" className="danger" onClick={() => deleteReviewRun(run)}>削除する</button></div>
               : <button type="button" className="danger-text" onClick={() => setDeletingRunId(run.id)}>取り込み単位で削除</button>}
           </div>}
-          {runItems.length ? <ul>{runItems.map((item) => <li key={item.id}><span className={`review-history-status ${itemStatus(item)}`}>{itemStatus(item) === "in-progress" ? "対応中" : itemStatus(item) === "completed" ? "対応済み" : itemStatus(item) === "ignored" ? "対象外" : "未対応"}</span><span>{displayTitle(item)}</span></li>)}</ul> : <p>このレビューの指摘は削除されています。</p>}
+          {noFindings ? <p className="review-run-no-findings"><span aria-hidden="true">✓</span>指摘なし</p> : runItems.length ? <ul>{runItems.map((item) => <li key={item.id}><span className={`review-history-status ${itemStatus(item)}`}>{itemStatus(item) === "in-progress" ? "対応中" : itemStatus(item) === "completed" ? "対応済み" : itemStatus(item) === "ignored" ? "対象外" : "未対応"}</span><span>{displayTitle(item)}</span></li>)}</ul> : <p>このレビューの指摘は削除されています。</p>}
         </details>;
       })}</div></section>}
       {section === "history" && !scopedRuns.length && <p>選択したリポジトリのレビュー履歴はありません。</p>}

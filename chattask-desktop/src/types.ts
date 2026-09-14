@@ -191,6 +191,8 @@ export interface TaskCodeReviewRun {
   baseBranch: string;
   targetBranch: string;
   itemIds: string[];
+  /** 正常にレビューが完了し、指摘が0件だった記録。 */
+  noFindings?: boolean;
   createdAt: string;
 }
 
