@@ -84,23 +84,25 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
     .filter((event) => event.type === "task-completion-cancelled")
     .map((event) => event.details?.completionEventId)
     .filter((id): id is string => typeof id === "string")), [activity]);
-  const completionEvents = activity.filter((event) =>
-    localDate(event.timestamp) >= start &&
-    localDate(event.timestamp) <= end &&
-    !cancelledCompletionIds.has(event.id) &&
-    (event.type === "task-completed" || event.type === "daily-plan-completed" || event.type === "recurrence-done"));
-  const taskCompletionEvents = completionEvents.filter((event) => event.type === "task-completed");
-  const legacyCompleted = tasks.filter((task) =>
-    task.status === "done" &&
-    task.completedAt &&
-    localDate(task.completedAt) >= start &&
-    localDate(task.completedAt) <= end &&
-    !taskCompletionEvents.some((event) => event.taskId === task.id));
   const recurringTaskIds = new Set([
     ...tasks.filter((task) => task.taskKind === "recurring" || task.status === "recurring").map((task) => task.id),
     ...activity.filter((event) => event.type === "task-deleted" && event.details?.snapshot && typeof event.details.snapshot === "object")
       .flatMap((event) => { const snapshot = event.details!.snapshot as Task; return snapshot.taskKind === "recurring" || snapshot.status === "recurring" ? [snapshot.id] : []; }),
   ]);
+  const completionEvents = activity.filter((event) =>
+    localDate(event.timestamp) >= start &&
+    localDate(event.timestamp) <= end &&
+    !cancelledCompletionIds.has(event.id) &&
+    (event.type === "task-completed" || event.type === "daily-plan-completed" || event.type === "recurrence-done"));
+  const taskCompletionEvents = completionEvents.filter((event) => event.type === "task-completed" && !recurringTaskIds.has(event.taskId || ""));
+  const legacyCompleted = tasks.filter((task) =>
+    task.taskKind !== "recurring" &&
+    task.status !== "recurring" &&
+    task.status === "done" &&
+    task.completedAt &&
+    localDate(task.completedAt) >= start &&
+    localDate(task.completedAt) <= end &&
+    !taskCompletionEvents.some((event) => event.taskId === task.id));
   const createdEvents = activity.filter((event) => event.type === "task-created" && !recurringTaskIds.has(event.taskId || "") && localDate(event.timestamp) >= start && localDate(event.timestamp) <= end);
   const createdIds = new Set(createdEvents.map((event) => event.taskId).filter(Boolean));
   const legacyCreated = tasks.filter((task) => task.taskKind !== "recurring" && task.status !== "recurring" && localDate(task.createdAt) >= start && localDate(task.createdAt) <= end && !createdIds.has(task.id));
@@ -120,13 +122,15 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
   ]);
   const completedResponses = dailyCompleted.length + recurrenceCompleted.length + projectAchievements.length;
   const actualHours = tasks.reduce((sum, task) => sum + Object.entries(task.dailyActualHours || {})
-    .filter(([date]) => date >= start && date <= end)
+    .filter(([planKey]) => {
+      const date = planKey.slice(0, 10);
+      return date >= start && date <= end;
+    })
     .reduce((subtotal, [, hours]) => subtotal + (Number(hours) || 0), 0), 0);
   const carryovers = activity.filter((event) => {
     const date = localDate(event.timestamp);
     return date >= start && date <= end && (event.summary.includes("持ち越") || event.type === "recurrence-moved");
   });
-  const net = completedTaskCount - createdCount;
   const daily = days.map((date) => ({
     date,
     created: createdEvents.filter((event) => localDate(event.timestamp) === date).length + legacyCreated.filter((task) => localDate(task.createdAt) === date).length,
@@ -155,6 +159,12 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
     return status;
   };
   const activeTaskCountForDate = (date: string) => taskEntities.filter(({ task, deletedAt }) => localDate(task.createdAt) <= date && (!deletedAt || localDate(deletedAt) > date) && task.taskKind !== "recurring" && task.status !== "recurring" && !excludedFromTaskTotal.has(statusAtEndOfDate(task, deletedAt, date))).length;
+  const taskDeltaStartDate = addDays(start, -1);
+  const taskDeltaAvailable = start <= todayValue();
+  const taskDeltaEndDate = end < todayValue() ? end : todayValue();
+  const activeTaskCountBeforePeriod = taskDeltaAvailable ? activeTaskCountForDate(taskDeltaStartDate) : 0;
+  const activeTaskCountAtPeriodEnd = taskDeltaAvailable ? activeTaskCountForDate(taskDeltaEndDate) : 0;
+  const taskDelta = taskDeltaAvailable ? activeTaskCountAtPeriodEnd - activeTaskCountBeforePeriod : null;
   const activeTaskSeries = days.map((date) => {
     if (date > todayValue()) return { date, count: null };
     return { date, count: activeTaskCountForDate(date) };
@@ -246,7 +256,7 @@ export function AchievementsModal({ tasks, projects, tags, activity, nonWorkingP
         <article className="complete"><small>完了したタスク</small><strong>{completedTaskCount}<span>件</span></strong></article>
         <article className="response"><small>達成した対応</small><strong>{completedResponses}<span>件</span></strong></article>
         <article className="created"><small>新しく追加（通常タスク）</small><strong>{createdCount}<span>件</span></strong></article>
-        <article className={net >= 0 ? "net positive" : "net"}><small>タスクの差し引き</small><strong>{net > 0 ? "−" : net < 0 ? "＋" : "±"}{Math.abs(net)}<span>件</span></strong><p>{net > 0 ? "未完了を減らしました" : net < 0 ? "取り組みが増えました" : "追加と完了が同数です"}</p></article>
+        <article className={taskDelta !== null && taskDelta <= 0 ? "net positive" : "net"} title={taskDelta === null ? "未来の期間は集計できません" : `${taskDeltaStartDate}終了時 ${activeTaskCountBeforePeriod}件 → ${taskDeltaEndDate}終了時 ${activeTaskCountAtPeriodEnd}件`}><small>稼働タスクの増減</small>{taskDelta === null ? <><strong>—</strong><p>未来の期間は集計対象外です</p></> : <><strong>{taskDelta > 0 ? "+" : taskDelta < 0 ? "−" : "±"}{Math.abs(taskDelta)}<span>件</span></strong><p>{activeTaskCountBeforePeriod}件 → {activeTaskCountAtPeriodEnd}件（{taskDeltaEndDate === end ? "期間終了" : "今日時点"}）</p></>}</article>
         <article className="hours"><small>対応した時間</small><strong>{hoursLabel(actualHours)}</strong></article>
         <article className="carry"><small>持ち越し・移動</small><strong>{carryovers.length}<span>件</span></strong></article>
       </section>

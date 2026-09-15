@@ -259,6 +259,8 @@ textarea { resize: vertical; line-height: 1.55; }
 .quick-details-toggle { display: grid; flex: 0 0 28px; width: 28px; height: 28px; margin-left: auto; place-items: center; border: 1px solid #cbd5e1; border-radius: 7px; padding: 0; background: white; color: #64748b; font-size: 1rem; line-height: 1; }
 .quick-toggle-actions .quick-details-toggle { margin-left: 0; }
 .quick-resources-toggle { font-size: .9rem; font-weight: 750; }
+.quick-toggle-actions .quick-info-button { position: relative; margin-left: .45rem; }
+.quick-toggle-actions .quick-info-button::before { position: absolute; top: 3px; bottom: 3px; left: -.45rem; border-left: 1px solid #dbe3ef; content: ""; pointer-events: none; }
 .quick-details-toggle:hover { border-color: #93c5fd; background: #eff6ff; color: #2563eb; }
 .quick-details-toggle.active { border-color: #93c5fd; background: #dbeafe; color: #1d4ed8; }
 .quick-document-button svg, .quick-branch-button svg, .quick-schedule-button svg, .quick-related-task-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -5152,4 +5154,14 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
   background: #22c55e;
   color: #fff;
   font-size: 0.5rem;
+}
+
+/* 動作確認履歴: 閉じた履歴カードを一覧の高さまで引き伸ばさない。 */
+.verification-checklist-view.section-tests-history .review-history-section > div {
+  align-content: start;
+  grid-auto-rows: max-content;
+}
+
+.verification-checklist-view.section-tests-history .review-run-card {
+  height: max-content;
 }

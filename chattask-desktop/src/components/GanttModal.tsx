@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { STATUS_LABELS, WAITING_STATUSES } from "../data/constants";
 import type { Goal, NonWorkingPeriod, PlannedRange, ProjectTag, Task, TaskStatus } from "../types";
-import { addDays, getNonWorkingPeriod, isRecurringDue, plannedHoursForDate, rangeDates, todayValue } from "../utils";
+import { addDays, getNonWorkingPeriod, plannedHoursForDate, plannedRangeHoursForDate, rangeDates, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { createGanttExcel } from "../services/ganttExcel";
@@ -54,7 +54,12 @@ const rangeActual = (task: Task, range: PlannedRange) => {
     if (Number(value) <= 0) return false;
     const separator = planKey.indexOf("::");
     if (separator >= 0) return planKey.slice(separator + 2) === range.id;
-    return range.startDate <= planKey && range.endDate >= planKey;
+    // 旧形式の日別実績には予定IDがない。同日に複数予定が重なる場合は、
+    // すべての予定へ同じ実績を加算せず、先頭の予定へ一度だけ割り当てる。
+    const matchingRange = [...task.plannedRanges]
+      .filter((candidate) => candidate.startDate <= planKey && candidate.endDate >= planKey)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate) || a.id.localeCompare(b.id))[0];
+    return matchingRange?.id === range.id;
   });
   const dates = [...entries.map(([planKey]) => planKey.split("::")[0]),
     ...Object.entries(range.carriedOverWork || {}).filter(([, worked]) => worked).map(([date]) => date)].sort();
@@ -122,13 +127,9 @@ const contiguousDateRanges = (values: string[]) => {
   return ranges;
 };
 const isCompletedStatus = (status: string) => ["done", "cancelled", "handed-over", "achieved", "completed"].includes(status);
-const taskStatus = (task: Task) => {
-  if (task.status === "cancelled" || task.status === "handed-over") return task.status;
-  if (task.status === "done" || task.progressStatus === "completed" || task.completedAt) return "done";
-  if (task.progressStatus === "in-progress") return "doing";
-  if (task.progressStatus === "waiting") return WAITING_STATUSES.includes(task.status) ? task.status : "waiting-general";
-  return task.status;
-};
+// ガントでもタスク一覧と同じ保存済みステータスを正として表示する。
+// progressStatus や completedAt は移行・補助情報のため、表示状態の上書きには使わない。
+const taskStatus = (task: Task) => task.status;
 const taskEndingReason = (task: Task) => {
   if (task.status !== "cancelled" && task.status !== "handed-over") return "";
   const prefix = `${STATUS_LABELS[task.status]}理由：`;
@@ -299,21 +300,6 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       return [];
     }
   }, []);
-  const plannedEffortByDate = useMemo(() => new Map(dates.map((date) => {
-    const total = tasks.reduce((sum, task) => {
-      if (["done", "cancelled", "handed-over"].includes(task.status) || task.completedAt) return sum;
-      if (task.status === "recurring" || task.taskKind === "recurring") {
-        if (!isRecurringDue(task, date, periods, workingDateOverrides)) return sum;
-        const record = task.recurrenceRecords.find((item) => item.date === date);
-        return record?.status === "done" || record?.status === "skipped" ? sum : sum + (Number(task.plannedHours) || 0);
-      }
-      const activeRanges = task.plannedRanges.filter((range) => (range.status || "not-started") !== "completed");
-      return activeRanges.length
-        ? sum + plannedHoursForDate({ ...task, plannedRanges: activeRanges }, date, periods, workingDateOverrides)
-        : sum;
-    }, 0);
-    return [date, total] as const;
-  })), [dates, tasks, periods, workingDateOverrides]);
   const availableTimelineWidth = Math.max(320, viewportWidth * .96 - Math.min(420, Math.max(280, viewportWidth * .3)) - 70);
   const fittedCell = availableTimelineWidth / Math.max(1, dates.length);
   const cell = scale === "project"
@@ -373,16 +359,6 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       return next;
     });
   };
-  const projectManagedStatus = (task: Task) => {
-    const statuses = projects.flatMap((project) => [
-      ...(project.workItems || []).filter((item) => item.linkedTaskId === task.id).map((item) => item.status),
-      ...project.milestones.filter((item) => item.linkedTaskId === task.id || item.taskIds.includes(task.id)).map((item) => item.completed || item.status === "achieved" ? "done" : item.status || "not-started"),
-    ]);
-    if (!statuses.length) return "";
-    if (statuses.every((status) => ["done", "achieved", "completed"].includes(status))) return "done";
-    if (statuses.some((status) => ["in-progress", "doing"].includes(status))) return "doing";
-    return "todo";
-  };
   const projectManagedRangeStatus = (range: PlannedRange) => {
     if (!range.sourceType || !range.sourceId) return "";
     for (const project of projects) {
@@ -409,10 +385,9 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       });
       const makeTaskRow = (task: Task, depth: number, parentId?: string): GanttRow => {
         const actual = taskActualRange(task);
-        const managedStatus = projectManagedStatus(task);
         const ownStatus = taskStatus(task);
         return {
-          id: `task:${task.id}`, kind: "task", title: task.title, description: taskEndingReason(task), depth, parentId, task, linkedTaskId: task.id, status: ownStatus === "cancelled" || ownStatus === "handed-over" ? ownStatus : managedStatus || ownStatus,
+          id: `task:${task.id}`, kind: "task", title: task.title, description: taskEndingReason(task), depth, parentId, task, linkedTaskId: task.id, status: ownStatus,
           priority: task.priority, tagId: task.projectTagId, baselineRanges: [], plannedRanges: task.plannedRanges,
           actualStart: actual.start, actualEnd: actual.end, actualDates: actual.dates, achievedDates: taskAchievedDates(task), plannedHours: plannedHours(task.plannedRanges, Number(task.plannedHours) || 0),
           actualHours: Number(task.actualHours) || 0, dueDate: task.dueDate || "",
@@ -446,7 +421,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
             title: projectWork?.title?.trim() || range.title?.trim() || `予定 ${index + 1}`,
             periodLabel: dateLabel,
             description: projectWork?.description?.trim() || range.description || range.note || "",
-            depth: depth + 1, parentId: ownRow.id, linkedTaskId: task.id, status: scheduleStatus,
+            depth: depth + 1, parentId: ownRow.id, task, linkedTaskId: task.id, status: scheduleStatus,
             priority: task.priority, tagId: task.projectTagId,
             baselineRanges: [{
               ...range,
@@ -468,8 +443,13 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
         const aggregate = aggregateRows(ownRow.id, "task", ownRow.title, ownRow.status, depth, directChildRows, ownRow.dueDate);
         const ownScheduledHours = scheduleRows.reduce((sum, item) => sum + item.plannedHours, 0) || ownRow.plannedHours;
         const childTaskHours = directChildRows.filter((item) => item.kind === "task").reduce((sum, item) => sum + item.plannedHours, 0);
+        const childTaskActualHours = directChildRows.filter((item) => item.kind === "task").reduce((sum, item) => sum + item.actualHours, 0);
         const row = childRows.length
-          ? { ...ownRow, ...aggregate, status: ownRow.status === "cancelled" || ownRow.status === "handed-over" ? ownRow.status : aggregate.status, plannedHours: ownScheduledHours + childTaskHours, task, linkedTaskId: task.id, priority: task.priority, tagId: task.projectTagId, parentId }
+          ? (() => {
+            const actualDates = [...new Set([...ownRow.actualDates, ...aggregate.actualDates])].sort();
+            const achievedDates = [...new Set([...ownRow.achievedDates, ...aggregate.achievedDates])].sort();
+            return { ...ownRow, ...aggregate, status: ownRow.status === "cancelled" || ownRow.status === "handed-over" ? ownRow.status : aggregate.status, plannedHours: ownScheduledHours + childTaskHours, actualHours: ownRow.actualHours + childTaskActualHours, actualStart: actualDates[0] || "", actualEnd: actualDates[actualDates.length - 1] || "", actualDates, achievedDates, task, linkedTaskId: task.id, priority: task.priority, tagId: task.projectTagId, parentId };
+          })()
           : ownRow;
         ordered.push(row, ...childRows);
       };
@@ -545,7 +525,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       || overlaps(row.actualStart, row.actualEnd)
       || Boolean(row.dueDate && row.dueDate >= period.start && row.dueDate <= period.end);
   };
-  const matchingIds = new Set(sourceRows.filter((row) => {
+  const directlyMatchingRows = sourceRows.filter((row) => {
     // 親の集計期間は、離れた子予定の間まで連続した予定に見えてしまう。
     // 通常表示では親自身を期間判定せず、表示対象になった子からのみ親を表示する。
     if (row.hasChildren && !normalizedQuery && !showOutOfPeriod) return false;
@@ -557,7 +537,8 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     if (statusFilter === "waiting" && !WAITING_STATUSES.includes(row.status as TaskStatus)) return false;
     if (statusFilter === "done" && !isCompletedStatus(row.status)) return false;
     return !normalizedQuery || row.title.toLocaleLowerCase("ja").includes(normalizedQuery);
-  }).map((row) => row.id));
+  });
+  const matchingIds = new Set(directlyMatchingRows.map((row) => row.id));
   sourceRows.forEach((row) => {
     let parentId = row.parentId;
     if (!matchingIds.has(row.id)) return;
@@ -575,6 +556,46 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     }
     return true;
   });
+  const sourceRowById = new Map(sourceRows.map((row) => [row.id, row]));
+  const workloadRows = directlyMatchingRows.filter((row) => !directlyMatchingRows.some((candidate) => {
+    let parentId = candidate.parentId;
+    while (parentId) {
+      if (parentId === row.id) return true;
+      parentId = sourceRowById.get(parentId)?.parentId;
+    }
+    return false;
+  }));
+  const rowPlannedHoursForDate = (row: GanttRow, date: string) => {
+    if (isCompletedStatus(row.status) || getNonWorkingPeriod(date, periods, workingDateOverrides)) return 0;
+    const activeRanges = row.plannedRanges.filter((range) => (range.status || "not-started") !== "completed");
+    if (!activeRanges.some((range) => range.startDate <= date && range.endDate >= date)) return 0;
+    const allocated = activeRanges.reduce((sum, range) => sum + plannedRangeHoursForDate(range, date, periods, workingDateOverrides), 0);
+    if (allocated > 0) return allocated;
+    const workingDates = rangeDates(activeRanges).filter((candidate) => !getNonWorkingPeriod(candidate, periods, workingDateOverrides));
+    return workingDates.length ? Math.max(0, row.plannedHours) / workingDates.length : 0;
+  };
+  const scheduleRowsByTask = new Map<string, GanttRow[]>();
+  workloadRows.filter((row) => row.kind === "schedule" && row.task).forEach((row) => {
+    scheduleRowsByTask.set(row.task!.id, [...(scheduleRowsByTask.get(row.task!.id) || []), row]);
+  });
+  const standaloneWorkloadRows = workloadRows.filter((row) => row.kind !== "schedule" || !row.task);
+  const totalPlannedWorkloadHours = standaloneWorkloadRows.reduce((sum, row) => sum + row.plannedHours, 0)
+    + [...scheduleRowsByTask.values()].reduce((sum, scheduleRows) => {
+      const rangeHours = scheduleRows.reduce((rangeSum, row) => rangeSum + row.plannedHours, 0);
+      return sum + (rangeHours || Number(scheduleRows[0].task?.plannedHours) || 0);
+    }, 0);
+  const totalActualWorkloadHours = workloadRows.reduce((sum, row) => sum + row.actualHours, 0);
+  const plannedEffortByDate = new Map(dates.map((date) => {
+    let total = standaloneWorkloadRows.reduce((sum, row) => sum + rowPlannedHoursForDate(row, date), 0);
+    scheduleRowsByTask.forEach((scheduleRows) => {
+      const task = scheduleRows[0].task!;
+      const activeRanges = scheduleRows.flatMap((row) => row.plannedRanges).filter((range) => (range.status || "not-started") !== "completed");
+      if (!isCompletedStatus(taskStatus(task)) && activeRanges.length) {
+        total += plannedHoursForDate({ ...task, plannedRanges: activeRanges }, date, periods, workingDateOverrides);
+      }
+    });
+    return [date, total] as const;
+  }));
   const delayedCount = rows.filter((row) => row.dueDate && row.dueDate < today && !isCompletedStatus(row.status)).length;
   const navigationUnits = scale === "week"
     ? { small: "1日", large: "1週間" }
@@ -789,8 +810,6 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       .map((range) => range.startDate === range.endDate ? range.startDate : `${range.startDate}〜${range.endDate}`)
       .join("<br>");
     const rowById = new Map(sourceRows.map((row) => [row.id, row]));
-    const totalPlannedHours = rows.reduce((sum, row) => sum + row.plannedHours, 0);
-    const totalActualHours = rows.reduce((sum, row) => sum + row.actualHours, 0);
     const generatedAt = new Intl.DateTimeFormat("ja-JP", {
       dateStyle: "medium",
       timeStyle: "short",
@@ -828,8 +847,8 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       "",
       "## サマリー",
       "",
-      `- 予定工数合計: ${hours(totalPlannedHours)}h`,
-      `- 実績工数合計: ${hours(totalActualHours)}h`,
+      `- 予定工数合計: ${hours(totalPlannedWorkloadHours)}h`,
+      `- 実績工数合計: ${hours(totalActualWorkloadHours)}h`,
       `- 期限超過: ${delayedCount}件`,
       "",
       "## スケジュール一覧",
@@ -842,7 +861,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       "",
       "- 「現在予定」は複数の期間がある場合、期間ごとに分けて記載しています。",
       "- 「作業日」は実績工数がある日、または日別に作業達成を記録した日です。",
-      "- 親項目の工数には配下項目の集計が含まれる場合があるため、単純加算時の二重計上に注意してください。",
+      "- サマリーの工数合計は、親の集約行を除いた表示対象から算出しています。",
       "",
     ].join("\n");
     saveBlob(new Blob(["\uFEFF", markdown], { type: "text/markdown;charset=utf-8" }), `${exportFileStem}.md`);
