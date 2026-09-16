@@ -1,6 +1,6 @@
 import { DEFAULT_TAGS, isTerminalStatus } from "../data/constants";
 import { invoke } from "@tauri-apps/api/core";
-import type { ActivityEvent, AppData, LocalTool, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskStatus, TaskWaitingReason } from "../types";
+import type { ActivityEvent, AppData, Habit, HabitArea, LocalTool, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskStatus, TaskWaitingReason, WorkspaceMode } from "../types";
 import { randomTagColor } from "../tagColors";
 import { generateId, mergeRanges, todayValue } from "../utils";
 
@@ -19,6 +19,8 @@ const KEYS = {
   todayTaskOrders: "chatTaskTodayTaskOrders",
   localTools: "chatTaskLocalTools",
   localToolsStoragePath: "chatTaskLocalToolsStoragePath",
+  habits: "chatTaskHabits",
+  workspaceMode: "chatTaskWorkspaceMode",
 };
 
 export type AppEnvironment = "production" | "test";
@@ -360,6 +362,35 @@ const normalizeLocalTools = (tools: unknown): LocalTool[] => Array.isArray(tools
   return [{ ...item, id: String(item.id || generateId()), name: String(item.name || "名称未設定のツール"), folderPath, entryFile, createdAt: String(item.createdAt || now), updatedAt: String(item.updatedAt || now), managedCopy: item.managedCopy === true }];
 }) : [];
 
+const normalizeHabits = (habits: unknown): Habit[] => Array.isArray(habits) ? habits.flatMap((source) => {
+  if (!source || typeof source !== "object") return [];
+  const item = source as Partial<Habit>;
+  const title = String(item.title || "").trim();
+  if (!title) return [];
+  const now = new Date().toISOString();
+  const validAreas: HabitArea[] = ["health", "learning", "life", "mind", "hobby", "other"];
+  const area = validAreas.includes(item.area as HabitArea) ? item.area as HabitArea : "other";
+  const weekdays = Array.isArray(item.weekdays)
+    ? [...new Set(item.weekdays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b)
+    : [];
+  const records = Array.isArray(item.records) ? item.records.flatMap((record) => {
+    if (!record || typeof record !== "object" || !/^\d{4}-\d{2}-\d{2}$/.test(String(record.date || ""))) return [];
+    return [{
+      date: String(record.date),
+      status: record.status === "rest" ? "rest" as const : "done" as const,
+      value: Number.isFinite(Number(record.value)) ? Number(record.value) : undefined,
+      note: record.note ? String(record.note) : undefined,
+      updatedAt: String(record.updatedAt || now),
+    }];
+  }) : [];
+  return [{
+    id: String(item.id || generateId()), title, area, projectTagId: String(item.projectTagId || ""), projectId: String(item.projectId || ""),
+    targetPerWeek: Math.min(7, Math.max(1, Number(item.targetPerWeek) || 1)), weekdays,
+    minimumAction: String(item.minimumAction || ""), active: item.active !== false, records,
+    createdAt: String(item.createdAt || now), updatedAt: String(item.updatedAt || now),
+  }];
+}) : [];
+
 const createOrganizationSeed = (environment: AppEnvironment = getActiveEnvironment()) => {
   const key = environmentKey(KEYS.organizationSeed, environment);
   const storedSeed = Number(localStorage.getItem(key));
@@ -378,7 +409,8 @@ export const loadAppData = (environment: AppEnvironment = getActiveEnvironment()
   const tasks = rawTasks.map(normalizeTask);
   const savedActivity = parse<ActivityEvent[]>(get(KEYS.activity), []);
   return {
-    version: 14,
+    version: 16,
+    workspaceMode: get(KEYS.workspaceMode) === "personal" ? "personal" : "work",
     organizationSeed: createOrganizationSeed(environment),
     tasks,
     projectTags: normalizeTags(parse(get(KEYS.tags), DEFAULT_TAGS.map((tag) => ({ ...tag })))),
@@ -389,15 +421,16 @@ export const loadAppData = (environment: AppEnvironment = getActiveEnvironment()
     todayTaskOrders: parse(get(KEYS.todayTaskOrders), {}),
     localTools: normalizeLocalTools(parse(get(KEYS.localTools), [])),
     localToolsStoragePath: get(KEYS.localToolsStoragePath) || "",
+    habits: normalizeHabits(parse(get(KEYS.habits), [])),
   };
 };
 
 const saveToLocalStorage = (data: AppData, environment: AppEnvironment) => {
   const set = (key: string, value: unknown) => localStorage.setItem(environmentKey(key, environment), typeof value === "string" ? value : JSON.stringify(value));
-  set(KEYS.organizationSeed, String(data.organizationSeed)); set(KEYS.tasks, data.tasks); set(KEYS.tags, data.projectTags);
+  set(KEYS.organizationSeed, String(data.organizationSeed)); set(KEYS.workspaceMode, data.workspaceMode); set(KEYS.tasks, data.tasks); set(KEYS.tags, data.projectTags);
   set(KEYS.activity, data.activityLog); set(KEYS.notes, data.dailyNotes); set(KEYS.dailyFinalizedAt, data.dailyFinalizedAt);
   set(KEYS.nonWorking, data.nonWorkingPeriods); set(KEYS.profile, data.userProfile); set(KEYS.goals, data.goals);
-  set(KEYS.issues, data.issues); set(KEYS.inbox, data.inboxItems); set(KEYS.todayTaskOrders, data.todayTaskOrders); set(KEYS.localTools, data.localTools); set(KEYS.localToolsStoragePath, data.localToolsStoragePath);
+  set(KEYS.issues, data.issues); set(KEYS.inbox, data.inboxItems); set(KEYS.todayTaskOrders, data.todayTaskOrders); set(KEYS.localTools, data.localTools); set(KEYS.localToolsStoragePath, data.localToolsStoragePath); set(KEYS.habits, data.habits);
 };
 
 export type StorageBackend = "sqlite" | "localStorage";
@@ -487,7 +520,8 @@ export const parseImportedData = (text: string): AppData => {
   return {
     // Keep newer top-level sections even when this version does not render them.
     ...(!Array.isArray(imported) ? imported : {}),
-    version: 14,
+    version: 16,
+    workspaceMode: (!Array.isArray(imported) && imported.workspaceMode === "personal" ? "personal" : "work") as WorkspaceMode,
     organizationSeed: !Array.isArray(imported) && Number.isInteger(Number(imported.organizationSeed)) && Number(imported.organizationSeed) > 0
       ? Number(imported.organizationSeed)
       : createOrganizationSeed(),
@@ -504,5 +538,6 @@ export const parseImportedData = (text: string): AppData => {
     todayTaskOrders: !Array.isArray(imported) && imported.todayTaskOrders && typeof imported.todayTaskOrders === "object" ? imported.todayTaskOrders as Record<string, string[]> : {},
     localTools: normalizeLocalTools(!Array.isArray(imported) ? imported.localTools : []),
     localToolsStoragePath: !Array.isArray(imported) ? String(imported.localToolsStoragePath || "") : "",
+    habits: normalizeHabits(!Array.isArray(imported) ? imported.habits : []),
   };
 };

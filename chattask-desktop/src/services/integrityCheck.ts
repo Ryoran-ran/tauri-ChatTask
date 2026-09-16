@@ -53,6 +53,7 @@ export function checkAppDataIntegrity(data: AppData): IntegrityCheckResult {
   duplicateIds(data.projectTags, "ID", "案件タグ");
   duplicateIds(data.goals, "ID", "プロジェクト");
   duplicateIds(data.inboxItems, "ID", "Inbox");
+  duplicateIds(data.habits, "ID", "習慣");
 
   const taskById = new Map(data.tasks.map((task) => [task.id, task]));
   const tagIds = new Set(data.projectTags.map((tag) => tag.id));
@@ -101,6 +102,12 @@ export function checkAppDataIntegrity(data: AppData): IntegrityCheckResult {
       if (ranges.length < 2) return;
       add({ severity: "warning", category: "予定", target, message: `同じ期間・工数・連携元の予定が${ranges.length}件あります。`, suggestion: "意図した分割予定でなければ、重複した予定を1件に統合してください。" });
     });
+  });
+
+  data.habits.forEach((habit) => {
+    const target = `習慣「${habit.title || habit.id}」`;
+    if (habit.projectTagId && !tagIds.has(habit.projectTagId)) add({ severity: "error", category: "参照", target, message: "存在しない案件タグを参照しています。", suggestion: "有効な案件タグへ変更するか、タグなしに戻してください。" });
+    if (habit.projectId && !data.goals.some((goal) => goal.id === habit.projectId)) add({ severity: "error", category: "プロジェクト連携", target, message: "関連プロジェクトが見つかりません。", suggestion: "関連プロジェクトを選び直すか、紐づけを解除してください。" });
   });
 
   data.goals.forEach((goal) => {
