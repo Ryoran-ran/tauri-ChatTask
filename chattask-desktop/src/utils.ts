@@ -155,17 +155,20 @@ export const plannedRangeHoursForDate = (range: PlannedRange, date: string, peri
   return workingDates.length && hours > 0 ? hours / workingDates.length : 0;
 };
 
-export const plannedHoursForDate = (task: Task, date: string, periods: NonWorkingPeriod[] = [], workingDateOverrides: string[] = []) => {
+export const plannedRangesHoursForDate = (ranges: PlannedRange[], fallbackHours: number, date: string, periods: NonWorkingPeriod[] = [], workingDateOverrides: string[] = []) => {
   if (getNonWorkingPeriod(date, periods, workingDateOverrides)) return 0;
-  const activeRanges = task.plannedRanges.filter((range) => isPlannedRangeForDate(range, date));
+  const activeRanges = ranges.filter((range) => isPlannedRangeForDate(range, date));
   if (!activeRanges.length) return 0;
   const allocatedRangeHours = activeRanges.reduce((sum, range) => sum + plannedRangeHoursForDate(range, date, periods, workingDateOverrides), 0);
   if (allocatedRangeHours > 0) return allocatedRangeHours;
-  const scheduledDays = rangeDates(task.plannedRanges).filter((candidate) =>
-    task.plannedRanges.some((range) => isPlannedRangeForDate(range, candidate))
+  const scheduledDays = rangeDates(ranges).filter((candidate) =>
+    ranges.some((range) => isPlannedRangeForDate(range, candidate))
     && !getNonWorkingPeriod(candidate, periods, workingDateOverrides)).length;
-  return scheduledDays ? Math.max(0, Number(task.plannedHours) || 0) / scheduledDays : 0;
+  return scheduledDays ? Math.max(0, Number(fallbackHours) || 0) / scheduledDays : 0;
 };
+
+export const plannedHoursForDate = (task: Task, date: string, periods: NonWorkingPeriod[] = [], workingDateOverrides: string[] = []) =>
+  plannedRangesHoursForDate(task.plannedRanges, Number(task.plannedHours) || 0, date, periods, workingDateOverrides);
 
 export const addDays = (dateValue: string, days: number) => {
   const date = new Date(`${dateValue}T00:00:00Z`);

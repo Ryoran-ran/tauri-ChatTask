@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { STATUS_LABELS, WAITING_STATUSES } from "../data/constants";
 import type { Goal, NonWorkingPeriod, PlannedRange, ProjectTag, Task, TaskStatus } from "../types";
-import { addDays, getNonWorkingPeriod, plannedHoursForDate, plannedRangeHoursForDate, rangeDates, todayValue } from "../utils";
+import { addDays, getNonWorkingPeriod, isRecurringDue, plannedHoursForDate, plannedRangesHoursForDate, rangeDates, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { createGanttExcel } from "../services/ganttExcel";
@@ -565,15 +565,6 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     }
     return false;
   }));
-  const rowPlannedHoursForDate = (row: GanttRow, date: string) => {
-    if (isCompletedStatus(row.status) || getNonWorkingPeriod(date, periods, workingDateOverrides)) return 0;
-    const activeRanges = row.plannedRanges.filter((range) => (range.status || "not-started") !== "completed");
-    if (!activeRanges.some((range) => range.startDate <= date && range.endDate >= date)) return 0;
-    const allocated = activeRanges.reduce((sum, range) => sum + plannedRangeHoursForDate(range, date, periods, workingDateOverrides), 0);
-    if (allocated > 0) return allocated;
-    const workingDates = rangeDates(activeRanges).filter((candidate) => !getNonWorkingPeriod(candidate, periods, workingDateOverrides));
-    return workingDates.length ? Math.max(0, row.plannedHours) / workingDates.length : 0;
-  };
   const scheduleRowsByTask = new Map<string, GanttRow[]>();
   workloadRows.filter((row) => row.kind === "schedule" && row.task).forEach((row) => {
     scheduleRowsByTask.set(row.task!.id, [...(scheduleRowsByTask.get(row.task!.id) || []), row]);
@@ -585,15 +576,19 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
       return sum + (rangeHours || Number(scheduleRows[0].task?.plannedHours) || 0);
     }, 0);
   const totalActualWorkloadHours = workloadRows.reduce((sum, row) => sum + row.actualHours, 0);
+  const effortTasks = selectedProject ? [] : tasks.filter((task) => {
+    if (tag === "all") return true;
+    return tag === "none" ? !task.projectTagId : task.projectTagId === tag;
+  });
+  const projectEffortRows = selectedProject
+    ? sourceRows.filter((row) => !row.hasChildren && ["milestone", "work"].includes(row.kind) && row.plannedRanges.length > 0)
+    : [];
   const plannedEffortByDate = new Map(dates.map((date) => {
-    let total = standaloneWorkloadRows.reduce((sum, row) => sum + rowPlannedHoursForDate(row, date), 0);
-    scheduleRowsByTask.forEach((scheduleRows) => {
-      const task = scheduleRows[0].task!;
-      const activeRanges = scheduleRows.flatMap((row) => row.plannedRanges).filter((range) => (range.status || "not-started") !== "completed");
-      if (!isCompletedStatus(taskStatus(task)) && activeRanges.length) {
-        total += plannedHoursForDate({ ...task, plannedRanges: activeRanges }, date, periods, workingDateOverrides);
-      }
-    });
+    const total = selectedProject
+      ? projectEffortRows.reduce((sum, row) => sum + plannedRangesHoursForDate(row.plannedRanges, row.plannedHours, date, periods, workingDateOverrides), 0)
+      : effortTasks.reduce((sum, task) => sum + (task.status === "recurring" || task.taskKind === "recurring"
+        ? isRecurringDue(task, date, periods, workingDateOverrides) ? Math.max(0, Number(task.plannedHours) || 0) : 0
+        : plannedHoursForDate(task, date, periods, workingDateOverrides)), 0);
     return [date, total] as const;
   }));
   const delayedCount = rows.filter((row) => row.dueDate && row.dueDate < today && !isCompletedStatus(row.status)).length;
@@ -927,7 +922,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
         </div>
       </div>
     </div>
-    <div className="gantt-overview"><span><b>{rows.length}</b>件を表示</span>{delayedCount > 0 && <span className="is-delayed"><b>{delayedCount}</b>件の期限超過</span>}<div className="gantt-capacity-legend" title="日付ヘッダー下段は、その日の未完了予定工数です"><b>日別工数</b><i className="light" />〜4h<i className="normal" />〜6h<i className="busy" />〜8h<i className="over" />8h超</div><div className="gantt-legend"><i className="summary" />親の集約期間<i className="baseline" />当初予定<i className="planned" />作業予定<i className="actual" />作業あり<i className="deadline" />期限</div></div>
+    <div className="gantt-overview"><span><b>{rows.length}</b>件を表示</span>{delayedCount > 0 && <span className="is-delayed"><b>{delayedCount}</b>件の期限超過</span>}<div className="gantt-capacity-legend" title="日付ヘッダー下段は、週間予定と同じ方法で稼働日に配分した予定工数です"><b>日別工数</b><i className="light" />〜4h<i className="normal" />〜6h<i className="busy" />〜8h<i className="over" />8h超</div><div className="gantt-legend"><i className="summary" />親の集約期間<i className="baseline" />当初予定<i className="planned" />作業予定<i className="actual" />作業あり<i className="deadline" />期限</div></div>
     <div className={`gantt-scroll gantt-scale-${scale} ${cell < 28 ? "gantt-capacity-compact" : ""} gantt-display-${display} ${sourceRows.some((row) => row.baselineRanges.length) ? "gantt-has-baseline" : ""}`} onScroll={() => { if (projectPickerOpen) setProjectPickerOpen(false); }}>
       <div className="gantt-content">
       <div className="gantt-header"><div className="gantt-task-label gantt-label-heading"><strong>項目</strong><small>予定／実績・期限</small></div><div className="gantt-timeline" style={{ width: dates.length * cell }}>{dates.map((date, index) => {
