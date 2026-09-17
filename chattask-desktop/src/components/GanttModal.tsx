@@ -204,15 +204,17 @@ const aggregateRows = (id: string, kind: GanttRow["kind"], title: string, status
   };
 };
 
-export function GanttModal({ tasks, projects = [], tags, periods, initialProjectId = "", onSelect, onClose }: {
+export function GanttModal({ tasks, projects = [], tags, periods, calculationPeriods, initialProjectId = "", onSelect, onClose }: {
   tasks: Task[];
   projects?: Goal[];
   tags: ProjectTag[];
   periods: NonWorkingPeriod[];
+  calculationPeriods?: NonWorkingPeriod[];
   initialProjectId?: string;
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  const effortPeriods = calculationPeriods || periods;
   const [scale, setScale] = useState<GanttScale>(() => {
     // プロジェクト画面から開く場合は、保存済みの全体ガント設定ではなく当月を表示する。
     if (initialProjectId) return "month";
@@ -585,10 +587,10 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     : [];
   const plannedEffortByDate = new Map(dates.map((date) => {
     const total = selectedProject
-      ? projectEffortRows.reduce((sum, row) => sum + plannedRangesHoursForDate(row.plannedRanges, row.plannedHours, date, periods, workingDateOverrides), 0)
+      ? projectEffortRows.reduce((sum, row) => sum + plannedRangesHoursForDate(row.plannedRanges, row.plannedHours, date, effortPeriods, workingDateOverrides), 0)
       : effortTasks.reduce((sum, task) => sum + (task.status === "recurring" || task.taskKind === "recurring"
-        ? isRecurringDue(task, date, periods, workingDateOverrides) ? Math.max(0, Number(task.plannedHours) || 0) : 0
-        : plannedHoursForDate(task, date, periods, workingDateOverrides)), 0);
+        ? isRecurringDue(task, date, effortPeriods, workingDateOverrides) ? Math.max(0, Number(task.plannedHours) || 0) : 0
+        : plannedHoursForDate(task, date, effortPeriods, workingDateOverrides)), 0);
     return [date, total] as const;
   }));
   const delayedCount = rows.filter((row) => row.dueDate && row.dueDate < today && !isCompletedStatus(row.status)).length;
@@ -629,7 +631,11 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
     return "";
   };
 
-  const grid = () => <>{dates.map((date) => <span className={`${getNonWorkingPeriod(date, periods) ? "non-working-cell" : ""} ${date === today ? "is-today" : ""}`} style={{ width: cell }} key={date} />)}</>;
+  const grid = () => <>{dates.map((date) => {
+    const restDay = getNonWorkingPeriod(date, periods);
+    const saturday = restDay?.type === "weekend" && new Date(`${date}T00:00:00Z`).getUTCDay() === 6;
+    return <span className={`${restDay ? `non-working-cell ${saturday ? "is-rest-saturday" : "is-rest-holiday"}` : ""} ${date === today ? "is-today" : ""}`} style={{ width: cell }} key={date} />;
+  })}</>;
   const todayLineLeft = todayIndex >= 0
     ? `calc(clamp(280px, 30vw, 420px) + ${todayIndex * cell + cell / 2}px)`
     : undefined;
@@ -929,7 +935,9 @@ export function GanttModal({ tasks, projects = [], tags, periods, initialProject
         const label = timelineLabel(date, index);
         const effort = plannedEffortByDate.get(date) || 0;
         const effortTone = effort > 8 ? "over" : effort > 6 ? "busy" : effort > 4 ? "normal" : effort > 0 ? "light" : "empty";
-        return <span className={`${date === today ? "is-today" : ""} ${label ? "has-label" : ""} gantt-capacity-${effortTone}`} style={{ width: cell }} key={date} title={`${date}・予定工数 ${hours(effort)}h`}><>{label && <b className="gantt-date-label">{label}</b>}</><small className="gantt-capacity-value">{effort > 0 ? `${hours(effort)}h` : ""}</small></span>;
+        const restDay = getNonWorkingPeriod(date, periods);
+        const saturday = restDay?.type === "weekend" && new Date(`${date}T00:00:00Z`).getUTCDay() === 6;
+        return <span className={`${date === today ? "is-today" : ""} ${restDay ? saturday ? "is-rest-saturday" : "is-rest-holiday" : ""} ${label ? "has-label" : ""} gantt-capacity-${effortTone}`} style={{ width: cell }} key={date} title={`${date}${restDay ? "・休み" : ""}・予定工数 ${hours(effort)}h`}><>{label && <b className="gantt-date-label">{label}</b>}</><small className="gantt-capacity-value">{effort > 0 ? `${hours(effort)}h` : ""}</small></span>;
       })}</div></div>
       {rows.map((row) => {
         const tone = taskTone(row.status);

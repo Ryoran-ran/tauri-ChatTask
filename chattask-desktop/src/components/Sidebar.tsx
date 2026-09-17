@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { STATUS_LABELS, isTerminalStatus } from "../data/constants";
 import { taskProjectContexts } from "../projectContext";
-import type { AdvancedFilterCondition, AdvancedTaskFilter, Goal, NonWorkingPeriod, ProjectTag, SavedTaskView, Task, TaskSortKey, TaskSortRule } from "../types";
+import type { AdvancedFilterCondition, AdvancedTaskFilter, Goal, NonWorkingPeriod, ProjectTag, SavedTaskView, Task, TaskSortKey, TaskSortRule, WorkspaceMode } from "../types";
 import { TaskCard } from "./TaskCard";
 import { TagIcon } from "./TagIcon";
 import { Modal } from "./Modal";
@@ -39,6 +39,7 @@ interface Props {
   onQuick: (id: string, action: "doing" | "waiting" | "done" | "today" | "tomorrow" | "log") => void;
   onOpenProject: (id: string) => void;
   onSaveTemplate: (task: Task) => void;
+  workspaceMode: WorkspaceMode;
 }
 
 const depthFor = (task: Task, all: Task[]) => {
@@ -212,7 +213,7 @@ export function Sidebar(props: Props) {
           </div>
           </details>
         </div>}
-        <button className="secondary full" onClick={props.onToday}>今日のページ</button>
+        <button className="secondary full" onClick={props.onToday}>{props.workspaceMode === "personal" ? "今日の暮らし" : "今日のページ"}</button>
       </div>
       <div className="task-list">
         {props.groupByTag && <section className={`task-tag-group task-today-shortcut ${todayShortcutCollapsed ? "collapsed" : ""}`}>

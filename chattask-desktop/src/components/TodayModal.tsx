@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
-import type { ActivityEvent, Goal, InboxItem, NonWorkingPeriod, PlannedRange, ProjectTag, RecurrenceRecord, Task } from "../types";
+import type { ActivityEvent, Goal, Habit, InboxItem, NonWorkingPeriod, PlannedRange, ProjectTag, RecurrenceRecord, Task, WorkspaceMode } from "../types";
 import { addDays, generateId, getNextWorkingDate, getNonWorkingPeriod, isPlannedRangeForDate, isRecurringDue, isTaskPlannedForDate, localDateValue, plannedHoursForDate, plannedRangeHoursForDate, recurrenceLabel, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { EffortSummaryModal } from "./EffortSummaryModal";
 import { TagIcon } from "./TagIcon";
+import { HabitsPanel } from "./HabitsPanel";
 import { readExecutionGroups, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
 const todayExecutionLaterOpenKey = "chatTaskTodayExecutionLaterOpen";
 const todayExecutionHoldingOpenKey = "chatTaskTodayExecutionHoldingOpen";
-export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTodayOrder, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { tasks: Task[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
+export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inboxItems, todayOrder, onTodayOrder, onHabitsChange, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { workspaceMode: WorkspaceMode; tasks: Task[]; habits: Habit[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onHabitsChange: (habits: Habit[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
   const [moveTarget, setMoveTarget] = useState<Occurrence | null>(null); const [moveDate, setMoveDate] = useState(""); const [moveReason, setMoveReason] = useState("");
   const [actualDrafts, setActualDrafts] = useState<Record<string, string>>({});
   const [completionCancelConfirmId, setCompletionCancelConfirmId] = useState("");
@@ -61,11 +62,12 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     }
   });
   const openTimer = useRef<number | null>(null);
-  const finalized = Boolean(finalizedAt);
+  const workMode = workspaceMode === "work";
+  const finalized = workMode && Boolean(finalizedAt);
   const inboxReviewItems = inboxItems.filter((item) => item.status === "inbox" && item.reviewDate && !item.reviewedAt && (date === todayValue() ? item.reviewDate <= date : item.reviewDate === date)).sort((a, b) => (a.reviewDate || "").localeCompare(b.reviewDate || "") || b.updatedAt.localeCompare(a.updatedAt));
-  const scheduledNonWorking = getNonWorkingPeriod(date, periods);
+  const scheduledNonWorking = workMode ? getNonWorkingPeriod(date, periods) : undefined;
   const holidayWork = Boolean(scheduledNonWorking && workingDateOverrides.includes(date));
-  const nonWorking = getNonWorkingPeriod(date, periods, workingDateOverrides);
+  const nonWorking = workMode ? getNonWorkingPeriod(date, periods, workingDateOverrides) : undefined;
   const toggleHolidayWork = () => {
     if (!scheduledNonWorking || finalized) return;
     setWorkingDateOverrides((current) => {
@@ -1073,15 +1075,15 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
     </article></div>;
   };
   const recurringGroupList = groupByTag ? grouped(visibleOccurrences, (item) => item.task) : [{ tag: undefined, items: visibleOccurrences }];
-  return <Modal title="今日のページ" onClose={onClose} wide fullScreen>
-    <div className="today-toolbar-row">
+  return <Modal title={workMode ? "今日のページ" : "今日の暮らし"} onClose={onClose} wide fullScreen>
+    <div className={`today-toolbar-row ${workMode ? "today-work-mode" : "today-personal-mode"}`}>
       <div className="today-toolbar"><button onClick={() => onDate(addDays(date, -1))}>←</button><WorkDatePicker ariaLabel="今日のページの日付" value={date} onChange={onDate} allowClear={false} /><button onClick={() => onDate(addDays(date, 1))}>→</button><button onClick={() => onDate(todayValue())}>今日</button></div>
-      <div className="today-finalization-actions">
+      {workMode && <div className="today-finalization-actions">
       <button type="button" onClick={() => setEffortSummaryOpen(true)}>工数集計</button>
       {finalized
           ? <button type="button" className="danger" title={`${new Date(finalizedAt).toLocaleString("ja-JP")} に確定済み`} onClick={unfinalizeDay}>取消</button>
           : <button type="button" className="primary" onClick={finalizeDay}>確定</button>}
-      </div>
+      </div>}
     </div>
     <aside className="today-left-rail">
     <section className="today-dashboard" aria-label={`${date}のダッシュボード`}>
@@ -1099,13 +1101,13 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
         <div className="is-completed"><span>完了タスク</span><strong>{completed.length}</strong><small>件</small></div>
       </div>
       {dashboardRemainingItems.length > 0 && <div className="today-dashboard-remaining"><strong>未対応の内訳</strong><ul>{dashboardRemainingItems.slice(0, 3).map((item) => <li key={item.key}><span>{item.kind}</span><b title={item.title}>{item.title}</b></li>)}</ul>{dashboardRemainingItems.length > 3 && <small>ほか {dashboardRemainingItems.length - 3}件</small>}</div>}
-      <div className="today-dashboard-effort">
+      {workMode && <div className="today-dashboard-effort">
         <span>工数</span>
         <strong>予定 {formatHours(dashboardPlannedHours)}h</strong>
         <i aria-hidden="true">/</i>
         <strong>実績 {formatHours(dashboardActualHours)}h</strong>
         {dashboardPlannedHours > 0 && <small>{Math.round((dashboardActualHours / dashboardPlannedHours) * 100)}%</small>}
-      </div>
+      </div>}
     </section>
       <section className="today-inbox-panel">
         <div className="today-inbox-heading">
@@ -1119,14 +1121,17 @@ export function TodayModal({ tasks, projects, tags, inboxItems, todayOrder, onTo
         <div>{inboxReviewItems.map((item) => <article key={item.id}><button type="button" onClick={() => onOpenInbox(item.id)}><strong>{item.title || "無題のメモ"}</strong><small>{item.reviewDate! < date ? `${item.reviewDate!.replace(/-/g, "/")} から未確認` : "今日確認"}</small></button><button type="button" className="today-inbox-reviewed" title="確認済みにする" aria-label={`${item.title || "無題のメモ"}を確認済みにする`} onClick={() => onReviewInbox(item.id)}><span aria-hidden="true">✓</span></button></article>)}{!inboxReviewItems.length && <p>今日確認するInboxはありません。</p>}</div>
       </section>
     </aside>
-    <section className={`today-note-panel ${memoOpen ? "is-open" : ""} ${finalized ? "is-readonly" : ""}`}>
-      <button type="button" className="today-note-toggle" aria-expanded={memoOpen} onClick={() => setMemoOpen((current) => !current)}>
-        <span><strong>この日のメモ</strong><small>{note.trim() || "クリックしてメモを入力"}</small></span>
-        <b>{memoOpen ? "閉じる" : note.trim() ? "編集" : "開く"}</b>
-      </button>
-      {memoOpen && <textarea autoFocus={!note.trim() && !finalized} rows={4} value={note} readOnly={finalized} onChange={(event) => onNote(event.target.value)} placeholder="この日の気づき、申し送り、振り返りなど" />}
-    </section>
-    {scheduledNonWorking && <div className={`non-working-banner ${holidayWork ? "is-holiday-work" : ""}`}><div><strong>{holidayWork ? "休日出勤" : scheduledNonWorking.type === "weekend" ? "土日休暇" : scheduledNonWorking.type === "holiday" ? "祝日" : "休暇"}</strong>{scheduledNonWorking.note && ` — ${scheduledNonWorking.note}`}<small>{holidayWork ? "この日は稼働日として、作業表示と予定工数の配分に含めます。" : "この日の未達成予定は持ち越し対象に含めません。"}</small></div><button type="button" disabled={finalized} onClick={toggleHolidayWork}>{holidayWork ? "休日扱いに戻す" : "この日を稼働日にする"}</button></div>}
+    <div className="today-daily-overview">
+      {!workMode && <HabitsPanel habits={habits} projects={projects} tags={tags} date={date} onChange={onHabitsChange} />}
+      <section className={`today-note-panel ${memoOpen ? "is-open" : ""} ${finalized ? "is-readonly" : ""}`}>
+        <button type="button" className="today-note-toggle" aria-expanded={memoOpen} onClick={() => setMemoOpen((current) => !current)}>
+          <span><strong>この日のメモ</strong><small>{note.trim() || "クリックしてメモを入力"}</small></span>
+          <b>{memoOpen ? "閉じる" : note.trim() ? "編集" : "開く"}</b>
+        </button>
+        {memoOpen && <textarea autoFocus={!note.trim() && !finalized} rows={4} value={note} readOnly={finalized} onChange={(event) => onNote(event.target.value)} placeholder="この日の気づき、申し送り、振り返りなど" />}
+      </section>
+    </div>
+    {scheduledNonWorking && <div className={`non-working-banner ${holidayWork ? "is-holiday-work" : ""}`}><div><strong>{holidayWork ? "休日出勤" : scheduledNonWorking.type === "weekend" ? "曜日休み" : scheduledNonWorking.type === "holiday" ? "祝日" : "休暇"}</strong>{scheduledNonWorking.note && ` — ${scheduledNonWorking.note}`}<small>{holidayWork ? "この日は稼働日として、作業表示と予定工数の配分に含めます。" : "この日の未達成予定は持ち越し対象に含めません。"}</small></div><button type="button" disabled={finalized} onClick={toggleHolidayWork}>{holidayWork ? "休日扱いに戻す" : "この日を稼働日にする"}</button></div>}
     {!nonWorking && !finalized && <div className="carry-row">
       <button type="button" className="advance-schedule-button" onClick={openAdvanceDialog}>未来の予定を前倒し</button>
       {carrySelectionMode && <button type="button" className="carry-selection-cancel" onClick={() => { setCarrySelectionMode(false); setSelectedCarryTaskIds(new Set()); }}>選択をやめる</button>}

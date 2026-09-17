@@ -1,25 +1,31 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS } from "../data/constants";
-import type { PlannedRange, ProjectTag, Task, TaskDocument, TaskTemplate } from "../types";
+import type { Goal, Habit, HabitArea, PlannedRange, ProjectTag, Task, TaskDocument, TaskTemplate } from "../types";
 import { addDays, generateId, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 
 type TaskCreateValues = Pick<Task, "title" | "description" | "nextAction" | "status" | "priority" | "projectTagId" | "parentTaskId" | "reminderDate" | "dueDate" | "plannedRanges" | "unscheduledPlans" | "plannedHours" | "recurrence" | "recurrenceMemoTemplate" | "links" | "documents">;
+type HabitCreateValues = Pick<Habit, "title" | "area" | "projectTagId" | "projectId" | "targetPerWeek" | "weekdays" | "minimumAction">;
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const HABIT_AREAS: Record<HabitArea, string> = { health: "健康", learning: "学び", life: "生活", mind: "心", hobby: "趣味", other: "その他" };
 
-export function TaskCreateModal({ tasks, tags, templates, parentId, projectTagId, onCreate, onClose }: {
+export function TaskCreateModal({ tasks, tags, projects, templates, parentId, projectTagId, allowHabit, onCreate, onCreateHabit, onClose }: {
   tasks: Task[];
   tags: ProjectTag[];
+  projects: Goal[];
   templates: TaskTemplate[];
   parentId: string;
   projectTagId?: string;
+  allowHabit: boolean;
   onCreate: (values: TaskCreateValues) => void;
+  onCreateHabit: (values: HabitCreateValues) => void;
   onClose: () => void;
 }) {
   const parent = tasks.find((task) => task.id === parentId);
+  const [createKind, setCreateKind] = useState<"task" | "habit">("task");
   const [draft, setDraft] = useState({
     title: "",
     description: "",
@@ -46,6 +52,7 @@ export function TaskCreateModal({ tasks, tags, templates, parentId, projectTagId
     recurrenceMemoTemplate: "",
   });
   const [parentPickerOpen, setParentPickerOpen] = useState(false);
+  const [habitDraft, setHabitDraft] = useState<HabitCreateValues>({ title: "", area: "health", projectTagId: projectTagId || parent?.projectTagId || "", projectId: "", targetPerWeek: 3, weekdays: [], minimumAction: "" });
   const [selectedTemplate, setSelectedTemplate] = useState<TaskTemplate | null>(null);
   const [parentQuery, setParentQuery] = useState("");
   const parentCandidates = tasks;
@@ -122,7 +129,15 @@ export function TaskCreateModal({ tasks, tags, templates, parentId, projectTagId
     });
   };
   const recurring = draft.status === "recurring";
-  return <Modal title={parent ? `「${parent.title}」の子タスクを作成` : "新規タスクを作成"} onClose={onClose}>
+  const submitHabit = () => {
+    if (!habitDraft.title.trim()) return;
+    onCreateHabit({ ...habitDraft, title: habitDraft.title.trim(), targetPerWeek: Math.min(7, Math.max(1, Number(habitDraft.targetPerWeek) || 1)) });
+  };
+  const activeProjects = projects.filter((project) => !["achieved", "archived", "cancelled"].includes(project.status));
+  const habitMode = allowHabit && createKind === "habit";
+  return <Modal title={habitMode ? "新しい習慣を作成" : parent ? `「${parent.title}」の子タスクを作成` : "新規タスクを作成"} onClose={onClose}>
+    {allowHabit && !parent && <div className="task-create-kind-switch" role="tablist" aria-label="作成する項目"><button type="button" role="tab" aria-selected={createKind === "task"} className={createKind === "task" ? "active" : ""} onClick={() => setCreateKind("task")}><span aria-hidden="true">✓</span><b>タスク</b><small>完了する作業</small></button><button type="button" role="tab" aria-selected={createKind === "habit"} className={createKind === "habit" ? "active habit" : "habit"} onClick={() => setCreateKind("habit")}><span aria-hidden="true">↻</span><b>習慣</b><small>継続する行動</small></button></div>}
+    {!habitMode ? <>
     <div className="task-create-form">
       <label className="task-create-title">タスク名<input autoFocus value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="タスク名を入力" /></label>
       {templateMatches.length > 0 && <section className="task-template-suggestions" aria-label="タスクテンプレート候補"><header><strong>テンプレート候補</strong><small>選択すると手順書・資料もセットします</small></header>{templateMatches.map((template) => <button type="button" key={template.id} onClick={() => applyTemplate(template)}><span><strong>{template.name}</strong><small>{tags.find((tag) => tag.id === template.projectTagId)?.name || "タグなし"}・予定 {template.plannedHours || 0}h</small></span><b>{template.documents.length}資料</b></button>)}</section>}
@@ -171,5 +186,18 @@ export function TaskCreateModal({ tasks, tags, templates, parentId, projectTagId
         <footer><button type="button" className="danger-text" disabled={!draft.parentTaskId} onClick={() => chooseParent("")}>親タスクを設定しない</button><button type="button" onClick={() => setParentPickerOpen(false)}>キャンセル</button></footer>
       </section>
     </div>, document.body)}
+    </> : <div className="task-create-form habit-quick-create">
+      <div className="habit-quick-create-intro"><span aria-hidden="true">↻</span><div><strong>続けたい行動を登録</strong><small>期限や完了ではなく、週ごとの実施回数を記録します。</small></div></div>
+      <label className="task-create-title">習慣名<input autoFocus value={habitDraft.title} onChange={(event) => setHabitDraft({ ...habitDraft, title: event.target.value })} placeholder="例：筋トレ、読書、英語学習" /></label>
+      <div className="task-create-grid">
+        <label>生活領域<select value={habitDraft.area} onChange={(event) => setHabitDraft({ ...habitDraft, area: event.target.value as HabitArea })}>{Object.entries(HABIT_AREAS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>週の目安<select value={habitDraft.targetPerWeek} onChange={(event) => setHabitDraft({ ...habitDraft, targetPerWeek: Number(event.target.value) })}>{[1, 2, 3, 4, 5, 6, 7].map((count) => <option key={count} value={count}>週{count}回</option>)}</select></label>
+        <label>案件タグ（任意）<select value={habitDraft.projectTagId} onChange={(event) => setHabitDraft({ ...habitDraft, projectTagId: event.target.value })}><option value="">設定しない</option>{tags.filter((tag) => tag.visible || tag.id === habitDraft.projectTagId).map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label>
+        <label>関連プロジェクト（任意）<select value={habitDraft.projectId} onChange={(event) => { const selectedProjectId = event.target.value; const project = projects.find((item) => item.id === selectedProjectId); setHabitDraft({ ...habitDraft, projectId: selectedProjectId, projectTagId: project?.projectTagId || habitDraft.projectTagId }); }}><option value="">紐づけない</option>{activeProjects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
+      </div>
+      <label>最低ライン（任意）<input value={habitDraft.minimumAction} onChange={(event) => setHabitDraft({ ...habitDraft, minimumAction: event.target.value })} placeholder="例：5分だけでも実施" /></label>
+      <fieldset className="habit-quick-weekdays"><legend>実施曜日（任意）</legend><p>選ばない場合は毎日表示します。</p><div>{WEEKDAYS.map((label, weekday) => <label key={label}><input type="checkbox" checked={habitDraft.weekdays.includes(weekday)} onChange={(event) => setHabitDraft({ ...habitDraft, weekdays: event.target.checked ? [...habitDraft.weekdays, weekday].sort() : habitDraft.weekdays.filter((item) => item !== weekday) })} /><span>{label}</span></label>)}</div></fieldset>
+      <div className="task-create-actions"><button type="button" onClick={onClose}>キャンセル</button><button type="button" className="primary habit-create-submit" disabled={!habitDraft.title.trim()} onClick={submitHabit}><span aria-hidden="true">＋</span>習慣を作成</button></div>
+    </div>}
   </Modal>;
 }
