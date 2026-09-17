@@ -3,10 +3,10 @@ import { createPortal } from "react-dom";
 import type { NonWorkingPeriod } from "../types";
 import { addDays, getNonWorkingPeriod, todayValue } from "../utils";
 
-const NonWorkingPeriodsContext = createContext<NonWorkingPeriod[]>([]);
+const NonWorkingPeriodsContext = createContext<{ periods: NonWorkingPeriod[]; informational: boolean }>({ periods: [], informational: false });
 
-export function NonWorkingPeriodsProvider({ periods, children }: { periods: NonWorkingPeriod[]; children: ReactNode }) {
-  return <NonWorkingPeriodsContext.Provider value={periods}>{children}</NonWorkingPeriodsContext.Provider>;
+export function NonWorkingPeriodsProvider({ periods, informational = false, children }: { periods: NonWorkingPeriod[]; informational?: boolean; children: ReactNode }) {
+  return <NonWorkingPeriodsContext.Provider value={{ periods, informational }}>{children}</NonWorkingPeriodsContext.Provider>;
 }
 
 const monthValue = (date: string) => date.slice(0, 7);
@@ -18,12 +18,12 @@ const shiftMonth = (month: string, offset: number) => {
 const dateLabel = (date: string) => date ? `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日` : "日付を選択";
 const holidayLabel = (period: ReturnType<typeof getNonWorkingPeriod>) => {
   if (!period) return "";
-  const type = period.type === "weekend" ? "土日休暇" : period.type === "holiday" ? "祝日" : period.type === "vacation" ? "休暇" : "非稼働日";
+  const type = period.type === "weekend" ? "曜日休み" : period.type === "holiday" ? "祝日" : period.type === "vacation" ? "休暇" : "非稼働日";
   return period.note ? `${type}・${period.note}` : type;
 };
 
 export function WorkDatePicker({ value, onChange, ariaLabel, min, max, allowClear = true, autoFocus = false, disabled = false, className = "", formatValue, showNonWorkingStatus = true, pickerMode = "day" }: { value: string; onChange: (value: string) => void; ariaLabel: string; min?: string; max?: string; allowClear?: boolean; autoFocus?: boolean; disabled?: boolean; className?: string; formatValue?: (value: string) => string; showNonWorkingStatus?: boolean; pickerMode?: "day" | "month" | "year" }) {
-  const periods = useContext(NonWorkingPeriodsContext);
+  const { periods, informational } = useContext(NonWorkingPeriodsContext);
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(monthValue(value || todayValue()));
   const [viewMode, setViewMode] = useState<"day" | "month" | "year">(pickerMode);
@@ -77,8 +77,8 @@ export function WorkDatePicker({ value, onChange, ariaLabel, min, max, allowClea
     else { setViewMode(pickerMode); setOpen(true); }
   };
   return <div className={`work-date-picker ${className}`} ref={rootRef}>
-    <button autoFocus={autoFocus} type="button" disabled={disabled} className={`work-date-trigger ${selectedPeriod ? "is-non-working" : ""}`} aria-label={ariaLabel} aria-expanded={open} onClick={togglePicker}><span>{value ? formatValue?.(value) || dateLabel(value) : "未設定"}</span><b aria-hidden="true">▦</b></button>
-    {selectedPeriod && <small className="work-date-warning">{dateLabel(value)}は{holidayLabel(selectedPeriod)}です</small>}
+    <button autoFocus={autoFocus} type="button" disabled={disabled} className={`work-date-trigger ${selectedPeriod ? informational ? "is-rest-day" : "is-non-working" : ""}`} aria-label={ariaLabel} aria-expanded={open} onClick={togglePicker}><span>{value ? formatValue?.(value) || dateLabel(value) : "未設定"}</span><b aria-hidden="true">▦</b></button>
+    {selectedPeriod && <small className={informational ? "work-date-rest-info" : "work-date-warning"}>{informational ? `${dateLabel(value)}は${holidayLabel(selectedPeriod)}です。予定は通常どおり登録できます` : `${dateLabel(value)}は${holidayLabel(selectedPeriod)}です`}</small>}
     {open && createPortal(<section ref={calendarRef} className="work-date-calendar" style={{ top: position.top, left: position.left, width: position.width }} role="dialog" aria-label={`${ariaLabel}のカレンダー`}>
       <header><button type="button" aria-label={viewMode === "day" ? "前月" : viewMode === "month" ? "前年" : "前の年一覧"} onClick={() => shiftPicker(-1)}>‹</button>{viewMode === "year" ? <strong>{yearChoices[0]}〜{yearChoices[yearChoices.length - 1]}年</strong> : <button type="button" className="work-date-period-switch" aria-label={viewMode === "day" ? "月を選択" : "年を選択"} onClick={() => setViewMode(viewMode === "day" ? "month" : "year")}>{viewMode === "day" ? `${pickerYear}年 ${Number(month.slice(5, 7))}月` : `${pickerYear}年`}<span aria-hidden="true">▦</span></button>}<button type="button" aria-label={viewMode === "day" ? "翌月" : viewMode === "month" ? "翌年" : "次の年一覧"} onClick={() => shiftPicker(1)}>›</button></header>
       {viewMode === "day" && <><div className="work-date-weekdays"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>

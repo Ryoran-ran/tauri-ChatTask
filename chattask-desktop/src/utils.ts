@@ -178,10 +178,14 @@ export const addDays = (dateValue: string, days: number) => {
 
 export const getNonWorkingPeriod = (dateValue: string, periods: NonWorkingPeriod[], workingDateOverrides: string[] = []) => {
   if (workingDateOverrides.includes(dateValue)) return null;
-  const configured = periods.find((period) => period.startDate <= dateValue && period.endDate >= dateValue);
+  const configured = periods.find((period) => period.type !== "weekend" && period.startDate <= dateValue && period.endDate >= dateValue);
   if (configured) return configured;
   const day = new Date(`${dateValue}T00:00:00Z`).getUTCDay();
-  return [0, 6].includes(day) ? { id: `weekend-${dateValue}`, startDate: dateValue, endDate: dateValue, type: "weekend" as const, note: "", automatic: true } : null;
+  const weekendRule = periods
+    .filter((period) => period.type === "weekend" && period.startDate <= dateValue && (!period.endDate || period.endDate >= dateValue))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  const weekdays = weekendRule?.weekdays ?? [0, 6];
+  return weekdays.includes(day) ? { ...(weekendRule || {}), id: weekendRule?.id || `weekend-${dateValue}`, startDate: dateValue, endDate: dateValue, type: "weekend" as const, note: weekendRule?.note || "", automatic: !weekendRule } : null;
 };
 
 export const getNextWorkingDate = (dateValue: string, periods: NonWorkingPeriod[] = [], workingDateOverrides: string[] = []) => {

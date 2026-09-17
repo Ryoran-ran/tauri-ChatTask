@@ -361,8 +361,11 @@ export const buildReportMarkdown = ({
   const notes = Object.entries(dailyNotes).filter(([date, text]) => date >= from && date <= to && text.trim());
   lines.push(...(notes.length ? notes.flatMap(([date, text]) => [`### ${date}`, text, ""]) : ["- 日次メモはありません。"]));
 
-  lines.push("", "## 休暇・非稼働日", "- 土曜日・日曜日（自動設定）");
-  const holidays = nonWorkingPeriods.filter((item) => item.startDate <= to && item.endDate >= from);
+  lines.push("", "## 休暇・非稼働日");
+  const weekdayLabels = ["日", "月", "火", "水", "木", "金", "土"];
+  const weekendRules = nonWorkingPeriods.filter((item) => item.type === "weekend" && item.startDate <= to && (!item.endDate || item.endDate >= from));
+  lines.push(...(weekendRules.length ? weekendRules.map((item) => `- ${item.startDate}から 定休日：${(item.weekdays || []).map((day) => `${weekdayLabels[day]}曜`).join("・") || "なし"}`) : ["- 土曜日・日曜日（初期設定）"]));
+  const holidays = nonWorkingPeriods.filter((item) => item.type !== "weekend" && item.startDate <= to && item.endDate >= from);
   lines.push(...(holidays.length ? holidays.map((item) => `- ${item.startDate === item.endDate ? item.startDate : `${item.startDate}〜${item.endDate}`} ${item.type === "holiday" ? "祝日" : item.type === "vacation" ? "休暇" : "非稼働日"}${item.note ? `: ${item.note}` : ""}`) : ["- 手動設定された休暇・非稼働日はありません。"]));
 
   lines.push("", "## 変更履歴（参考）");

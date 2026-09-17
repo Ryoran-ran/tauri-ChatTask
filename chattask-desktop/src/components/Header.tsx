@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 import type { WorkspaceMode } from "../types";
 import { Modal } from "./Modal";
+import { SettingsCenterModal } from "./SettingsCenterModal";
 
 interface Props {
   importRef: RefObject<HTMLInputElement | null>;
@@ -21,6 +22,7 @@ interface Props {
   inboxCount: number;
   notificationCount: number;
   onNonWorking: () => void;
+  onWeekendSettings: () => void;
   onHelp: () => void;
   onProfile: () => void;
   onDataManagement: () => void;
@@ -36,14 +38,18 @@ interface Props {
 
 export function Header(props: Props) {
   const [settings, setSettings] = useState(false);
+  const [records, setRecords] = useState(false);
+  const [settingsCenterOpen, setSettingsCenterOpen] = useState(false);
   const modeSetupKey = localStorage.getItem("chatTaskActiveEnvironment") === "test" ? "chatTaskWorkspaceModeConfigured:test" : "chatTaskWorkspaceModeConfigured";
   const [modeSetupOpen, setModeSetupOpen] = useState(() => !localStorage.getItem(modeSetupKey) && !localStorage.getItem(localStorage.getItem("chatTaskActiveEnvironment") === "test" ? "chatTaskWorkspaceMode:test" : "chatTaskWorkspaceMode"));
   const [modeDialogOpen, setModeDialogOpen] = useState(false);
   const [modeDraft, setModeDraft] = useState<WorkspaceMode>(props.workspaceMode);
   const menuRef = useRef<HTMLDivElement>(null);
+  const recordsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node)) setSettings(false);
+      if (!recordsRef.current?.contains(event.target as Node)) setRecords(false);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -74,36 +80,26 @@ export function Header(props: Props) {
       <button onClick={props.onGoals}>プロジェクト</button>
       <button onClick={props.onGantt}>ガントチャート</button>
       <button onClick={props.onWeeklyLoad}>週間予定</button>
+      <div className="settings-menu records-menu" ref={recordsRef}>
+        <button className="settings-trigger" onClick={() => { setRecords(!records); setSettings(false); }} aria-expanded={records}>記録・分析 <span>▼</span></button>
+        {records && <div className="settings-panel records-panel"><button onClick={() => { props.onAchievements(); setRecords(false); }}>頑張りの記録<small>日々の実績と変化を確認</small></button><button onClick={() => { props.onIssues(); setRecords(false); }}>課題一覧<small>気づいた課題を整理</small></button><button onClick={() => { props.onReport(); setRecords(false); }}>まとめ出力<small>記録をレポートとして出力</small></button></div>}
+      </div>
       <div className="settings-menu" ref={menuRef}>
-        <button className="settings-trigger" onClick={() => setSettings(!settings)} aria-expanded={settings}>設定 <span>▼</span></button>
+        <button className="settings-trigger" onClick={() => { setSettings(!settings); setRecords(false); }} aria-expanded={settings}>設定 <span>▼</span></button>
         {settings && <div className="settings-panel">
-          <span className="settings-group-label">記録・出力</span>
-          <button onClick={() => { props.onAchievements(); setSettings(false); }}>頑張りの記録</button>
-          <button onClick={() => { props.onIssues(); setSettings(false); }}>課題一覧</button>
-          <button onClick={() => { props.onReport(); setSettings(false); }}>まとめ出力</button>
-          <span className="settings-group-label">個人設定</span>
-          <button onClick={() => { props.onProfile(); setSettings(false); }}>プロフィール設定</button>
-          {props.workspaceMode === "work" && <button onClick={() => { props.onNonWorking(); setSettings(false); }}>休暇・祝日設定</button>}
-          <span className="settings-group-label">利用モード</span>
-          <button type="button" className="workspace-mode-open" onClick={openModeDialog}><span><b>利用モードを設定</b><small>{props.workspaceMode === "work" ? "現在：仕事用" : "現在：日常用"}</small></span></button>
-          <span className="settings-group-label">タスク設定</span>
-          <button onClick={() => { props.onTags(); setSettings(false); }}>案件タグ設定</button>
-          <button onClick={() => { props.onTemplates(); setSettings(false); }}>タスクテンプレート管理</button>
-          <button onClick={() => { props.onTools(); setSettings(false); }}>ツール</button>
-          <span className="settings-group-label">表示設定</span>
+          <button type="button" className="settings-center-open" onClick={() => { setSettings(false); setSettingsCenterOpen(true); }}><span><b>設定を開く</b><small>すべての設定をカテゴリーから選択</small></span><em>→</em></button>
+          <span className="settings-group-label">クイック表示設定</span>
           <label><input type="checkbox" checked={props.hideRecurring} onChange={(event) => props.onHideRecurring(event.target.checked)} /><span>定期タスクを一覧で非表示</span></label>
           <label><input type="checkbox" checked={props.openTodayOnStartup} onChange={(event) => props.onOpenTodayOnStartup(event.target.checked)} /><span>起動時に今日を開く</span></label>
-          <span className="settings-group-label">サポート</span>
+          <span className="settings-group-label">現在の利用モード</span>
+          <button type="button" className="workspace-mode-open" onClick={openModeDialog}><span><b>{props.workspaceMode === "work" ? "仕事用" : "日常用"}</b><small>クリックして利用モードを変更</small></span></button>
           <button onClick={() => { props.onHelp(); setSettings(false); }}>ヘルプ</button>
-          <span className="settings-group-label">データ管理</span>
-          <button onClick={() => { props.onDataManagement(); setSettings(false); }}>データ管理・バックアップ</button>
-          <button onClick={() => { props.onExport(); setSettings(false); }}>データをエクスポート</button>
-          <button type="button" onClick={() => { if (props.importRef.current) { props.importRef.current.value = ""; props.importRef.current.click(); } setSettings(false); }}>データをインポート</button>
         </div>}
       </div>
       <input ref={props.importRef} hidden type="file" accept=".json,application/json" onChange={props.onImport} />
     </nav>
   </header>
+  {settingsCenterOpen && <SettingsCenterModal workspaceMode={props.workspaceMode} hideRecurring={props.hideRecurring} openTodayOnStartup={props.openTodayOnStartup} importRef={props.importRef} onHideRecurring={props.onHideRecurring} onOpenTodayOnStartup={props.onOpenTodayOnStartup} onProfile={props.onProfile} onWorkspaceMode={openModeDialog} onWeekendSettings={props.onWeekendSettings} onNonWorking={props.onNonWorking} onTags={props.onTags} onTemplates={props.onTemplates} onTools={props.onTools} onDataManagement={props.onDataManagement} onExport={props.onExport} onHelp={props.onHelp} onClose={() => setSettingsCenterOpen(false)} />}
   {modeDialogOpen && <Modal title="利用モード設定" onClose={() => setModeDialogOpen(false)}><div className="workspace-mode-dialog"><header><strong>この端末で使うモード</strong><p>利用する機能のまとまりを選択します。タスクやプロジェクトなど、登録済みのデータは削除されません。</p></header><div className="workspace-mode-dialog-options" role="radiogroup" aria-label="利用モード"><button type="button" role="radio" aria-checked={modeDraft === "work"} className={modeDraft === "work" ? "selected" : ""} onClick={() => setModeDraft("work")}><span aria-hidden="true">▣</span><div><strong>仕事用</strong><small>業務タスク、工数、休暇・祝日設定を使う</small></div><b>{modeDraft === "work" ? "✓" : ""}</b></button><button type="button" role="radio" aria-checked={modeDraft === "personal"} className={modeDraft === "personal" ? "selected personal" : "personal"} onClick={() => setModeDraft("personal")}><span aria-hidden="true">⌂</span><div><strong>日常用</strong><small>日々のタスク、習慣、休日に関係しない予定を使う</small></div><b>{modeDraft === "personal" ? "✓" : ""}</b></button></div>{modeDraft !== props.workspaceMode && <div className="workspace-mode-change-notice"><strong>{modeDraft === "work" ? "仕事用" : "日常用"}へ切り替えます</strong><small>画面を閉じずに表示内容が切り替わります。</small></div>}<footer><button type="button" onClick={() => setModeDialogOpen(false)}>キャンセル</button><button type="button" className="primary" onClick={applyWorkspaceMode} disabled={modeDraft === props.workspaceMode}>このモードに切り替える</button></footer></div></Modal>}
   {modeSetupOpen && <Modal title="利用モードを選択" onClose={() => selectInitialMode(props.workspaceMode)}><div className="workspace-mode-onboarding"><p>この端末で主に使うモードを選んでください。あとから設定で変更できます。</p><div><button type="button" onClick={() => selectInitialMode("work")}><span aria-hidden="true">▣</span><strong>仕事用</strong><small>業務タスク、工数、休暇設定を使う</small></button><button type="button" className="personal" onClick={() => selectInitialMode("personal")}><span aria-hidden="true">⌂</span><strong>日常用</strong><small>日々のタスクと習慣を記録する</small></button></div></div></Modal>}
   </>;

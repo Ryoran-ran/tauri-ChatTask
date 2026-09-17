@@ -347,6 +347,8 @@ export interface NonWorkingPeriod {
   endDate: string;
   type: "vacation" | "holiday" | "other" | "weekend";
   note?: string;
+  /** 土日・定休日ルールで休暇扱いにする曜日。0（日）〜6（土）。 */
+  weekdays?: number[];
 }
 
 export interface UserProfile {

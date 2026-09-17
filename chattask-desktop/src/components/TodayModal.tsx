@@ -1131,7 +1131,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
         {memoOpen && <textarea autoFocus={!note.trim() && !finalized} rows={4} value={note} readOnly={finalized} onChange={(event) => onNote(event.target.value)} placeholder="この日の気づき、申し送り、振り返りなど" />}
       </section>
     </div>
-    {scheduledNonWorking && <div className={`non-working-banner ${holidayWork ? "is-holiday-work" : ""}`}><div><strong>{holidayWork ? "休日出勤" : scheduledNonWorking.type === "weekend" ? "土日休暇" : scheduledNonWorking.type === "holiday" ? "祝日" : "休暇"}</strong>{scheduledNonWorking.note && ` — ${scheduledNonWorking.note}`}<small>{holidayWork ? "この日は稼働日として、作業表示と予定工数の配分に含めます。" : "この日の未達成予定は持ち越し対象に含めません。"}</small></div><button type="button" disabled={finalized} onClick={toggleHolidayWork}>{holidayWork ? "休日扱いに戻す" : "この日を稼働日にする"}</button></div>}
+    {scheduledNonWorking && <div className={`non-working-banner ${holidayWork ? "is-holiday-work" : ""}`}><div><strong>{holidayWork ? "休日出勤" : scheduledNonWorking.type === "weekend" ? "曜日休み" : scheduledNonWorking.type === "holiday" ? "祝日" : "休暇"}</strong>{scheduledNonWorking.note && ` — ${scheduledNonWorking.note}`}<small>{holidayWork ? "この日は稼働日として、作業表示と予定工数の配分に含めます。" : "この日の未達成予定は持ち越し対象に含めません。"}</small></div><button type="button" disabled={finalized} onClick={toggleHolidayWork}>{holidayWork ? "休日扱いに戻す" : "この日を稼働日にする"}</button></div>}
     {!nonWorking && !finalized && <div className="carry-row">
       <button type="button" className="advance-schedule-button" onClick={openAdvanceDialog}>未来の予定を前倒し</button>
       {carrySelectionMode && <button type="button" className="carry-selection-cancel" onClick={() => { setCarrySelectionMode(false); setSelectedCarryTaskIds(new Set()); }}>選択をやめる</button>}

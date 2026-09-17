@@ -1,6 +1,6 @@
 import { DEFAULT_TAGS, isTerminalStatus } from "../data/constants";
 import { invoke } from "@tauri-apps/api/core";
-import type { ActivityEvent, AppData, Habit, HabitArea, LocalTool, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskStatus, TaskWaitingReason, WorkspaceMode } from "../types";
+import type { ActivityEvent, AppData, Habit, HabitArea, LocalTool, NonWorkingPeriod, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskStatus, TaskWaitingReason, WorkspaceMode } from "../types";
 import { randomTagColor } from "../tagColors";
 import { generateId, mergeRanges, todayValue } from "../utils";
 
@@ -391,6 +391,16 @@ const normalizeHabits = (habits: unknown): Habit[] => Array.isArray(habits) ? ha
   }];
 }) : [];
 
+const normalizeNonWorkingPeriods = (periods: unknown): NonWorkingPeriod[] => {
+  const normalized: NonWorkingPeriod[] = Array.isArray(periods) ? periods.flatMap((source): NonWorkingPeriod[] => {
+    if (!source || typeof source !== "object") return [];
+    const item = source as Partial<NonWorkingPeriod>;
+    if (!item.startDate || !["vacation", "holiday", "other", "weekend"].includes(String(item.type))) return [];
+    return [{ id: String(item.id || generateId()), startDate: String(item.startDate), endDate: String(item.endDate || ""), type: item.type as NonWorkingPeriod["type"], note: item.note ? String(item.note) : "", weekdays: item.type === "weekend" && Array.isArray(item.weekdays) ? [...new Set(item.weekdays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort((a, b) => a - b) : undefined }];
+  }) : [];
+  return normalized;
+};
+
 const createOrganizationSeed = (environment: AppEnvironment = getActiveEnvironment()) => {
   const key = environmentKey(KEYS.organizationSeed, environment);
   const storedSeed = Number(localStorage.getItem(key));
@@ -409,14 +419,14 @@ export const loadAppData = (environment: AppEnvironment = getActiveEnvironment()
   const tasks = rawTasks.map(normalizeTask);
   const savedActivity = parse<ActivityEvent[]>(get(KEYS.activity), []);
   return {
-    version: 16,
+    version: 17,
     workspaceMode: get(KEYS.workspaceMode) === "personal" ? "personal" : "work",
     organizationSeed: createOrganizationSeed(environment),
     tasks,
     projectTags: normalizeTags(parse(get(KEYS.tags), DEFAULT_TAGS.map((tag) => ({ ...tag })))),
     activityLog: savedActivity.length ? savedActivity : historyActivity(tasks),
     dailyNotes: parse(get(KEYS.notes), {}), dailyFinalizedAt: parse(get(KEYS.dailyFinalizedAt), {}),
-    nonWorkingPeriods: parse(get(KEYS.nonWorking), []), userProfile: parse(get(KEYS.profile), { displayName: "あなた", avatarUpdatedAt: "" }),
+    nonWorkingPeriods: normalizeNonWorkingPeriods(parse(get(KEYS.nonWorking), [])), userProfile: parse(get(KEYS.profile), { displayName: "あなた", avatarUpdatedAt: "" }),
     goals: parse(get(KEYS.goals), []), issues: parse(get(KEYS.issues), []), inboxItems: parse(get(KEYS.inbox), []),
     todayTaskOrders: parse(get(KEYS.todayTaskOrders), {}),
     localTools: normalizeLocalTools(parse(get(KEYS.localTools), [])),
@@ -520,7 +530,7 @@ export const parseImportedData = (text: string): AppData => {
   return {
     // Keep newer top-level sections even when this version does not render them.
     ...(!Array.isArray(imported) ? imported : {}),
-    version: 16,
+    version: 17,
     workspaceMode: (!Array.isArray(imported) && imported.workspaceMode === "personal" ? "personal" : "work") as WorkspaceMode,
     organizationSeed: !Array.isArray(imported) && Number.isInteger(Number(imported.organizationSeed)) && Number(imported.organizationSeed) > 0
       ? Number(imported.organizationSeed)
@@ -530,7 +540,7 @@ export const parseImportedData = (text: string): AppData => {
     activityLog: importedActivity.length ? importedActivity : historyActivity(normalizedTasks),
     dailyNotes: !Array.isArray(imported) && imported.dailyNotes ? imported.dailyNotes : {},
     dailyFinalizedAt: !Array.isArray(imported) && imported.dailyFinalizedAt ? imported.dailyFinalizedAt : {},
-    nonWorkingPeriods: !Array.isArray(imported) && Array.isArray(imported.nonWorkingPeriods) ? imported.nonWorkingPeriods : [],
+    nonWorkingPeriods: normalizeNonWorkingPeriods(!Array.isArray(imported) ? imported.nonWorkingPeriods : []),
     userProfile: !Array.isArray(imported) && imported.userProfile ? imported.userProfile : { displayName: "あなた", avatarUpdatedAt: "" },
     goals: !Array.isArray(imported) && Array.isArray(imported.goals) ? imported.goals : [],
     issues: !Array.isArray(imported) && Array.isArray(imported.issues) ? imported.issues : [],
