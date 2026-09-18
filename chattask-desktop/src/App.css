@@ -1267,7 +1267,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .gantt-scroll { position: relative; z-index: 1; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; max-height: calc(94vh - 190px); }
 .gantt-header, .gantt-row { display: flex; min-width: max-content; }
 .gantt-row { position: relative; z-index: 1; }
-.gantt-header { position: sticky; top: 0; z-index: 20; background: #f8fafc; }
+.gantt-header { position: sticky; top: 0; z-index: 60; background: #f8fafc; }
 .gantt-task-label { position: sticky; left: 0; z-index: 2; width: clamp(280px, 30vw, 420px); min-height: 50px; flex: none; display: grid; align-content: center; gap: .2rem; overflow: hidden; border: 0; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; padding: .38rem .55rem; background: white; text-align: left; }
 .gantt-task-label > strong { overflow: hidden; color: #1e293b; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .gantt-task-label > span { display: flex; align-items: center; gap: .3rem; min-width: 0; }
@@ -1284,8 +1284,8 @@ textarea { resize: vertical; line-height: 1.55; }
 .gantt-timeline { position: relative; height: 50px; display: flex; border-bottom: 1px solid #e2e8f0; }
 .gantt-header .gantt-timeline { z-index: 20; height: 58px; background: #f8fafc; }
 .gantt-timeline > span { flex: none; overflow: hidden; border-right: 1px solid #f1f5f9; font-size: .58rem; text-align: center; }
-.gantt-timeline > span.is-today { background: #eff6ff; color: #1d4ed8; font-weight: 800; }
-.gantt-header .gantt-timeline > span { --gantt-date-bg: #f8fafc; display: flex; align-items: flex-end; justify-content: center; background: var(--gantt-date-bg); }.gantt-header .gantt-timeline > span.is-rest-saturday { --gantt-date-bg: #eff6ff; }.gantt-header .gantt-timeline > span.is-rest-holiday { --gantt-date-bg: #fff1f2; }
+.gantt-timeline > span.is-today { background: #fffbeb; color: #b45309; font-weight: 800; }
+.gantt-header .gantt-timeline > span { --gantt-date-bg: #f8fafc; position: relative; display: flex; align-items: flex-end; justify-content: center; background: var(--gantt-date-bg); }.gantt-header .gantt-timeline > span.is-rest-saturday { --gantt-date-bg: #eff6ff; }.gantt-header .gantt-timeline > span.is-rest-holiday { --gantt-date-bg: #fff1f2; }.gantt-header .gantt-timeline > span.is-today { --gantt-date-bg: #fffbeb; z-index: 3; overflow: visible; }.gantt-header .gantt-timeline > span.is-today::after { position: absolute; top: 0; bottom: 0; left: 50%; z-index: 3; width: 3px; background: #ef4444; content: ""; transform: translateX(-50%); pointer-events: none; }
 .gantt-header .gantt-timeline > span.gantt-capacity-light { background: linear-gradient(to bottom, var(--gantt-date-bg) 0 25px, #dcfce7 25px); }
 .gantt-header .gantt-timeline > span.gantt-capacity-normal { background: linear-gradient(to bottom, var(--gantt-date-bg) 0 25px, #dbeafe 25px); }
 .gantt-header .gantt-timeline > span.gantt-capacity-busy { background: linear-gradient(to bottom, var(--gantt-date-bg) 0 25px, #fef3c7 25px); }
@@ -1293,8 +1293,9 @@ textarea { resize: vertical; line-height: 1.55; }
 .gantt-capacity-value { position: relative; z-index: 2; display: block; width: 100%; padding: 0 1px 4px; color: #334155; font-size: .48rem; font-weight: 800; line-height: 1; text-align: center; white-space: nowrap; }
 .gantt-header .gantt-timeline > span.is-today:not(.gantt-capacity-empty) .gantt-capacity-value {
   position: absolute;
-  right: calc(50% + 4px);
+  left: 50%;
   bottom: 3px;
+  z-index: 4;
   width: auto;
   min-width: 18px;
   border: 1px solid rgb(255 255 255 / 90%);
@@ -1302,6 +1303,7 @@ textarea { resize: vertical; line-height: 1.55; }
   padding: 2px 4px;
   background: rgb(255 255 255 / 94%);
   box-shadow: 0 1px 3px rgb(15 23 42 / 16%);
+  transform: translateX(-50%);
 }
 .gantt-capacity-over .gantt-capacity-value { color: #b91c1c; }
 .gantt-scale-quarter .gantt-capacity-value,
@@ -1310,6 +1312,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .gantt-scale-project .gantt-capacity-value { display: none; }
 .gantt-capacity-compact .gantt-capacity-value { display: none; }
 .non-working-cell.is-rest-saturday { background: #f5f9ff; }.non-working-cell.is-rest-holiday { background: #fff7f8; }
+.gantt-row .gantt-timeline > span.is-today { background: #fffbeb; }
 .gantt-header .gantt-timeline > span.is-rest-saturday .gantt-date-label { color: #1d4ed8; }.gantt-header .gantt-timeline > span.is-rest-holiday .gantt-date-label { color: #be123c; }
 .gantt-bar { position: absolute; top: 15px; height: 20px; overflow: hidden; border-radius: 5px; background: #94a3b8; box-shadow: 0 1px 2px #0f172a25; }
 .gantt-bar.status-doing { background: #60a5fa; }
@@ -4731,7 +4734,8 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
   white-space: nowrap;
 }
 .gantt-timeline > span.is-today .gantt-date-label {
-  color: #1d4ed8;
+  z-index: 4;
+  color: #b45309;
 }
 /* 今日線は予定・実績・当初予定・期限より常に前面に固定する。 */
 .gantt-timeline > .gantt-today-line {
