@@ -3,6 +3,7 @@ import type { TaskProjectContext } from "../projectContext";
 import type { NonWorkingPeriod, ProjectTag, Task } from "../types";
 import { TagIcon } from "./TagIcon";
 import { hasIncompletePlanForDate, isRecurringDue, localDateValue, recurrenceLabel, todayValue } from "../utils";
+import type { TaskProgressSummary } from "../taskProgress";
 
 type QuickAction = "doing" | "waiting" | "done" | "today" | "tomorrow" | "log";
 
@@ -14,8 +15,7 @@ interface Props {
   periods: NonWorkingPeriod[];
   hasTodayDescendant: boolean;
   selected: boolean;
-  childCount: number;
-  completedChildren: number;
+  progress: TaskProgressSummary;
   depth: number;
   isLastChild: boolean;
   ancestorContinuationDepths: number[];
@@ -27,7 +27,7 @@ interface Props {
   onSaveTemplate: () => void;
 }
 
-export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, periods, hasTodayDescendant, selected, childCount, completedChildren, depth, isLastChild, ancestorContinuationDepths, collapsed, onSelect, onToggle, onOpenProject }: Props) {
+export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, periods, hasTodayDescendant, selected, progress, depth, isLastChild, ancestorContinuationDepths, collapsed, onSelect, onToggle, onOpenProject }: Props) {
   const today = todayValue();
   const waiting = WAITING_STATUSES.includes(task.status);
   const waitingReviewDue = Boolean(waiting && task.waitingFollowUp?.reviewDate && task.waitingFollowUp.reviewDate <= today);
@@ -58,7 +58,7 @@ export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, 
       {ancestorContinuationDepths.map((ancestorDepth) => <span key={ancestorDepth} className="task-tree-ancestor-line" aria-hidden="true" style={{ left: -8 - (depth - ancestorDepth) * 14 }} />)}
       {waitingReviewDue && <span className="task-waiting-review-dot" role="img" aria-label="今日確認する待ちタスク" title={`今日確認する（確認日：${task.waitingFollowUp?.reviewDate}）`} />}
       <div className="task-card-row">
-        {childCount > 0 ? <button className={`collapse-button ${hasTodayDescendant ? "has-today-descendant" : ""}`} title={hasTodayDescendant ? "配下の子タスクに今日の予定があります" : undefined} aria-label={`${collapsed ? "子タスクを開く" : "子タスクを閉じる"}${hasTodayDescendant ? "。配下に今日の予定があります" : ""}`} onClick={(event) => { event.stopPropagation(); onToggle(); }}><span>{collapsed ? "▶" : "▼"}</span>{hasTodayDescendant && <i aria-hidden="true" />}</button> : <span className="collapse-spacer" />}
+        {progress.childCount > 0 ? <button className={`collapse-button ${hasTodayDescendant ? "has-today-descendant" : ""}`} title={hasTodayDescendant ? "配下の子タスクに今日の予定があります" : undefined} aria-label={`${collapsed ? "子タスクを開く" : "子タスクを閉じる"}${hasTodayDescendant ? "。配下に今日の予定があります" : ""}`} onClick={(event) => { event.stopPropagation(); onToggle(); }}><span>{collapsed ? "▶" : "▼"}</span>{hasTodayDescendant && <i aria-hidden="true" />}</button> : <span className="collapse-spacer" />}
         <span className="task-priority-wrap"><span className={`priority priority-${task.priority}`}>{task.priority}</span>{isToday && <i className="task-today-dot" role="img" aria-label="今日の予定" title="今日の予定" />}</span>
         {projectContexts.length > 0 && <span className="task-relation-marks">
           {[...projectContexts].sort((a, b) => Number(a.kind === "origin") - Number(b.kind === "origin")).map((context) => <button key={`${context.projectId}-${context.kind}`} type="button" className={`task-project-mark ${context.kind}`} title={`${context.kind === "origin" ? "プロジェクトへ昇華済み" : "関連プロジェクトあり"}\n${context.projectTitle}\n${context.location}`} aria-label={`${context.projectTitle}を開く`} onClick={(event) => { event.stopPropagation(); onOpenProject(context.projectId); }}>{context.kind === "origin" ? "P" : "↗"}</button>)}
@@ -70,7 +70,7 @@ export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, 
       <div className="task-meta">
         <span className={`status status-${task.status}`}>{STATUS_LABELS[task.status]}</span>
         {tag && <span className="tag-chip tag-chip-colored" style={{ borderColor: `${tag.color || "#64748b"}55`, backgroundColor: `${tag.color || "#64748b"}18`, color: tag.color || "#64748b" }}><TagIcon tag={tag} className="tag-chip-icon" />{tag.name}</span>}
-        {childCount > 0 && <span>子 {completedChildren}/{childCount}</span>}
+        {progress.childCount > 0 && <span className="task-card-wbs-progress" title={`子タスクの進捗（${progress.progressBasis === "effort" ? "予定工数で加重" : "件数で計算"}）`}><i><b style={{ width: `${progress.progressPercent}%` }} /></i>子 {progress.completedCount}/{progress.childCount}・{progress.progressPercent}%</span>}
         {range && <span>予定 {range.startDate.slice(5).replace("-", "/")}{range.endDate !== range.startDate ? `〜${range.endDate.slice(5).replace("-", "/")}` : ""}</span>}
         {task.status === "recurring" && <span>{task.recurrence?.paused ? "停止中 " : ""}{recurrenceLabel(task)}</span>}
       </div>

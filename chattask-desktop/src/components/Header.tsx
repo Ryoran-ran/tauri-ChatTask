@@ -88,6 +88,11 @@ export function Header(props: Props) {
         <button className="settings-trigger" onClick={() => { setSettings(!settings); setRecords(false); }} aria-expanded={settings}>設定 <span>▼</span></button>
         {settings && <div className="settings-panel">
           <button type="button" className="settings-center-open" onClick={() => { setSettings(false); setSettingsCenterOpen(true); }}><span><b>設定を開く</b><small>すべての設定をカテゴリーから選択</small></span><em>→</em></button>
+          <span className="settings-group-label">よく使う設定</span>
+          <div className="settings-quick-links">
+            <button type="button" onClick={() => { setSettings(false); props.onNonWorking(); }}><i aria-hidden="true">休</i><span><b>休暇・祝日設定</b><small>個別の休暇と非稼働日</small></span><em>›</em></button>
+            <button type="button" onClick={() => { setSettings(false); props.onTools(); }}><i aria-hidden="true">◇</i><span><b>ツール</b><small>登録したローカルツールを管理</small></span><em>›</em></button>
+          </div>
           <span className="settings-group-label">クイック表示設定</span>
           <label><input type="checkbox" checked={props.hideRecurring} onChange={(event) => props.onHideRecurring(event.target.checked)} /><span>定期タスクを一覧で非表示</span></label>
           <label><input type="checkbox" checked={props.openTodayOnStartup} onChange={(event) => props.onOpenTodayOnStartup(event.target.checked)} /><span>起動時に今日を開く</span></label>

@@ -15,6 +15,7 @@ import { ParentTaskSelector } from "./ParentTaskSelector";
 import { TaskHistoryList } from "./TaskHistoryList";
 import { TaskStatusPrompts } from "./TaskStatusPrompts";
 import { handleTextareaIndent, memoUrls, scheduleEffort } from "./taskDetailUtils";
+import { summarizeTaskProgress } from "../taskProgress";
 
 interface Props {
   task: Task | null;
@@ -90,6 +91,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const [projectContextVisible, setProjectContextVisible] = useState(() => localStorage.getItem("chatTaskProjectContextVisible") !== "false");
   const [tagResourcesVisible, setTagResourcesVisible] = useState(() => localStorage.getItem("chatTaskTagResourcesVisible") !== "false");
   const [scheduleQuickOpen, setScheduleQuickOpen] = useState(false);
+  const [wbsProgressOpen, setWbsProgressOpen] = useState(false);
   const [relatedTasksOpen, setRelatedTasksOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [quickScheduleAdding, setQuickScheduleAdding] = useState(false);
@@ -101,7 +103,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     input.style.height = `${Math.min(Math.max(input.scrollHeight, 66), 192)}px`;
     input.style.overflowY = input.scrollHeight > 192 ? "auto" : "hidden";
   }, [memo]);
-  useEffect(() => { setDeleteConfirm(false); setPendingWaitingStatus(null); setPendingLeavingWaitingStatus(null); setEndingStatus(null); setEndingReason(""); setLinkLabel(""); setLinkUrl(""); setLinkLabelEdited(false); }, [task?.id]);
+  useEffect(() => { setDeleteConfirm(false); setPendingWaitingStatus(null); setPendingLeavingWaitingStatus(null); setEndingStatus(null); setEndingReason(""); setLinkLabel(""); setLinkUrl(""); setLinkLabelEdited(false); setWbsProgressOpen(false); }, [task?.id]);
   useEffect(() => {
     if (task?.title !== "新規タスク") return;
     requestAnimationFrame(() => {
@@ -165,6 +167,10 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     return project && !items.some((item) => item.id === project.id) ? [...items, project] : items;
   }, []);
   const sharedProject = sharedProjects[0];
+  const childProgress = summarizeTaskProgress(task.id, allTasks);
+  const wbsChildren = allTasks.filter((candidate) => candidate.parentTaskId === task.id);
+  const formatWbsHours = (hours: number) => Number(hours.toFixed(2)).toString();
+  const wbsPlannedHours = (candidate: Task) => candidate.plannedRanges.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0) || Number(candidate.plannedHours) || 0;
 
   const update = <K extends keyof Task>(key: K, value: Task[K], history?: string) => onUpdate({ [key]: value }, history);
   const addAttachmentQuickLink = (attachment: Attachment) => {
@@ -555,6 +561,31 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const descendantIds = new Set<string>();
   const collectDescendants = (parentId: string) => allTasks.filter((item) => item.parentTaskId === parentId).forEach((item) => { if (!descendantIds.has(item.id)) { descendantIds.add(item.id); collectDescendants(item.id); } });
   collectDescendants(task.id);
+  const hierarchyLevel = (candidate: Task) => {
+    let level = 1;
+    let parentId = candidate.parentTaskId;
+    const visited = new Set<string>([candidate.id]);
+    while (parentId && level < allTasks.length && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = allTasks.find((item) => item.id === parentId);
+      if (!parent) break;
+      level += 1;
+      parentId = parent.parentTaskId;
+    }
+    return level;
+  };
+  const subtreeLevel = (parentId: string, visited = new Set<string>()): number => {
+    if (visited.has(parentId)) return 0;
+    const nextVisited = new Set(visited).add(parentId);
+    const children = allTasks.filter((item) => item.parentTaskId === parentId);
+    return 1 + (children.length ? Math.max(...children.map((child) => subtreeLevel(child.id, nextVisited))) : 0);
+  };
+  const currentLevel = hierarchyLevel(task);
+  const currentSubtreeLevel = subtreeLevel(task.id);
+  const parentCandidates = allTasks.filter((item) =>
+    item.id !== task.id
+    && !descendantIds.has(item.id)
+    && (item.id === task.parentTaskId || hierarchyLevel(item) + currentSubtreeLevel <= 4));
   const closeTaskMenu = () => {
     if (taskMenuRef.current) taskMenuRef.current.open = false;
   };
@@ -570,7 +601,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         <summary aria-label="タスク操作" title="タスク操作">…</summary>
         <div className="task-detail-menu-panel">
           <span className="task-menu-group-label">タスク</span>
-          <button onClick={() => { closeTaskMenu(); onCreateChild(); }}>子タスク追加</button>
+          <button disabled={currentLevel >= 4} title={currentLevel >= 4 ? "タスク階層は4階層までです" : undefined} onClick={() => { closeTaskMenu(); onCreateChild(); }}>子タスク追加{currentLevel >= 4 ? "（4階層まで）" : ""}</button>
           <button onClick={() => { closeTaskMenu(); onCreateSibling(); }}>同じ階層にタスクを追加</button>
           <button onClick={() => { closeTaskMenu(); window.dispatchEvent(new CustomEvent("chattask-open-waiting", { detail: { taskId: task.id } })); }}>{task.waitingFollowUp ? "待ち情報を編集" : "待ち箱へ入れる"}</button>
           {!task.waitingFollowUp && task.lastReleasedWaitingFollowUp && <button onClick={() => { closeTaskMenu(); onUpdate({ waitingFollowUp: task.lastReleasedWaitingFollowUp, status: task.lastReleasedWaitingStatus || "waiting-general", lastReleasedWaitingFollowUp: undefined, lastReleasedWaitingStatus: undefined }, "直前に解除した待ち状態を復元しました。"); }}>直前の待ち解除を取り消す</button>}
@@ -606,6 +637,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         <button type="button" className="quick-details-toggle quick-document-button" aria-label="ドキュメントを開く" title={`タスク専用ドキュメントを開く（${task.documents.length}件）`} onClick={onDocuments}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20H6z" /><path d="M14 3.5V8h4M9 12h6M9 15h6" /></svg></button>
         <button type="button" className="quick-details-toggle quick-branch-button" aria-label="関連ブランチを開く" title={`関連ブランチを開く（${branchCount}件）`} onClick={() => setBranchesOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="5" r="2" /><circle cx="7" cy="19" r="2" /><circle cx="17" cy="8" r="2" /><path d="M7 7v10M9 15c5 0 8-2 8-5" /></svg>{branchCount > 0 && <small>{branchCount}</small>}</button>
         <button type="button" className="quick-details-toggle quick-related-task-button" aria-label="関連タスクを開く" title={`関連タスクを開く（${task.relatedTasks.length}件）`} onClick={() => setRelatedTasksOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 14.5l5-5M7.5 17.5l-1 1a3.5 3.5 0 01-5-5l3-3a3.5 3.5 0 015 0M16.5 6.5l1-1a3.5 3.5 0 015 5l-3 3a3.5 3.5 0 01-5 0" /></svg>{task.relatedTasks.length > 0 && <small>{task.relatedTasks.length}</small>}</button>
+        <button type="button" className={`quick-details-toggle quick-wbs-button ${childProgress.childCount > 0 ? "has-children" : "is-empty"}`} aria-label="WBS進捗を開く" title={childProgress.childCount > 0 ? `WBS進捗を開く（${childProgress.completedCount}/${childProgress.childCount}件・${childProgress.progressPercent}%）` : "WBS進捗を開く（子タスクなし）"} onClick={() => setWbsProgressOpen(true)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2" /><circle cx="18" cy="10" r="2" /><circle cx="18" cy="18" r="2" /><path d="M8 6h3a3 3 0 013 3v6a3 3 0 003 3M14 10h2" /></svg><small aria-hidden="true">{childProgress.childCount > 0 ? `${childProgress.progressPercent}%` : "—"}</small></button>
         {(parentTask || currentTag || sharedProject) && <button type="button" className={`quick-details-toggle quick-resources-toggle ${tagResourcesVisible ? "active" : ""}`} aria-label={tagResourcesVisible ? "共有・継承資料を非表示" : "共有・継承資料を表示"} title={tagResourcesVisible ? "共有・継承資料を非表示" : "共有・継承資料を表示"} aria-pressed={tagResourcesVisible} onClick={() => { const visible = !tagResourcesVisible; setTagResourcesVisible(visible); localStorage.setItem("chatTaskTagResourcesVisible", String(visible)); }}>▤</button>}
         <button type="button" className={`quick-details-toggle quick-info-button ${detailsHidden ? "" : "active"}`} aria-label={detailsHidden ? "詳細情報を表示" : "詳細情報を閉じる"} title={detailsHidden ? "詳細情報を表示" : "詳細情報を閉じる"} aria-pressed={!detailsHidden} onClick={onToggleDetails}>ⓘ</button>
       </div>
@@ -639,7 +671,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         <label>ステータス<select value={task.status} onChange={(event) => requestStatusChange(event.target.value as Task["status"])}>{STATUS_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.values.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</optgroup>)}</select></label>
         <label>優先度<select value={task.priority} onChange={(event) => update("priority", event.target.value as Task["priority"], `優先度を${event.target.value}へ変更しました。`)}>{PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label>
         <label>案件タグ<select value={task.projectTagId} onChange={(event) => update("projectTagId", event.target.value, "案件タグを変更しました。")}><option value="">タグなし</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}{tag.visible ? "" : "（非表示）"}</option>)}</select></label>
-        <ParentTaskSelector task={task} candidates={allTasks.filter((item) => item.id !== task.id && !descendantIds.has(item.id))} onChange={(parentTaskId) => update("parentTaskId", parentTaskId, parentTaskId ? "親タスクを変更しました。" : "親タスクとの関連を解除しました。")} />
+        <ParentTaskSelector task={task} candidates={parentCandidates} onChange={(parentTaskId) => update("parentTaskId", parentTaskId, parentTaskId ? "親タスクを変更しました。" : "親タスクとの関連を解除しました。")} />
         {task.status === "recurring" && <div className="project-effort-notice"><small>予定工数</small><strong>1回あたり {Number(task.plannedHours) || 0}h</strong></div>}
         {task.status !== "recurring" && !projectManaged && <div className="project-effort-notice"><small>予定工数</small><strong>各予定の合計 {task.plannedRanges.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0)}h</strong></div>}
         {task.status !== "recurring" && projectManaged && <div className="project-effort-notice"><small>予定工数</small><strong>プロジェクト側で管理</strong></div>}
@@ -674,6 +706,19 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     </div>
     {relatedTasksOpen && <RelatedTasksModal task={task} allTasks={allTasks} onUpdate={(relatedTasks) => onUpdate({ relatedTasks }, "関連タスクを更新しました。")} onOpen={onOpenTask} onClose={() => setRelatedTasksOpen(false)} />}
     {branchesOpen && <TaskBranchesModal taskId={task.id} taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onSaveRepositories={(repositories) => currentTag && onUpdateTagRepositories(currentTag.id, repositories)} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
+    {wbsProgressOpen && <Modal title={`WBS進捗・${task.title || "無題のタスク"}`} onClose={() => setWbsProgressOpen(false)} wide>
+      <div className="wbs-progress-window">
+        {childProgress.childCount === 0 ? <section className="wbs-progress-empty"><span aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2" /><circle cx="18" cy="10" r="2" /><circle cx="18" cy="18" r="2" /><path d="M8 6h3a3 3 0 013 3v6a3 3 0 003 3M14 10h2" /></svg></span><div><strong>子タスクはまだありません</strong><p>このタスクを今日できる大きさに分解すると、進捗や工数をここで確認できます。</p></div><button type="button" className="primary" disabled={currentLevel >= 4} onClick={() => { setWbsProgressOpen(false); onCreateChild(); }}>{currentLevel >= 4 ? "4階層までです" : "＋ 子タスクを追加"}</button></section> : <>
+        <section className="wbs-progress-window-summary">
+          <div className="wbs-progress-strip-main"><div className="wbs-progress-strip-title"><span>全体進捗</span><strong>{childProgress.progressPercent}%</strong><small>{childProgress.completedCount}/{childProgress.childCount}件完了</small></div><div className="wbs-progress-track" role="progressbar" aria-label="子タスクの進捗" aria-valuemin={0} aria-valuemax={100} aria-valuenow={childProgress.progressPercent}><i style={{ width: `${childProgress.progressPercent}%` }} /></div><small>{childProgress.progressBasis === "effort" ? "予定工数を基準に進捗を計算しています" : "予定工数がないため件数で進捗を計算しています"}</small></div>
+          <div className="wbs-progress-counts"><span className="not-started"><i />未着手 <b>{childProgress.counts.notStarted}</b></span><span className="in-progress"><i />進行中 <b>{childProgress.counts.inProgress}</b></span><span className="waiting"><i />待ち <b>{childProgress.counts.waiting}</b></span><span className="completed"><i />完了 <b>{childProgress.counts.completed}</b></span></div>
+          <div className="wbs-effort-summary"><span><small>子タスクの予定</small><strong>{formatWbsHours(childProgress.plannedHours)}h</strong></span><span><small>子タスクの実績</small><strong>{formatWbsHours(childProgress.actualHours)}h</strong></span></div>
+        </section>
+        <section className="wbs-next-tasks"><strong>次に取り組めるタスク</strong>{childProgress.nextTasks.length > 0 ? <div>{childProgress.nextTasks.map((child) => <button type="button" key={child.id} onClick={() => { setWbsProgressOpen(false); onOpenTask(child.id); }}><span>{child.status === "doing" ? "進行中" : child.priority}</span><b>{child.title || "無題のタスク"}</b><i aria-hidden="true">›</i></button>)}</div> : <p>着手できる子タスクはありません。</p>}</section>
+        <section className="wbs-child-list"><header><strong>子タスク一覧</strong><small>{wbsChildren.length}件</small></header><div>{wbsChildren.map((child) => <button type="button" key={child.id} onClick={() => { setWbsProgressOpen(false); onOpenTask(child.id); }}><span className={`status status-${child.status}`}>{STATUS_LABELS[child.status]}</span><b>{child.title || "無題のタスク"}</b><small>予定 {formatWbsHours(wbsPlannedHours(child))}h</small><small>実績 {formatWbsHours(Number(child.actualHours) || 0)}h</small><i aria-hidden="true">›</i></button>)}</div></section>
+        </>}
+      </div>
+    </Modal>}
     {deletingRange && <Modal title="予定を削除" onClose={() => setDeletingRange(null)}>
       <div className="task-ending-dialog">
         <p>予定「{scheduleTitle(deletingRange)}」を削除しますか？</p>
