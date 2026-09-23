@@ -1,6 +1,6 @@
 import { DEFAULT_TAGS, isTerminalStatus } from "../data/constants";
 import { invoke } from "@tauri-apps/api/core";
-import type { ActivityEvent, AppData, Habit, HabitArea, LocalTool, NonWorkingPeriod, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskStatus, TaskWaitingReason, WorkspaceMode } from "../types";
+import type { ActivityEvent, AppData, Habit, HabitArea, LocalTool, NonWorkingPeriod, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskReflectionTheme, TaskStatus, TaskWaitingReason, WorkspaceMode } from "../types";
 import { randomTagColor } from "../tagColors";
 import { generateId, mergeRanges, todayValue } from "../utils";
 
@@ -281,6 +281,106 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       }];
     })
     : [];
+  const reflections: NonNullable<Task["reflections"]> = Array.isArray(source.reflections)
+    ? source.reflections.flatMap((rawReflection) => {
+      if (!rawReflection || typeof rawReflection !== "object") return [];
+      const reflection = rawReflection as unknown as Record<string, unknown>;
+      const kind = ["success", "large-task", "incident", "rework", "estimate", "branch-split", "other"].includes(String(reflection.kind))
+        ? String(reflection.kind) as NonNullable<Task["reflections"]>[number]["kind"] : "other";
+      const branchSplitAssessment = ["should-have-split", "appropriate", "unsure", "not-applicable"].includes(String(reflection.branchSplitAssessment))
+        ? String(reflection.branchSplitAssessment) as NonNullable<Task["reflections"]>[number]["branchSplitAssessment"] : "not-applicable";
+      const validThemes = ["requirements", "task-breakdown", "branch-split", "estimate", "schedule", "implementation", "review", "testing", "communication", "release", "priority", "documentation", "process", "other"];
+      const themes: TaskReflectionTheme[] = Array.isArray(reflection.themes)
+        ? [...new Set(reflection.themes.map(String).filter((theme) => validThemes.includes(theme)))] as TaskReflectionTheme[]
+        : kind === "branch-split" ? ["branch-split"] : kind === "estimate" ? ["estimate"] : [];
+      const todos = Array.isArray(reflection.todos) ? reflection.todos.flatMap((rawTodo) => {
+        if (!rawTodo || typeof rawTodo !== "object") return [];
+        const todo = rawTodo as unknown as Record<string, unknown>;
+        const text = String(todo.text || "").trim();
+        if (!text) return [];
+        return [{ id: String(todo.id || generateId()), title: todo.title ? String(todo.title).trim() : undefined, text, completed: todo.completed === true, createdAt: String(todo.createdAt || now), completedAt: todo.completedAt ? String(todo.completedAt) : undefined, scheduledDate: todo.scheduledDate ? String(todo.scheduledDate) : undefined, linkedTaskId: todo.linkedTaskId ? String(todo.linkedTaskId) : undefined }];
+      }) : [];
+      const rawAi = reflection.aiAnalysis && typeof reflection.aiAnalysis === "object" ? reflection.aiAnalysis as Record<string, unknown> : null;
+      const followUpAnswers: NonNullable<Task["reflections"]>[number]["followUpAnswers"] = Array.isArray(reflection.followUpAnswers)
+        ? reflection.followUpAnswers.flatMap((rawAnswer) => {
+          if (!rawAnswer || typeof rawAnswer !== "object") return [];
+          const answer = rawAnswer as Record<string, unknown>;
+          const question = String(answer.question || "").trim();
+          if (!question) return [];
+          return [{ question, answer: String(answer.answer || ""), updatedAt: String(answer.updatedAt || now) }];
+        })
+        : [];
+      const aiAnalysis: NonNullable<Task["reflections"]>[number]["aiAnalysis"] = rawAi ? {
+        summary: String(rawAi.summary || ""),
+        successFactors: Array.isArray(rawAi.successFactors) ? rawAi.successFactors.flatMap((rawFactor) => {
+          if (!rawFactor || typeof rawFactor !== "object") return [];
+          const factor = rawFactor as Record<string, unknown>;
+          const text = String(factor.text || "").trim();
+          if (!text) return [];
+          const reproducibility = ["high", "medium", "low", "unknown"].includes(String(factor.reproducibility)) ? String(factor.reproducibility) as "high" | "medium" | "low" | "unknown" : "unknown";
+          return [{ text, evidence: String(factor.evidence || ""), reproducibility, continuation: String(factor.continuation || "") }];
+        }) : [],
+        causes: Array.isArray(rawAi.causes) ? rawAi.causes.flatMap((rawCause) => {
+          if (!rawCause || typeof rawCause !== "object") return [];
+          const cause = rawCause as Record<string, unknown>;
+          const text = String(cause.text || "").trim();
+          if (!text) return [];
+          const confidence = ["high", "medium", "low"].includes(String(cause.confidence)) ? String(cause.confidence) as "high" | "medium" | "low" : "low";
+          return [{ text, evidence: String(cause.evidence || ""), confidence }];
+        }).sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.confidence] - { high: 0, medium: 1, low: 2 }[b.confidence])) : [],
+        countermeasures: Array.isArray(rawAi.countermeasures) ? rawAi.countermeasures.flatMap((rawMeasure) => {
+          if (!rawMeasure || typeof rawMeasure !== "object") return [];
+          const measure = rawMeasure as Record<string, unknown>;
+          const text = String(measure.text || "").trim();
+          if (!text) return [];
+          const priority = ["high", "medium", "low"].includes(String(measure.priority)) ? String(measure.priority) as "high" | "medium" | "low" : "medium";
+          const rawRobustness = measure.robustness && typeof measure.robustness === "object" ? measure.robustness as Record<string, unknown> : {};
+          const level = ["high", "medium", "low", "unknown"].includes(String(rawRobustness.level)) ? String(rawRobustness.level) as "high" | "medium" | "low" | "unknown" : "unknown";
+          const dependsOnPerson = rawRobustness.dependsOnPerson === true || rawRobustness.dependsOnPerson === "true" ? true : rawRobustness.dependsOnPerson === false || rawRobustness.dependsOnPerson === "false" ? false : null;
+          return [{ title: measure.title ? String(measure.title).trim() : undefined, text, priority, verification: String(measure.verification || ""), robustness: {
+            level,
+            reason: String(rawRobustness.reason || ""),
+            dependsOnPerson,
+            standardization: String(rawRobustness.standardization || ""),
+            failureModes: Array.isArray(rawRobustness.failureModes) ? rawRobustness.failureModes.map(String).filter(Boolean) : [],
+          } }];
+        }).sort((a, b) => ({ high: 0, medium: 1, low: 2, unknown: 3 }[a.robustness.level] - { high: 0, medium: 1, low: 2, unknown: 3 }[b.robustness.level])) : [],
+        reproducibility: rawAi.reproducibility && typeof rawAi.reproducibility === "object" ? {
+          level: ["high", "medium", "low", "unknown"].includes(String((rawAi.reproducibility as Record<string, unknown>).level))
+            ? String((rawAi.reproducibility as Record<string, unknown>).level) as "high" | "medium" | "low" | "unknown"
+            : "unknown",
+          reason: String((rawAi.reproducibility as Record<string, unknown>).reason || ""),
+          conditions: Array.isArray((rawAi.reproducibility as Record<string, unknown>).conditions) ? ((rawAi.reproducibility as Record<string, unknown>).conditions as unknown[]).map(String).filter(Boolean) : [],
+          verification: String((rawAi.reproducibility as Record<string, unknown>).verification || ""),
+        } : { level: "unknown", reason: "", conditions: [], verification: "" },
+        rootCause: rawAi.rootCause && typeof rawAi.rootCause === "object" ? {
+          identified: (rawAi.rootCause as Record<string, unknown>).identified === true || (rawAi.rootCause as Record<string, unknown>).identified === "true"
+            ? true
+            : (rawAi.rootCause as Record<string, unknown>).identified === false || (rawAi.rootCause as Record<string, unknown>).identified === "false"
+              ? false
+              : null,
+          text: String((rawAi.rootCause as Record<string, unknown>).text || ""),
+          reasoning: String((rawAi.rootCause as Record<string, unknown>).reasoning || ""),
+          missingEvidence: Array.isArray((rawAi.rootCause as Record<string, unknown>).missingEvidence) ? ((rawAi.rootCause as Record<string, unknown>).missingEvidence as unknown[]).map(String).filter(Boolean) : [],
+        } : { identified: null, text: "", reasoning: "", missingEvidence: [] },
+        branchAssessment: rawAi.branchAssessment && typeof rawAi.branchAssessment === "object" ? {
+          needed: (rawAi.branchAssessment as Record<string, unknown>).needed === true || (rawAi.branchAssessment as Record<string, unknown>).needed === "true"
+            ? true
+            : (rawAi.branchAssessment as Record<string, unknown>).needed === false || (rawAi.branchAssessment as Record<string, unknown>).needed === "false"
+              ? false
+              : null,
+          reason: String((rawAi.branchAssessment as Record<string, unknown>).reason || ""),
+        } : { needed: null, reason: "" },
+        additionalQuestions: Array.isArray(rawAi.additionalQuestions) ? rawAi.additionalQuestions.map(String).filter(Boolean) : [],
+        importedAt: String(rawAi.importedAt || now),
+      } : undefined;
+      return [{
+        id: String(reflection.id || generateId()), title: String(reflection.title || "振り返り"), kind,
+        summary: String(reflection.summary || ""), impact: String(reflection.impact || ""), cause: String(reflection.cause || ""), lesson: String(reflection.lesson || ""),
+        accomplishment: String(reflection.accomplishment || ""), successReason: String(reflection.successReason || ""), keepDoing: String(reflection.keepDoing || ""),
+        branchSplitAssessment, themes: [...themes], otherTheme: String(reflection.otherTheme || ""), aiAnalysis, followUpAnswers, todos, reviewDate: String(reflection.reviewDate || ""), createdAt: String(reflection.createdAt || now), updatedAt: String(reflection.updatedAt || now),
+      }];
+    }) : [];
   const task: Task = {
     // Retain fields introduced by a newer app version. Known fields below are
     // still normalized, while unknown fields survive a load/save round trip.
@@ -303,7 +403,7 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     waitingHistory: Array.isArray(source.waitingHistory) ? source.waitingHistory as Task["waitingHistory"] : [],
     taskKind: (source.taskKind as TaskKind) || classification.taskKind,
     projectTagId: String(source.projectTagId || ""), parentTaskId: String(source.parentTaskId || ""),
-    repositoryBranches, reviewChecklist, codeReviewRuns, testRuns, verificationTimeline,
+    repositoryBranches, reviewChecklist, codeReviewRuns, testRuns, verificationTimeline, reflections,
     links: Array.isArray(source.links) ? source.links as Task["links"] : [],
     relatedTasks: Array.isArray(source.relatedTasks) ? source.relatedTasks as Task["relatedTasks"] : [], nextAction: String(source.nextAction || ""),
     reminderDate: String(source.reminderDate || ""), dueDate: String(source.dueDate || ""), isToday: false, plannedRanges: normalizedRanges,

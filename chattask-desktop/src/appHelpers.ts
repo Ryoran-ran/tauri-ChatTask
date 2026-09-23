@@ -10,7 +10,7 @@ export const createTask = (parent?: Task): Task => {
     projectTagId: parent?.projectTagId || "", parentTaskId: parent?.id || "", repositoryBranches: [], links: [], relatedTasks: [], nextAction: "",
     reminderDate: "", dueDate: "", isToday: false, plannedRanges: [], recurrence: null, recurrenceMemoTemplate: "", recurrenceRecords: [], dailyPlans: {},
     dailyPlanCompleted: {}, plannedHours: 0, actualHours: 0, dailyActualHours: {}, documents: [], createdAt: now, updatedAt: now, completedAt: null,
-    history: [],
+    history: [], reflections: [],
   };
 };
 

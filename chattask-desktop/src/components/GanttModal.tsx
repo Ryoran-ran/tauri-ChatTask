@@ -639,6 +639,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
   const todayLineLeft = todayIndex >= 0
     ? `calc(clamp(280px, 30vw, 420px) + ${todayIndex * cell + cell / 2}px)`
     : undefined;
+  const todayEffort = todayIndex >= 0 ? plannedEffortByDate.get(today) || 0 : 0;
   const bar = (startDate: string, endDate: string, className: string, title: string) => {
     if (!startDate || !endDate) return null;
     const clippedStart = startDate < dates[0] ? dates[0] : startDate;
@@ -938,7 +939,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
         const restDay = getNonWorkingPeriod(date, periods);
         const saturday = restDay?.type === "weekend" && new Date(`${date}T00:00:00Z`).getUTCDay() === 6;
         return <span className={`${date === today ? "is-today" : ""} ${restDay ? saturday ? "is-rest-saturday" : "is-rest-holiday" : ""} ${label ? "has-label" : ""} gantt-capacity-${effortTone}`} style={{ width: cell }} key={date} title={`${date}${restDay ? "・休み" : ""}・予定工数 ${hours(effort)}h`}><>{label && <b className="gantt-date-label">{label}</b>}</><small className="gantt-capacity-value">{effort > 0 ? `${hours(effort)}h` : ""}</small></span>;
-      })}</div></div>
+      })}</div>{todayLineLeft && <i className="gantt-header-today-overlay" style={{ left: todayLineLeft }} aria-hidden="true" />}{todayLineLeft && todayEffort > 0 && <small className="gantt-today-effort-overlay" style={{ left: todayLineLeft }} title={`本日の予定工数 ${hours(todayEffort)}h`}>{hours(todayEffort)}h</small>}</div>
       {rows.map((row) => {
         const tone = taskTone(row.status);
         // 工数の有無ではなく、その日に作業したかを同じ緑線で表す。

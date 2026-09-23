@@ -136,6 +136,98 @@ export interface TaskRepositoryBranches {
   pullRequestTargets?: string[];
 }
 
+export type TaskReflectionKind = "success" | "large-task" | "incident" | "rework" | "estimate" | "branch-split" | "other";
+export type BranchSplitAssessment = "should-have-split" | "appropriate" | "unsure" | "not-applicable";
+export type TaskReflectionTheme = "requirements" | "task-breakdown" | "branch-split" | "estimate" | "schedule" | "implementation" | "review" | "testing" | "communication" | "release" | "priority" | "documentation" | "process" | "other";
+
+export interface TaskReflectionTodo {
+  id: string;
+  /** 一覧や作成タスクで使う短い対策名。 */
+  title?: string;
+  text: string;
+  completed: boolean;
+  createdAt: string;
+  completedAt?: string;
+  /** 振り返り対策を実行する予定日。 */
+  scheduledDate?: string;
+  /** 複数日・工数を伴う対策として管理する通常タスク。 */
+  linkedTaskId?: string;
+}
+
+export interface TaskReflectionAiAnalysis {
+  summary: string;
+  successFactors?: Array<{
+    text: string;
+    evidence: string;
+    reproducibility: "high" | "medium" | "low" | "unknown";
+    continuation: string;
+  }>;
+  causes: Array<{ text: string; evidence: string; confidence: "high" | "medium" | "low" }>;
+  countermeasures: Array<{
+    /** 対策を識別できる短い名称。旧データでは未設定の場合がある。 */
+    title?: string;
+    text: string;
+    priority: "high" | "medium" | "low";
+    verification: string;
+    robustness: {
+      level: "high" | "medium" | "low" | "unknown";
+      reason: string;
+      dependsOnPerson: boolean | null;
+      standardization: string;
+      failureModes: string[];
+    };
+  }>;
+  reproducibility: {
+    level: "high" | "medium" | "low" | "unknown";
+    reason: string;
+    conditions: string[];
+    verification: string;
+  };
+  rootCause: {
+    identified: boolean | null;
+    text: string;
+    reasoning: string;
+    missingEvidence: string[];
+  };
+  branchAssessment: { needed: boolean | null; reason: string };
+  additionalQuestions: string[];
+  importedAt: string;
+}
+
+export interface TaskReflectionFollowUpAnswer {
+  question: string;
+  answer: string;
+  updatedAt: string;
+}
+
+export interface TaskReflection {
+  id: string;
+  title: string;
+  kind: TaskReflectionKind;
+  summary: string;
+  impact: string;
+  cause: string;
+  lesson: string;
+  /** 今回うまくできたこと。 */
+  accomplishment?: string;
+  /** うまくいった条件・判断・工程。 */
+  successReason?: string;
+  /** 次回も意識して残す行動や仕組み。 */
+  keepDoing?: string;
+  branchSplitAssessment: BranchSplitAssessment;
+  /** 1件の振り返りで複数の失敗・改善テーマを扱う。 */
+  themes?: TaskReflectionTheme[];
+  otherTheme?: string;
+  /** AIの回答は本人の記録を上書きせず、比較用に別保存する。 */
+  aiAnalysis?: TaskReflectionAiAnalysis;
+  /** AIからの追加質問に対する本人の回答。再分析時の文脈として使用する。 */
+  followUpAnswers?: TaskReflectionFollowUpAnswer[];
+  todos: TaskReflectionTodo[];
+  reviewDate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -162,6 +254,8 @@ export interface Task {
   testRuns?: TaskTestRun[];
   /** 動作確認中の状態変更、不具合メモ、画像などの時系列記録。 */
   verificationTimeline?: TaskVerificationTimelineEntry[];
+  /** 大きな作業や問題発生時に残す、対策ToDo付きの振り返り。 */
+  reflections?: TaskReflection[];
   links: TaskLink[];
   relatedTasks: RelatedTaskLink[];
   nextAction: string;

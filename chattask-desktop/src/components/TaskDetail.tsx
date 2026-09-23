@@ -14,6 +14,7 @@ import { WorkDatePicker } from "./WorkDatePicker";
 import { ParentTaskSelector } from "./ParentTaskSelector";
 import { TaskHistoryList } from "./TaskHistoryList";
 import { TaskStatusPrompts } from "./TaskStatusPrompts";
+import { TaskReflectionsModal } from "./TaskReflectionsModal";
 import { handleTextareaIndent, memoUrls, scheduleEffort } from "./taskDetailUtils";
 import { calculateEffortAccuracy, summarizeTaskProgress, type EffortAccuracy } from "../taskProgress";
 
@@ -39,6 +40,8 @@ interface Props {
   onSaveTemplate: () => void;
   onOpenProject: (id: string) => void;
   onOpenTask?: (id: string) => void;
+  onCreateReflectionTask: (reflectionId: string, todoId: string) => void;
+  onOpenGantt: () => void;
   promoted: boolean;
   projectManaged: boolean;
   onDeleteDailyPlan: (date: string) => void;
@@ -46,7 +49,7 @@ interface Props {
   onEditMemo: (id: string, text: string) => void;
 }
 
-export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onCreateSibling, onDocuments, onCodeReview, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
+export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHidden, onToggleDetails, onUpdate, onDelete, onCreateChild, onCreateSibling, onDocuments, onCodeReview, onSharedDocuments, onTagDocuments, onOpenTagSettings, onUpdateTagRepositories, onPromote, onSaveTemplate, onOpenProject, onOpenTask = (id) => window.dispatchEvent(new CustomEvent("chattask-open-task", { detail: { id } })), onCreateReflectionTask, promoted, projectManaged, onDeleteDailyPlan, onDeleteMemo, onEditMemo }: Props) {
   const [rangeStart, setRangeStart] = useState(todayValue());
   const [rangeEnd, setRangeEnd] = useState("");
   const [rangeTitle, setRangeTitle] = useState("");
@@ -92,6 +95,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const [tagResourcesVisible, setTagResourcesVisible] = useState(() => localStorage.getItem("chatTaskTagResourcesVisible") !== "false");
   const [scheduleQuickOpen, setScheduleQuickOpen] = useState(false);
   const [wbsProgressOpen, setWbsProgressOpen] = useState(false);
+  const [reflectionsOpen, setReflectionsOpen] = useState(false);
   const [relatedTasksOpen, setRelatedTasksOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [quickScheduleAdding, setQuickScheduleAdding] = useState(false);
@@ -103,7 +107,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     input.style.height = `${Math.min(Math.max(input.scrollHeight, 66), 192)}px`;
     input.style.overflowY = input.scrollHeight > 192 ? "auto" : "hidden";
   }, [memo]);
-  useEffect(() => { setDeleteConfirm(false); setPendingWaitingStatus(null); setPendingLeavingWaitingStatus(null); setEndingStatus(null); setEndingReason(""); setLinkLabel(""); setLinkUrl(""); setLinkLabelEdited(false); setWbsProgressOpen(false); }, [task?.id]);
+  useEffect(() => { setDeleteConfirm(false); setPendingWaitingStatus(null); setPendingLeavingWaitingStatus(null); setEndingStatus(null); setEndingReason(""); setLinkLabel(""); setLinkUrl(""); setLinkLabelEdited(false); setWbsProgressOpen(false); setReflectionsOpen(false); }, [task?.id]);
   useEffect(() => {
     if (task?.title !== "新規タスク") return;
     requestAnimationFrame(() => {
@@ -162,6 +166,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   const currentTag = tags.find((tag) => tag.id === task.projectTagId);
   const projectContexts = taskProjectContexts(projects, task.id);
   const branchCount = task.repositoryBranches.reduce((total, group) => total + group.branchNames.length, 0);
+  const incompleteReflectionTodoCount = (task.reflections || []).reduce((sum, reflection) => sum + reflection.todos.filter((todo) => !todo.completed).length, 0);
   const sharedProjects = projectContexts.reduce<Goal[]>((items, context) => {
     const project = projects.find((candidate) => candidate.id === context.projectId);
     return project && !items.some((item) => item.id === project.id) ? [...items, project] : items;
@@ -621,6 +626,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
           <span className="task-menu-group-label">関連機能</span>
           <button onClick={() => { closeTaskMenu(); onDocuments(); }}>ドキュメント</button>
           <button onClick={() => { closeTaskMenu(); onCodeReview(); }}>コードレビュー</button>
+          <button onClick={() => { closeTaskMenu(); setReflectionsOpen(true); }}>振り返り{incompleteReflectionTodoCount > 0 ? `（未対応 ${incompleteReflectionTodoCount}）` : task.reflections?.length ? `（${task.reflections.length}件）` : ""}</button>
           <button onClick={() => { closeTaskMenu(); onPromote(); }}>{promoted ? "起点プロジェクトを開く" : "プロジェクトへ昇華"}</button>
           <span className="task-menu-group-label">再利用</span>
           <button onClick={() => { closeTaskMenu(); onSaveTemplate(); }}>テンプレートとして保存</button>
@@ -719,6 +725,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
     </div>
     {relatedTasksOpen && <RelatedTasksModal task={task} allTasks={allTasks} onUpdate={(relatedTasks) => onUpdate({ relatedTasks }, "関連タスクを更新しました。")} onOpen={onOpenTask} onClose={() => setRelatedTasksOpen(false)} />}
     {branchesOpen && <TaskBranchesModal taskId={task.id} taskTitle={task.title} repositoryBranches={task.repositoryBranches} tag={currentTag} onSave={(repositoryBranches) => onUpdate({ repositoryBranches }, "関連ブランチを更新しました。")} onSaveRepositories={(repositories) => currentTag && onUpdateTagRepositories(currentTag.id, repositories)} onOpenTagSettings={onOpenTagSettings} onClose={() => setBranchesOpen(false)} />}
+    {reflectionsOpen && <TaskReflectionsModal task={task} allTasks={allTasks} projects={projects} onChange={(reflections, historyText) => onUpdate({ reflections }, historyText)} onCreateTask={onCreateReflectionTask} onOpenTask={onOpenTask} onClose={() => setReflectionsOpen(false)} />}
     {wbsProgressOpen && <Modal title={`タスク集計・${task.title || "無題のタスク"}`} onClose={() => setWbsProgressOpen(false)} wide>
       <div className="wbs-progress-window">
         <section className={`wbs-progress-window-summary ${childProgress.childCount === 0 ? "no-children" : ""}`}>
