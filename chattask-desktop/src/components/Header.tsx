@@ -27,6 +27,7 @@ interface Props {
   onProfile: () => void;
   onDataManagement: () => void;
   onAchievements: () => void;
+  onReflections: () => void;
   onTools: () => void;
   hideRecurring: boolean;
   openTodayOnStartup: boolean;
@@ -82,12 +83,17 @@ export function Header(props: Props) {
       <button onClick={props.onWeeklyLoad}>週間予定</button>
       <div className="settings-menu records-menu" ref={recordsRef}>
         <button className="settings-trigger" onClick={() => { setRecords(!records); setSettings(false); }} aria-expanded={records}>記録・分析 <span>▼</span></button>
-        {records && <div className="settings-panel records-panel"><button onClick={() => { props.onAchievements(); setRecords(false); }}>頑張りの記録<small>日々の実績と変化を確認</small></button><button onClick={() => { props.onIssues(); setRecords(false); }}>課題一覧<small>気づいた課題を整理</small></button><button onClick={() => { props.onReport(); setRecords(false); }}>まとめ出力<small>記録をレポートとして出力</small></button></div>}
+        {records && <div className="settings-panel records-panel"><button onClick={() => { props.onAchievements(); setRecords(false); }}>頑張りの記録<small>日々の実績と変化を確認</small></button><button onClick={() => { props.onReflections(); setRecords(false); }}>振り返り記録<small>失敗・学び・対策ToDoを確認</small></button><button onClick={() => { props.onIssues(); setRecords(false); }}>課題一覧<small>気づいた課題を整理</small></button><button onClick={() => { props.onReport(); setRecords(false); }}>まとめ出力<small>記録をレポートとして出力</small></button></div>}
       </div>
       <div className="settings-menu" ref={menuRef}>
         <button className="settings-trigger" onClick={() => { setSettings(!settings); setRecords(false); }} aria-expanded={settings}>設定 <span>▼</span></button>
         {settings && <div className="settings-panel">
           <button type="button" className="settings-center-open" onClick={() => { setSettings(false); setSettingsCenterOpen(true); }}><span><b>設定を開く</b><small>すべての設定をカテゴリーから選択</small></span><em>→</em></button>
+          <span className="settings-group-label">よく使う設定</span>
+          <div className="settings-quick-links">
+            <button type="button" onClick={() => { setSettings(false); props.onNonWorking(); }}><i aria-hidden="true">休</i><span><b>休暇・祝日設定</b><small>個別の休暇と非稼働日</small></span><em>›</em></button>
+            <button type="button" onClick={() => { setSettings(false); props.onTools(); }}><i aria-hidden="true">◇</i><span><b>ツール</b><small>登録したローカルツールを管理</small></span><em>›</em></button>
+          </div>
           <span className="settings-group-label">クイック表示設定</span>
           <label><input type="checkbox" checked={props.hideRecurring} onChange={(event) => props.onHideRecurring(event.target.checked)} /><span>定期タスクを一覧で非表示</span></label>
           <label><input type="checkbox" checked={props.openTodayOnStartup} onChange={(event) => props.onOpenTodayOnStartup(event.target.checked)} /><span>起動時に今日を開く</span></label>

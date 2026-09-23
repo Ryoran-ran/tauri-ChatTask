@@ -27,6 +27,7 @@ import { buildNotifications, NotificationsModal } from "./components/Notificatio
 import { FullTextSearchModal, type FullTextSearchResult } from "./components/FullTextSearchModal";
 import { NonWorkingPeriodsProvider } from "./components/WorkDatePicker";
 import { AchievementsModal } from "./components/AchievementsModal";
+import { ReflectionRecordsModal } from "./components/ReflectionRecordsModal";
 import { AdvancedFilterModal } from "./components/AdvancedFilterModal";
 import { InboxModal } from "./components/InboxModal";
 import { WaitingBoxModal } from "./components/WaitingBoxModal";
@@ -126,6 +127,7 @@ function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [fullSearchOpen, setFullSearchOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [reflectionRecordsOpen, setReflectionRecordsOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxItemId, setInboxItemId] = useState("");
   const [waitingOpen, setWaitingOpen] = useState(false);
@@ -659,13 +661,48 @@ function App() {
     return task.id;
   };
 
+  const createReflectionActionTask = (sourceTaskId: string, reflectionId: string, todoId: string) => {
+    const sourceTask = data.tasks.find((item) => item.id === sourceTaskId);
+    const reflection = sourceTask?.reflections?.find((item) => item.id === reflectionId);
+    const todo = reflection?.todos.find((item) => item.id === todoId);
+    if (!sourceTask || !reflection || !todo || todo.linkedTaskId) return;
+    const linkedAt = new Date().toISOString();
+    const todoIndex = reflection.todos.findIndex((item) => item.id === todoId);
+    const taskTitle = todo.title?.trim() || `対策 ${todoIndex >= 0 ? todoIndex + 1 : 1}`;
+    const plannedRanges = todo.scheduledDate ? [{
+      id: generateId(),
+      startDate: todo.scheduledDate,
+      endDate: todo.scheduledDate,
+      title: taskTitle,
+      description: todo.text,
+      plannedHours: 0,
+      status: "not-started" as const,
+    }] : [];
+    const createdTaskId = createRelatedTask(taskTitle, sourceTask.id, {
+      description: `${todo.text}\n\n振り返り「${reflection.title || "振り返り"}」から作成した対策タスクです。`,
+      projectTagId: sourceTask.projectTagId,
+      plannedRanges,
+      relatedTasks: [{ taskId: sourceTask.id, relation: "reference", linkedAt }],
+    }, true);
+    updateTaskById(sourceTask.id, {
+      relatedTasks: [...sourceTask.relatedTasks.filter((link) => link.taskId !== createdTaskId), { taskId: createdTaskId, relation: "reference", linkedAt }],
+      reflections: (sourceTask.reflections || []).map((item) => item.id === reflectionId
+        ? { ...item, todos: item.todos.map((entry) => entry.id === todoId ? { ...entry, linkedTaskId: createdTaskId } : entry), updatedAt: linkedAt }
+        : item),
+    }, `振り返りの対策「${todo.text}」をタスクとして計画しました。`);
+  };
+
   const deleteSelectedTask = async () => {
     if (!selectedTask) return;
     try { await removeTaskAttachments(selectedTask.id); }
     catch (error) { alert(`添付ファイルの削除に失敗しました。\n${String(error)}`); return; }
     setData((current) => ({
       ...current,
-      tasks: current.tasks.filter((task) => task.id !== selectedTask.id).map((task) => task.parentTaskId === selectedTask.id ? { ...task, parentTaskId: "" } : task),
+      tasks: current.tasks.filter((task) => task.id !== selectedTask.id).map((task) => ({
+        ...(task.parentTaskId === selectedTask.id ? { ...task, parentTaskId: "" } : task),
+        relatedTasks: task.relatedTasks.filter((link) => link.taskId !== selectedTask.id),
+        reflections: (task.reflections || []).map((reflection) => ({ ...reflection, todos: reflection.todos.map((todo) => todo.linkedTaskId === selectedTask.id ? { ...todo, linkedTaskId: undefined } : todo) })),
+      })),
       goals: current.goals.map((project) => ({
         ...project,
         originTaskId: project.originTaskId === selectedTask.id ? "" : project.originTaskId,
@@ -973,10 +1010,10 @@ function App() {
 
   return <NonWorkingPeriodsProvider periods={data.nonWorkingPeriods} informational={data.workspaceMode === "personal"}><div className={`app-shell mode-${data.workspaceMode}`}>
     {dropNotice && <div className={`global-drop-notice ${dropNotice.error ? "error" : ""}`} role="status">{dropNotice.text}</div>}
-    <Header importRef={importRef} onImport={importData} onExport={exportData} onTags={() => setTagsOpen(true)} onTemplates={() => setTemplatesOpen(true)} onReport={() => setReportOpen(true)} onGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} onWeeklyLoad={() => setWeeklyLoadOpen(true)} onGoals={() => setGoalsOpen(true)} onIssues={() => setIssuesOpen(true)} onSearch={() => setFullSearchOpen(true)} onInbox={() => setInboxOpen(true)} inboxCount={data.inboxItems.filter((item) => item.status === "inbox").length} onWaiting={() => { setWaitingTaskId(""); setWaitingOpen(true); }} waitingCount={data.tasks.filter((task) => task.waitingFollowUp).length} onNotifications={() => setNotificationsOpen(true)} notificationCount={notificationCount} onNonWorking={() => setNonWorkingOpen(true)} onWeekendSettings={() => setWeekendSettingsOpen(true)} onHelp={() => setHelpOpen(true)} onProfile={() => setProfileOpen(true)} onDataManagement={() => setDataManagementOpen(true)} onAchievements={() => setAchievementsOpen(true)} onTools={() => setToolsOpen(true)} hideRecurring={hideRecurring} openTodayOnStartup={openTodayOnStartup} onHideRecurring={setHideRecurring} onOpenTodayOnStartup={setOpenTodayOnStartup} workspaceMode={data.workspaceMode} onWorkspaceMode={(workspaceMode) => { localStorage.setItem(environment === "test" ? "chatTaskWorkspaceMode:test" : "chatTaskWorkspaceMode", workspaceMode); setData((current) => ({ ...current, workspaceMode })); }} />
+    <Header importRef={importRef} onImport={importData} onExport={exportData} onTags={() => setTagsOpen(true)} onTemplates={() => setTemplatesOpen(true)} onReport={() => setReportOpen(true)} onGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} onWeeklyLoad={() => setWeeklyLoadOpen(true)} onGoals={() => setGoalsOpen(true)} onIssues={() => setIssuesOpen(true)} onSearch={() => setFullSearchOpen(true)} onInbox={() => setInboxOpen(true)} inboxCount={data.inboxItems.filter((item) => item.status === "inbox").length} onWaiting={() => { setWaitingTaskId(""); setWaitingOpen(true); }} waitingCount={data.tasks.filter((task) => task.waitingFollowUp).length} onNotifications={() => setNotificationsOpen(true)} notificationCount={notificationCount} onNonWorking={() => setNonWorkingOpen(true)} onWeekendSettings={() => setWeekendSettingsOpen(true)} onHelp={() => setHelpOpen(true)} onProfile={() => setProfileOpen(true)} onDataManagement={() => setDataManagementOpen(true)} onAchievements={() => setAchievementsOpen(true)} onReflections={() => setReflectionRecordsOpen(true)} onTools={() => setToolsOpen(true)} hideRecurring={hideRecurring} openTodayOnStartup={openTodayOnStartup} onHideRecurring={setHideRecurring} onOpenTodayOnStartup={setOpenTodayOnStartup} workspaceMode={data.workspaceMode} onWorkspaceMode={(workspaceMode) => { localStorage.setItem(environment === "test" ? "chatTaskWorkspaceMode:test" : "chatTaskWorkspaceMode", workspaceMode); setData((current) => ({ ...current, workspaceMode })); }} />
     <main className="workspace">
       <Sidebar tasks={visibleTasks} tags={data.projectTags} projects={data.goals} periods={effectiveNonWorkingPeriods} selectedId={selectedId} search={search} advancedFilter={advancedFilter} savedViews={savedViews} sortRules={sortRules} filtersHidden={filtersHidden} collapsedIds={collapsedIds} onSearch={setSearch} onClearFilters={() => { setSearch(""); setAdvancedFilter({ mode: "and", conditions: [] }); setFilter("all"); setTagFilter("all"); setPriorityFilter("all"); }} onSaveView={saveCurrentView} onApplyView={applySavedView} onDeleteView={(id) => setSavedViews((current) => current.filter((view) => view.id !== id))} onSortRules={setSortRules} onToggleFilters={() => setFiltersHidden((value) => !value)} onSelect={setSelectedId} onToggleCollapse={(id) => setCollapsedIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onCreate={(projectTagId) => { setCreatingTaskTagId(projectTagId); setCreatingTaskParentId(""); }} onToday={() => setTodayOpen(true)} narrow={narrow} density={density} groupByTag={groupTasksByTag} onToggleGroupByTag={() => setGroupTasksByTag((value) => !value)} onToggleWidth={() => setNarrow((value) => !value)} onToggleDensity={() => setDensity((value) => value === "standard" ? "compact" : value === "compact" ? "minimal" : "standard")} onQuick={quickAction} onOpenProject={openProjects} onSaveTemplate={setTemplateSourceTask} workspaceMode={data.workspaceMode} />
-      <TaskDetail task={selectedTask} allTasks={data.tasks} projects={data.goals} tags={data.projectTags} profile={data.userProfile} detailsHidden={detailsHidden} onToggleDetails={() => setDetailsHidden((value) => !value)} onUpdate={(changes, text) => selectedId && updateTaskById(selectedId, changes, text)} onDelete={deleteSelectedTask} onCreateChild={() => selectedId && setCreatingTaskParentId(selectedId)} onCreateSibling={() => { if (!selectedTask) return; setCreatingTaskTagId(selectedTask.projectTagId || undefined); setCreatingTaskParentId(selectedTask.parentTaskId || ""); }} onDocuments={() => { setDocumentJump(null); setDocumentsOpen("task"); }} onCodeReview={() => selectedTask && setCodeReviewTaskId(selectedTask.id)} onSharedDocuments={(projectId, documentId = "") => { const project = data.goals.find((item) => item.id === projectId); if (project) { setDocumentJump({ scope: "project", ownerId: project.id, documentId, query: "" }); setDocumentsOpen("project"); } }} onTagDocuments={() => { if (selectedTag) { setDocumentJump(null); setDocumentsOpen("tag"); } }} onOpenTagSettings={() => setTagsOpen(true)} onUpdateTagRepositories={(tagId, githubRepositories) => setData((current) => ({ ...current, projectTags: current.projectTags.map((tag) => tag.id === tagId ? { ...tag, githubRepositories } : tag) }))} onPromote={() => selectedTask && promoteTaskToProject(selectedTask)} onSaveTemplate={() => selectedTask && setTemplateSourceTask(selectedTask)} onOpenProject={openProjects} promoted={Boolean(selectedTask && data.goals.some((item) => item.originTaskId === selectedTask.id))} projectManaged={Boolean(selectedTask && isTaskScheduleManagedByProject(data.goals, selectedTask.id))} onDeleteDailyPlan={(date) => selectedId && deleteDailyPlanById(selectedId, date)} onDeleteMemo={(id) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.filter((item) => item.id !== id) })} onEditMemo={(id, text) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.map((item) => item.id === id ? { ...item, text, editedAt: new Date().toISOString() } : item) })} />
+      <TaskDetail task={selectedTask} allTasks={data.tasks} projects={data.goals} tags={data.projectTags} profile={data.userProfile} detailsHidden={detailsHidden} onToggleDetails={() => setDetailsHidden((value) => !value)} onUpdate={(changes, text) => selectedId && updateTaskById(selectedId, changes, text)} onDelete={deleteSelectedTask} onCreateChild={() => selectedId && setCreatingTaskParentId(selectedId)} onCreateSibling={() => { if (!selectedTask) return; setCreatingTaskTagId(selectedTask.projectTagId || undefined); setCreatingTaskParentId(selectedTask.parentTaskId || ""); }} onDocuments={() => { setDocumentJump(null); setDocumentsOpen("task"); }} onCodeReview={() => selectedTask && setCodeReviewTaskId(selectedTask.id)} onSharedDocuments={(projectId, documentId = "") => { const project = data.goals.find((item) => item.id === projectId); if (project) { setDocumentJump({ scope: "project", ownerId: project.id, documentId, query: "" }); setDocumentsOpen("project"); } }} onTagDocuments={() => { if (selectedTag) { setDocumentJump(null); setDocumentsOpen("tag"); } }} onOpenTagSettings={() => setTagsOpen(true)} onUpdateTagRepositories={(tagId, githubRepositories) => setData((current) => ({ ...current, projectTags: current.projectTags.map((tag) => tag.id === tagId ? { ...tag, githubRepositories } : tag) }))} onPromote={() => selectedTask && promoteTaskToProject(selectedTask)} onSaveTemplate={() => selectedTask && setTemplateSourceTask(selectedTask)} onOpenProject={openProjects} onCreateReflectionTask={(reflectionId, todoId) => selectedTask && createReflectionActionTask(selectedTask.id, reflectionId, todoId)} onOpenGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} promoted={Boolean(selectedTask && data.goals.some((item) => item.originTaskId === selectedTask.id))} projectManaged={Boolean(selectedTask && isTaskScheduleManagedByProject(data.goals, selectedTask.id))} onDeleteDailyPlan={(date) => selectedId && deleteDailyPlanById(selectedId, date)} onDeleteMemo={(id) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.filter((item) => item.id !== id) })} onEditMemo={(id, text) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.map((item) => item.id === id ? { ...item, text, editedAt: new Date().toISOString() } : item) })} />
     </main>
     {advancedFilterOpen && <AdvancedFilterModal filter={advancedFilter} tags={data.projectTags} onApply={setAdvancedFilter} onClose={() => setAdvancedFilterOpen(false)} />}
     {todayOpen && <TodayModal workspaceMode={data.workspaceMode} tasks={data.tasks} habits={data.habits} projects={data.goals} tags={data.projectTags} inboxItems={data.inboxItems} todayOrder={data.todayTaskOrders[todayDate] || []} onTodayOrder={(order) => setData((current) => ({ ...current, todayTaskOrders: { ...current.todayTaskOrders, [todayDate]: order } }))} onHabitsChange={(habits) => setData((current) => ({ ...current, habits }))} onOpenInbox={(itemId = "") => { setInboxItemId(itemId); setInboxOpen(true); }} onReviewInbox={(id) => setData((current) => ({ ...current, inboxItems: current.inboxItems.map((item) => item.id === id ? { ...item, reviewedAt: new Date().toISOString(), updatedAt: new Date().toISOString() } : item) }))} activity={data.activityLog} periods={effectiveNonWorkingPeriods} date={todayDate} note={data.dailyNotes[todayDate] || ""} finalizedAt={data.dailyFinalizedAt[todayDate] || ""} activeTimerTaskId={workTimer?.taskId} onDate={setTodayDate} onNote={(note) => setData((current) => ({ ...current, dailyNotes: { ...current.dailyNotes, [todayDate]: note } }))} onFinalize={() => finalizeDailyPage(todayDate)} onUnfinalize={() => unfinalizeDailyPage(todayDate)} onUpdateTask={updateTaskById} onCancelCompletion={cancelTaskCompletion} onStartTimer={startWorkTimer} onSelect={setSelectedId} onOpenDocuments={(id) => { setSelectedId(id); setDocumentJump(null); setDocumentsOpen("task"); }} onClose={() => setTodayOpen(false)} />}
@@ -1032,6 +1069,7 @@ function App() {
     {commandPalette && <CommandPalette tasks={data.tasks} tags={data.projectTags} initialTaskId={commandPalette.taskId} position={commandPalette.position} onCreate={(title, today) => createNewTask({ title, ...(today ? { plannedRanges: [{ id: generateId(), startDate: todayValue(), endDate: todayValue() }] } : {}) })} onOpenTask={revealTaskFromPalette} onTaskAction={(task, action) => quickAction(task.id, action)} onClose={() => setCommandPalette(null)} />}
     {fullSearchOpen && <FullTextSearchModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} onOpen={openFullTextResult} onClose={() => setFullSearchOpen(false)} />}
 {achievementsOpen && <AchievementsModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} activity={data.activityLog} nonWorkingPeriods={data.nonWorkingPeriods} onSelect={(id) => { setSelectedId(id); setAchievementsOpen(false); }} onClose={() => setAchievementsOpen(false)} />}
+    {reflectionRecordsOpen && <ReflectionRecordsModal tasks={data.tasks} tags={data.projectTags} onUpdateTask={updateTaskById} onOpenTask={(id) => setSelectedId(id)} onClose={() => setReflectionRecordsOpen(false)} />}
     {workTimer && <ActiveTimerBar timer={workTimer} onPause={pauseWorkTimer} onResume={resumeWorkTimer} onOverrun={remindWorkTimer} onFinish={finishWorkTimer} onOpenTask={() => { const task = data.tasks.find((item) => item.id === workTimer.taskId); if (task) revealTaskFromPalette(task); }} />}
     {workTimer && timerFinishOpen && <TimerFinishDialog timer={workTimer} initialMemo={timerMemo} onSave={saveWorkTimer} onDiscard={discardWorkTimer} onClose={() => setTimerFinishOpen(false)} />}
   </div></NonWorkingPeriodsProvider>;

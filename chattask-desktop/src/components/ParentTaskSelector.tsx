@@ -25,7 +25,7 @@ export function ParentTaskSelector({ task, candidates, onChange }: Props) {
     <button type="button" className="parent-task-trigger" onClick={() => setOpen(true)}><span>{parent?.title || "親タスクなし"}</span><b>{parent ? "変更" : "検索"}</b></button>
     {open && createPortal(<div className="linked-task-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <section className="linked-task-picker parent-task-picker" role="dialog" aria-modal="true" aria-label="親タスクを検索">
-        <header><div><strong>親タスクを選択</strong><small>タスク名・説明で検索できます</small></div><button type="button" onClick={() => setOpen(false)}>×</button></header>
+        <header><div><strong>親タスクを選択</strong><small>タスク名・説明で検索できます（最大4階層）</small></div><button type="button" onClick={() => setOpen(false)}>×</button></header>
         <div className="linked-task-picker-search"><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="親タスクを検索..." /></div>
         <div className="linked-task-picker-results"><section><h4>{normalizedQuery ? "検索結果" : "すべてのタスク"}</h4>
           {matches.map((item) => <button type="button" className={`linked-task-choice ${item.id === task.parentTaskId ? "selected" : ""}`} key={item.id} onClick={() => choose(item.id)}><span><strong>{item.title || "無題のタスク"}</strong><small>{item.description || "説明なし"}</small></span><span><b>{item.id === task.parentTaskId ? "選択中" : "選択"}</b></span></button>)}
