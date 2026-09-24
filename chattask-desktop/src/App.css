@@ -982,6 +982,10 @@ textarea { resize: vertical; line-height: 1.55; }
 .backup-row > div { min-width: 0; display: grid; gap: .2rem; }
 .backup-row strong { overflow-wrap: anywhere; font-size: .86rem; }
 .backup-row small { color: #64748b; }
+.backup-restore-confirm { display: grid; gap: .5rem; border: 1px solid #f59e0b; border-radius: 8px; padding: .75rem .85rem; background: #fffbeb; }
+.backup-restore-confirm strong { color: #92400e; font-size: .82rem; }
+.backup-restore-confirm p { margin: 0; color: #78350f; font-size: .72rem; }
+.backup-restore-confirm > div { display: flex; justify-content: flex-end; gap: .45rem; }
 .storage-message { margin: 0; color: #166534; }
 .tag-settings { align-content: start; display: grid; gap: .65rem; }
 .tag-setting-group { overflow: hidden; border: 1px solid #dbe4ef; border-radius: 9px; background: #fff; }

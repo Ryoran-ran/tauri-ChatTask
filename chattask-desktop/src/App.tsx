@@ -1064,7 +1064,14 @@ function App() {
         await saveAppData(blank, storageBackend || "localStorage", "test");
         if (environment === "test") window.location.reload();
       }}
-      onRestore={(restored) => { setData(repairDuplicateProjectSchedules(restored)); setSelectedId(null); }} onClose={() => setDataManagementOpen(false)} />}
+      onRestore={async (restored) => {
+        const repaired = repairDuplicateProjectSchedules(restored);
+        await saveAppData(repaired, storageBackend || "localStorage", environment);
+        setData(repaired);
+        setSelectedId(null);
+        setDataManagementOpen(false);
+        window.location.reload();
+      }} onClose={() => setDataManagementOpen(false)} />}
     {notificationsOpen && <NotificationsModal tasks={data.tasks} tags={data.projectTags} onSelect={revealTaskFromPalette} onClose={() => setNotificationsOpen(false)} />}
     {commandPalette && <CommandPalette tasks={data.tasks} tags={data.projectTags} initialTaskId={commandPalette.taskId} position={commandPalette.position} onCreate={(title, today) => createNewTask({ title, ...(today ? { plannedRanges: [{ id: generateId(), startDate: todayValue(), endDate: todayValue() }] } : {}) })} onOpenTask={revealTaskFromPalette} onTaskAction={(task, action) => quickAction(task.id, action)} onClose={() => setCommandPalette(null)} />}
     {fullSearchOpen && <FullTextSearchModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} onOpen={openFullTextResult} onClose={() => setFullSearchOpen(false)} />}
