@@ -617,8 +617,16 @@ export const listAppBackups = async (environment: AppEnvironment): Promise<AppBa
   invoke<AppBackupInfo[]>("list_app_backups", { environment });
 
 export const restoreAppBackup = async (fileName: string, environment: AppEnvironment): Promise<AppData> => {
-  const restored = await invoke<AppData>("restore_app_backup", { fileName, environment });
-  return parseImportedData(JSON.stringify(restored));
+  let restoredData: AppData | null = null;
+  sqliteSaveQueue = sqliteSaveQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const restored = await invoke<AppData>("restore_app_backup", { fileName, environment });
+      restoredData = parseImportedData(JSON.stringify(restored));
+    });
+  await sqliteSaveQueue;
+  if (!restoredData) throw new Error("復元データを読み込めませんでした。");
+  return restoredData;
 };
 
 export const parseImportedData = (text: string): AppData => {

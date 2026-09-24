@@ -18,7 +18,7 @@ interface Props {
   onSwitchEnvironment: (environment: AppEnvironment) => Promise<void>;
   onCopyProductionToTest: () => Promise<void>;
   onResetTest: () => Promise<void>;
-  onRestore: (data: AppData) => void;
+  onRestore: (data: AppData) => Promise<void>;
   onClose: () => void;
 }
 
@@ -34,6 +34,7 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
   const [message, setMessage] = useState("");
   const [integrityResult, setIntegrityResult] = useState<IntegrityCheckResult | null>(null);
   const [pendingEnvironment, setPendingEnvironment] = useState<AppEnvironment | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<AppBackupInfo | null>(null);
   const sqliteAvailable = backend === "sqlite";
 
   const refresh = useCallback(async () => {
@@ -56,10 +57,11 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
   };
 
   const restore = async (backup: AppBackupInfo) => {
-    if (!confirm(`${backup.fileName} の内容へ復元しますか？\n現在の内容は復元前バックアップとして保存されます。`)) return;
+    setPendingRestore(null);
     setBusy(true);
+    setMessage("バックアップを復元しています…");
     try {
-      onRestore(await restoreAppBackup(backup.fileName, environment));
+      await onRestore(await restoreAppBackup(backup.fileName, environment));
       setMessage("バックアップを復元しました。");
     } catch (error) {
       setMessage(`復元に失敗しました: ${String(error)}`);
@@ -89,7 +91,7 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
       </p>
       {sqliteAvailable
         ? <>
-          <button className="primary" disabled={busy} onClick={() => void create()}>今すぐバックアップを作成</button>
+          <button type="button" className="primary" disabled={busy} onClick={() => void create()}>今すぐバックアップを作成</button>
           <h3>復元できるバックアップ</h3>
           {backups.length === 0 && <p className="muted">バックアップはまだありません。</p>}
           <div className="backup-list">
@@ -98,9 +100,14 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
                 <strong>{backup.fileName}</strong>
                 <small>{new Date(backup.createdAt * 1000).toLocaleString("ja-JP")}・{formatSize(backup.size)}</small>
               </div>
-              <button disabled={busy} onClick={() => void restore(backup)}>復元</button>
+              <button type="button" disabled={busy} onClick={() => setPendingRestore(backup)}>復元</button>
             </div>)}
           </div>
+          {pendingRestore && <div className="backup-restore-confirm" role="alertdialog" aria-label="バックアップ復元の確認">
+            <strong>{pendingRestore.fileName} の内容へ復元しますか？</strong>
+            <p>現在の内容は復元前バックアップとして保存されます。復元完了後、アプリを再読み込みします。</p>
+            <div><button type="button" disabled={busy} onClick={() => setPendingRestore(null)}>キャンセル</button><button type="button" className="primary" disabled={busy} onClick={() => void restore(pendingRestore)}>復元を実行</button></div>
+          </div>}
         </>
         : <p>デスクトップアプリで起動すると、SQLiteのバックアップ管理を利用できます。</p>}
       {message && <p className="storage-message" role="status">{message}</p>}
