@@ -181,6 +181,12 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
     detailParts(item).other,
   ].filter((line) => line !== "").join("\n");
 
+  const suggestedCommitMessageForItem = (item: TaskChecklistItem) => [...runs]
+    .reverse()
+    .find((run) => run.itemIds.includes(item.id) && run.suggestedCommitMessage?.trim())
+    ?.suggestedCommitMessage?.trim() || "";
+  const commitCommand = (message: string) => `git commit -m '${message.replace(/'/g, `'"'"'`)}'`;
+
   const importItems = () => {
     const parsed = parseReviewChecklist(source);
     if (!parsed.length) {
@@ -270,13 +276,16 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
     setDeletingRunId("");
   };
 
-  const renderItem = (item: TaskChecklistItem) => <article className={itemStatus(item)} key={item.id}>
+  const renderItem = (item: TaskChecklistItem) => {
+    const suggestedCommitMessage = suggestedCommitMessageForItem(item);
+    return <article className={itemStatus(item)} key={item.id}>
     <div className="review-checklist-item-main"><span>{displayLocation(item) && <code>{displayLocation(item)}</code>}<strong>{displayTitle(item)}</strong><small>{item.repositoryName && <em className="review-repository-badge">{item.repositoryName}</em>}<em>{item.category}</em>{item.severity && <em className={`severity-${item.severity}`}>重要度 {severityLabel[item.severity]}</em>}{(item.reviewOccurrenceCount || item.reviewRunIds?.length || 1) > 1 && <em className="review-repeat-badge">再指摘 {(item.reviewOccurrenceCount || item.reviewRunIds?.length || 1) - 1}回</em>}</small></span></div>
     <select className={`review-checklist-status status-${itemStatus(item)}`} aria-label={`${displayTitle(item)}の対応状態`} value={itemStatus(item)} onChange={(event) => { const reviewStatus = event.target.value as NonNullable<TaskChecklistItem["reviewStatus"]>; const isCompleted = reviewStatus === "completed"; onChange(items.map((current) => current.id === item.id ? { ...current, reviewStatus, completed: isCompleted, completedAt: isCompleted ? new Date().toISOString() : undefined } : current)); }}><option value="pending">未対応</option><option value="in-progress">対応中</option><option value="completed">対応済み</option><option value="ignored">対応しない</option></select>
     <button type="button" className="danger-text" aria-label={`${item.title}を削除`} onClick={() => onChange(items.filter((current) => current.id !== item.id))}>×</button>
-    <div className="review-checklist-item-actions">{displayFile(item) && <button type="button" onClick={() => void copyItemText(`${item.id}:file`, displayFile(item))}>{copiedAction === `${item.id}:file` ? "コピー済み" : copiedAction === `${item.id}:file:error` ? "コピー失敗" : "ファイルをコピー"}</button>}<button type="button" className="ai-copy" onClick={() => void copyItemText(`${item.id}:ai`, aiQuestionText(item))}>{copiedAction === `${item.id}:ai` ? "コピー済み" : copiedAction === `${item.id}:ai:error` ? "コピー失敗" : "AI質問用にコピー"}</button></div>
+    <div className="review-checklist-item-actions">{displayFile(item) && <button type="button" onClick={() => void copyItemText(`${item.id}:file`, displayFile(item))}>{copiedAction === `${item.id}:file` ? "コピー済み" : copiedAction === `${item.id}:file:error` ? "コピー失敗" : "ファイルをコピー"}</button>}<button type="button" className="ai-copy" onClick={() => void copyItemText(`${item.id}:ai`, aiQuestionText(item))}>{copiedAction === `${item.id}:ai` ? "コピー済み" : copiedAction === `${item.id}:ai:error` ? "コピー失敗" : "AI質問用にコピー"}</button>{suggestedCommitMessage && <button type="button" className="commit-copy" title={suggestedCommitMessage} onClick={() => void copyItemText(`${item.id}:commit-command`, commitCommand(suggestedCommitMessage))}>{copiedAction === `${item.id}:commit-command` ? "コピー済み" : copiedAction === `${item.id}:commit-command:error` ? "コピー失敗" : "コミットコマンドをコピー"}</button>}</div>
     {(item.details || item.reason || item.suggestion) && <details><summary>指摘理由・修正案</summary><div className="review-checklist-details">{detailParts(item).reason && <section className="reason"><strong>指摘理由</strong><p>{detailParts(item).reason}</p></section>}{detailParts(item).suggestion && <section className="suggestion"><strong>修正案</strong><p>{detailParts(item).suggestion}</p></section>}{detailParts(item).other && <section><strong>詳細</strong><p>{detailParts(item).other}</p></section>}</div></details>}
   </article>;
+  };
 
   return <>
     <section className="task-review-checklist">
@@ -296,6 +305,7 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
         const noFindings = Boolean(run.noFindings || run.itemIds.length === 0);
         return <details className="review-run-card" key={run.id}>
           <summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・{noFindings ? <b className="review-no-findings-label">指摘なし</b> : `指摘${run.itemIds.length}件`}</small></summary>
+          {run.suggestedCommitMessage && <div className="review-run-commit"><span><small>推奨コミット名</small><code>{run.suggestedCommitMessage}</code></span><button type="button" onClick={() => void copyItemText(`${run.id}:commit`, run.suggestedCommitMessage || "")}>{copiedAction === `${run.id}:commit` ? "コピー済み" : copiedAction === `${run.id}:commit:error` ? "コピー失敗" : "コピー"}</button></div>}
           {onChangeReviewData && <div className="review-run-actions">
             {editingRunRepositoryId === run.id
               ? <label><span>移動先</span><select autoFocus value={run.repositoryId || "unassigned"} onChange={(event) => moveReviewRun(run, event.target.value)} onBlur={() => setEditingRunRepositoryId("")}>{repositoryChoices.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>
