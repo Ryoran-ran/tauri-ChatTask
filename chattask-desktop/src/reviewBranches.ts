@@ -17,3 +17,7 @@ export const reviewBaseBranchCandidates = (task: Task, repository: GithubReposit
 
 export const defaultReviewBaseBranch = (task: Task, repository: GithubRepository | undefined) =>
   reviewBaseBranchCandidates(task, repository)[0] || "main";
+
+export const gitDiffClipboardCommand = (mode: "branch" | "working", base: string, target: string) => mode === "working"
+  ? "git --no-pager diff | pbcopy"
+  : `git --no-pager diff ${base.trim() || "main"}...${target.trim() || "HEAD"} | pbcopy`;

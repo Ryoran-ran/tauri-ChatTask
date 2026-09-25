@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTask } from "../appHelpers";
-import { defaultReviewBaseBranch, reviewBaseBranchCandidates } from "../reviewBranches";
+import { defaultReviewBaseBranch, gitDiffClipboardCommand, reviewBaseBranchCandidates } from "../reviewBranches";
 import type { GithubRepository } from "../types";
 
 const repository: GithubRepository = {
@@ -39,5 +39,20 @@ describe("コードレビュー・動作確認の基準ブランチ候補", () =
     const emptyRepository = { ...repository, pullRequestTargets: [] };
 
     expect(defaultReviewBaseBranch(task, emptyRepository)).toBe("main");
+  });
+
+  it("リポジトリごとの基準と比較先からDiffコマンドを作る", () => {
+    expect(gitDiffClipboardCommand("branch", "develop", "feature/example")).toBe(
+      "git --no-pager diff develop...feature/example | pbcopy",
+    );
+    expect(gitDiffClipboardCommand("branch", "release/next", "")).toBe(
+      "git --no-pager diff release/next...HEAD | pbcopy",
+    );
+  });
+
+  it("未コミット差分ではブランチ設定をコマンドへ含めない", () => {
+    expect(gitDiffClipboardCommand("working", "develop", "feature/example")).toBe(
+      "git --no-pager diff | pbcopy",
+    );
   });
 });

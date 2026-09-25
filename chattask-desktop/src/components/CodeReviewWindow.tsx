@@ -5,7 +5,7 @@ import { addAttachment, listAttachments, removeAttachment, type Attachment } fro
 import { AttachmentCards } from "./AttachmentCards";
 import { Modal } from "./Modal";
 import { parseReviewChecklist, TaskReviewChecklist } from "./TaskReviewChecklist";
-import { defaultReviewBaseBranch, reviewBaseBranchCandidates } from "../reviewBranches";
+import { defaultReviewBaseBranch, gitDiffClipboardCommand, reviewBaseBranchCandidates } from "../reviewBranches";
 import "./CodeReviewActivityBar.css";
 
 const reviewPoints = [
@@ -292,7 +292,6 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const [diffMode, setDiffMode] = useState<"branch" | "working">("branch");
   const [testCommandCopiedId, setTestCommandCopiedId] = useState("");
   const [testDiffMode, setTestDiffMode] = useState<"branch" | "working">("branch");
-  const [testCommandRepositoryId, setTestCommandRepositoryId] = useState(() => repositories[0]?.id || "");
   const commandCopiedTimer = useRef<number | null>(null);
   const verificationCopiedTimer = useRef<number | null>(null);
   const [selectedPoints, setSelectedPoints] = useState<string[]>(reviewPoints.map(([id]) => id));
@@ -331,20 +330,12 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     const settings = testSourceSettings[repository.id];
     return settings?.selected ? [{ repository, base: settings.base, target: settings.target, diff: settings.diff }] : [];
   });
-  const selectedTestCommandSource = selectedTestSources.find(({ repository }) => repository.id === testCommandRepositoryId) || selectedTestSources[0];
-  const testDiffCommand = testDiffMode === "working"
-    ? "git --no-pager diff | pbcopy"
-    : selectedTestCommandSource
-      ? `git --no-pager diff ${selectedTestCommandSource.base.trim() || "main"}...${selectedTestCommandSource.target.trim() || "HEAD"} | pbcopy`
-      : "git --no-pager diff main...HEAD | pbcopy";
   const completed = useMemo(() => checklist.filter((item) => (item.reviewStatus || (item.completed ? "completed" : "pending")) === "completed").length, [checklist]);
   const ignored = useMemo(() => checklist.filter((item) => item.reviewStatus === "ignored").length, [checklist]);
   const inProgress = useMemo(() => checklist.filter((item) => item.reviewStatus === "in-progress").length, [checklist]);
   const reviewed = completed + ignored;
   const actionableReviewCount = checklist.length - ignored;
-  const diffCommand = diffMode === "working"
-    ? "git --no-pager diff | pbcopy"
-    : `git --no-pager diff ${base.trim() || "main"}...${target.trim() || "HEAD"} | pbcopy`;
+  const diffCommand = gitDiffClipboardCommand(diffMode, base, target);
   const verificationEntries = (task.testRuns || []).flatMap((run) => (run.checks || []).map((check, index) => ({ run, check, index })));
   const verificationCheckOptions = verificationEntries.map(({ run, check }) => ({ id: check.id, label: check.title, detail: [(check.repositories?.length ? check.repositories : run.repositories?.length ? run.repositories.map((repository) => repository.name) : [run.repositoryName || "リポジトリ未設定"]).join("・"), check.screen].filter(Boolean).join("・") }));
   const timelineFilterEntry = verificationEntries.find(({ check }) => check.id === timelineFilterCheckId);
@@ -505,9 +496,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const copyTestDiffCommand = async (repositoryId: string) => {
     const settings = testSourceSettings[repositoryId];
     if (!settings) return;
-    const command = testDiffMode === "working"
-      ? "git --no-pager diff | pbcopy"
-      : `git --no-pager diff ${settings.base.trim() || "main"}...${settings.target.trim() || "HEAD"} | pbcopy`;
+    const command = gitDiffClipboardCommand(testDiffMode, settings.base, settings.target);
     try {
       await navigator.clipboard.writeText(command);
       setTestCommandCopiedId(repositoryId);
@@ -1120,11 +1109,12 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         <header><strong>1. 動作確認の対象を準備</strong><small>対象リポジトリを選び、リポジトリごとのDiffを入力</small></header>
         {!repositories.length && <p className="code-review-test-note">案件タグの設定からリポジトリを登録してください。</p>}
         {!!repositories.length && <div className="verification-source-selector"><strong>対象リポジトリ</strong><div>{repositories.map((repository) => <label key={repository.id}><input type="checkbox" checked={testSourceSettings[repository.id]?.selected || false} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...(current[repository.id] || { base: "main", target: "", diff: "" }), selected: event.target.checked } }))} />{repository.name}</label>)}</div><small>{selectedTestSources.length}件を一つの動作確認にまとめます。</small></div>}
-        {!!selectedTestCommandSource && <div className="verification-command-panel"><div className="verification-command-heading"><strong>Diff取得コマンド</strong>{selectedTestSources.length > 1 && <label>対象<select value={selectedTestCommandSource.repository.id} onChange={(event) => setTestCommandRepositoryId(event.target.value)}>{selectedTestSources.map(({ repository }) => <option value={repository.id} key={repository.id}>{repository.name}</option>)}</select></label>}</div><div className="code-review-diff-mode" role="group" aria-label="差分の種類"><span>差分の種類</span><button type="button" className={testDiffMode === "branch" ? "active" : ""} aria-pressed={testDiffMode === "branch"} onClick={() => { setTestDiffMode("branch"); setTestCommandCopiedId(""); }}>ブランチ差分</button><button type="button" className={testDiffMode === "working" ? "active" : ""} aria-pressed={testDiffMode === "working"} onClick={() => { setTestDiffMode("working"); setTestCommandCopiedId(""); }}>未コミット差分</button></div><div className="code-review-command"><code><span aria-hidden="true">$</span>{testDiffCommand}</code><button type="button" className={`primary ${testCommandCopiedId === selectedTestCommandSource.repository.id ? "copied" : ""}`} onClick={() => void copyTestDiffCommand(selectedTestCommandSource.repository.id)}>{testCommandCopiedId === selectedTestCommandSource.repository.id ? "コピー済み" : "コマンドをコピー"}</button></div><small>{testDiffMode === "working" ? "対象リポジトリのフォルダで実行し、コミット前の変更を取得します。" : "対象リポジトリのフォルダで実行し、ブランチ間の差分を取得します。"}</small></div>}
+        {!!selectedTestSources.length && <div className="verification-command-panel"><div className="verification-command-heading"><strong>Diff取得方法</strong><small>コマンドは各リポジトリからコピーします</small></div><div className="code-review-diff-mode" role="group" aria-label="差分の種類"><span>差分の種類</span><button type="button" className={testDiffMode === "branch" ? "active" : ""} aria-pressed={testDiffMode === "branch"} onClick={() => { setTestDiffMode("branch"); setTestCommandCopiedId(""); }}>ブランチ差分</button><button type="button" className={testDiffMode === "working" ? "active" : ""} aria-pressed={testDiffMode === "working"} onClick={() => { setTestDiffMode("working"); setTestCommandCopiedId(""); }}>未コミット差分</button></div><small>{testDiffMode === "working" ? "各リポジトリのフォルダで実行し、コミット前の変更を取得します。" : "各リポジトリに設定した基準・比較先の差分を取得します。"}</small></div>}
         <fieldset><legend>動作確認の観点</legend><div>{testPoints.map(([id, label]) => <label key={id}><input type="checkbox" checked={selectedTestPoints.includes(id)} onChange={(event) => setSelectedTestPoints((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))} />{label}</label>)}</div></fieldset>
         <div className="verification-source-list">{selectedTestSources.map(({ repository, base: sourceBase, target: sourceTarget, diff: sourceDiff }) => {
           const branchCandidates = reviewBaseBranchCandidates(task, repository);
-          return <section className="verification-source-card" key={repository.id}><header><strong>{repository.name}</strong><small>このリポジトリの変更差分</small></header><div className="code-review-branches"><label>基準<input list={`verification-base-branches-${repository.id}`} value={sourceBase} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], base: event.target.value } }))} placeholder="ブランチを選択または入力" /><datalist id={`verification-base-branches-${repository.id}`}>{branchCandidates.map((branch) => <option value={branch} key={branch} />)}</datalist></label><span>→</span><label>比較先<input value={sourceTarget} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], target: event.target.value } }))} placeholder="HEAD" /></label></div><div className="code-review-textarea compact"><div className="code-review-diff-label"><strong>Git Diff</strong><button type="button" className="secondary" onClick={() => void pasteTestDiff(repository.id)}>クリップボードから貼付</button></div><textarea aria-label={`${repository.name}のGit Diff`} value={sourceDiff} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], diff: event.target.value } }))} placeholder={`${repository.name} の git diffを貼り付けてください`} spellCheck={false} /></div></section>;
+          const sourceCommand = gitDiffClipboardCommand(testDiffMode, sourceBase, sourceTarget);
+          return <section className="verification-source-card" key={repository.id}><header><strong>{repository.name}</strong><small>このリポジトリの変更差分</small></header><div className="code-review-branches"><label>基準<input list={`verification-base-branches-${repository.id}`} value={sourceBase} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], base: event.target.value } }))} placeholder="ブランチを選択または入力" /><datalist id={`verification-base-branches-${repository.id}`}>{branchCandidates.map((branch) => <option value={branch} key={branch} />)}</datalist></label><span>→</span><label>比較先<input value={sourceTarget} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], target: event.target.value } }))} placeholder="HEAD" /></label></div><div className="code-review-command"><code><span aria-hidden="true">$</span>{sourceCommand}</code><button type="button" className={`primary ${testCommandCopiedId === repository.id ? "copied" : ""}`} onClick={() => void copyTestDiffCommand(repository.id)}>{testCommandCopiedId === repository.id ? "コピー済み" : "コマンドをコピー"}</button></div><div className="code-review-textarea compact"><div className="code-review-diff-label"><strong>Git Diff</strong><button type="button" className="secondary" onClick={() => void pasteTestDiff(repository.id)}>クリップボードから貼付</button></div><textarea aria-label={`${repository.name}のGit Diff`} value={sourceDiff} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], diff: event.target.value } }))} placeholder={`${repository.name} の git diffを貼り付けてください`} spellCheck={false} /></div></section>;
         })}</div>
         <button type="button" className="primary code-review-main-action" disabled={!selectedTestSources.length || selectedTestSources.some((source) => !source.diff.trim())} onClick={generateTestPrompt}>動作確認プロンプトを作成</button>
       </section>
