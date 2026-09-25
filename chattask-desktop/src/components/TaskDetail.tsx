@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
-import { taskProjectContexts } from "../projectContext";
+import { projectScheduleSource, taskProjectContexts } from "../projectContext";
 import type { GithubRepository, Goal, HistoryEntry, ProjectTag, Task, TaskLink, UserProfile } from "../types";
 import { generateId, mergeRanges, normalizeUrl, quickLinkNameForUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
 import { RecurrenceSettingsEditor } from "./RecurrenceSettingsEditor";
@@ -440,7 +440,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       type: "マイルストーン",
       title: milestone.title,
       description: milestone.description || "",
-      ranges: milestone.plannedRanges?.length ? milestone.plannedRanges : task.plannedRanges,
+      ranges: milestone.plannedRanges || [],
     })),
     ...(project.workItems || []).filter((work) => work.linkedTaskId === task.id).map((work) => ({
       id: `work-${project.id}-${work.id}`,
@@ -449,57 +449,22 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
       type: "作業項目",
       title: work.title,
       description: work.description,
-      ranges: work.plannedRanges?.length ? work.plannedRanges : task.plannedRanges,
+      ranges: work.plannedRanges || [],
     })),
   ]);
   const scheduleTitle = (range: Task["plannedRanges"][number]) => {
+    // Old synchronized ranges can retain the task/project title after the work is renamed.
+    const sourceTitle = projectScheduleSource(projects, task.id, range)?.title.trim();
+    if (sourceTitle) return sourceTitle;
     const enteredTitle = range.title?.trim();
     if (enteredTitle) return enteredTitle;
-    if (range.sourceId) {
-      for (const project of projects) {
-        if (range.sourceType === "project-work") {
-          const work = (project.workItems || []).find((item) => item.id === range.sourceId);
-          if (work?.title.trim()) return work.title.trim();
-        }
-        if (range.sourceType === "project-milestone") {
-          const milestone = project.milestones.find((item) => item.id === range.sourceId);
-          if (milestone?.title.trim()) return milestone.title.trim();
-        }
-      }
-    }
     const description = (range.description || range.note || "").trim().split("\n")[0];
     return description || `予定 ${range.startDate}`;
   };
-  const scheduleProjectContext = (range: Task["plannedRanges"][number]) => {
-    if (range.sourceId) {
-      for (const project of projects) {
-        if (range.sourceType === "project-work") {
-          const work = (project.workItems || []).find((item) => item.id === range.sourceId);
-          if (work) return { projectId: project.id, status: work.status === "done" ? "completed" : work.status, label: work.status === "done" ? "達成" : work.status === "in-progress" ? "進行中" : "未着手" };
-        }
-        if (range.sourceType === "project-milestone") {
-          const milestone = project.milestones.find((item) => item.id === range.sourceId);
-          if (milestone) {
-            const status = milestone.status || (milestone.completed ? "achieved" : "not-started");
-            return { projectId: project.id, status: status === "achieved" ? "completed" : status, label: status === "achieved" ? "達成" : status === "in-progress" ? "進行中" : "未着手" };
-          }
-        }
-      }
-    }
-    for (const project of projects) {
-      const work = (project.workItems || []).find((item) => item.linkedTaskId === task.id && (item.plannedRanges || []).some((planned) => planned.id === range.id));
-      if (work) return { projectId: project.id, status: work.status === "done" ? "completed" : work.status, label: work.status === "done" ? "達成" : work.status === "in-progress" ? "進行中" : "未着手" };
-      const milestone = project.milestones.find((item) => (item.linkedTaskId === task.id || item.taskIds.includes(task.id)) && (item.plannedRanges || []).some((planned) => planned.id === range.id));
-      if (milestone) {
-        const status = milestone.status || (milestone.completed ? "achieved" : "not-started");
-        return { projectId: project.id, status: status === "achieved" ? "completed" : status, label: status === "achieved" ? "達成" : status === "in-progress" ? "進行中" : "未着手" };
-      }
-    }
-    return { projectId: projectContexts.length === 1 ? projectContexts[0].projectId : "", status: "", label: "状態未確認" };
-  };
+  const scheduleProjectContext = (range: Task["plannedRanges"][number]) => projectScheduleSource(projects, task.id, range);
   const incompleteScheduleCount = task.plannedRanges.filter((range) => {
     if (range.status === "completed") return false;
-    return scheduleProjectContext(range).status !== "completed";
+    return scheduleProjectContext(range)?.status !== "completed";
   }).length;
   const currentRanges = [...task.plannedRanges.filter((range) => range.endDate >= todayValue() || range.status !== "completed"), ...(task.unscheduledPlans || [])];
   const pastRanges = task.plannedRanges.filter((range) => range.endDate < todayValue() && range.status === "completed");
