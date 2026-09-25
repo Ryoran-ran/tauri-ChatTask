@@ -262,7 +262,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
   }, [exportMenuOpen]);
   const selectedProject = projects.find((project) => project.id === projectId);
   const selectedMilestoneIds = new Set(selectedProject?.milestones.map((milestone) => milestone.id) || []);
-  const selectedMilestoneWorks = (selectedProject?.workItems || []).filter((work) => Boolean(work.milestoneId) && selectedMilestoneIds.has(work.milestoneId));
+  const selectedProjectWorks = (selectedProject?.workItems || []).filter((work) => !work.milestoneId || selectedMilestoneIds.has(work.milestoneId));
   const projectDates = selectedProject ? [
     selectedProject.dueDate,
     ...selectedProject.milestones.flatMap((milestone) => [
@@ -270,7 +270,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
       ...(milestone.plannedRanges || []).flatMap((range) => [range.startDate, range.endDate]),
       ...(milestone.baselinePlannedRanges || []).flatMap((range) => [range.startDate, range.endDate]),
     ]),
-    ...selectedMilestoneWorks.flatMap((work) => [
+    ...selectedProjectWorks.flatMap((work) => [
       work.dueDate,
       ...(work.plannedRanges || []).flatMap((range) => [range.startDate, range.endDate]),
       ...(work.baselinePlannedRanges || []).flatMap((range) => [range.startDate, range.endDate]),
@@ -469,8 +469,8 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
       };
     });
     const validMilestoneIds = new Set(selectedProject.milestones.map((milestone) => milestone.id));
-    const milestoneWorkItems = (selectedProject.workItems || []).filter((item) => Boolean(item.milestoneId) && validMilestoneIds.has(item.milestoneId));
-    const workBase: GanttRow[] = milestoneWorkItems.map((item) => {
+    const projectWorkItems = (selectedProject.workItems || []).filter((item) => !item.milestoneId || validMilestoneIds.has(item.milestoneId));
+    const workBase: GanttRow[] = projectWorkItems.map((item) => {
       const linked = ganttTasks.find((task) => task.id === item.linkedTaskId);
       // 作業項目と関連ChatTaskの予定は独立している。
       // 作業に予定がなければ、関連ChatTaskの予定線を代わりに描画しない。
@@ -495,25 +495,30 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
       }
       return 0;
     };
+    const compareWorkRows = (a: GanttRow, b: GanttRow) => {
+      const dateOrder = compareByStartDate(a, b);
+      if (dateOrder) return dateOrder;
+      const aw = selectedProject.workItems?.find((item) => `work:${item.id}` === a.id);
+      const bw = selectedProject.workItems?.find((item) => `work:${item.id}` === b.id);
+      return (aw?.sortOrder || 0) - (bw?.sortOrder || 0);
+    };
     const milestoneRows = milestoneBase.map((milestone) => {
-      const works = workBase.filter((work) => work.parentId === milestone.id).sort((a, b) => {
-        const dateOrder = compareByStartDate(a, b);
-        if (dateOrder) return dateOrder;
-        const aw = selectedProject.workItems?.find((item) => `work:${item.id}` === a.id);
-        const bw = selectedProject.workItems?.find((item) => `work:${item.id}` === b.id);
-        return (aw?.sortOrder || 0) - (bw?.sortOrder || 0);
-      });
+      const works = workBase.filter((work) => work.parentId === milestone.id).sort(compareWorkRows);
       const aggregate = works.length
         ? aggregateRows(milestone.id, "milestone", milestone.title, milestone.status, 1, works, milestone.dueDate)
         : milestone;
       return { ...milestone, ...aggregate, hasChildren: works.length > 0, linkedTaskId: milestone.linkedTaskId, parentId: `project:${selectedProject.id}`, children: works };
     });
     const milestoneOrder = new Map(selectedProject.milestones.map((item, index) => [`milestone:${item.id}`, item.sortOrder ?? index]));
-    const projectChildren = [...milestoneRows].sort((a, b) => {
+    const orderedMilestones = [...milestoneRows].sort((a, b) => {
       const aOrder = milestoneOrder.get(a.id);
       const bOrder = milestoneOrder.get(b.id);
       return (aOrder ?? 0) - (bOrder ?? 0);
     });
+    const directWorks = workBase
+      .filter((work) => work.parentId === `project:${selectedProject.id}`)
+      .sort(compareWorkRows);
+    const projectChildren = [...orderedMilestones, ...directWorks];
     projectChildren.forEach((item) => ordered.push(item, ...((item as GanttRow & { children?: GanttRow[] }).children || [])));
     const projectRow = aggregateRows(`project:${selectedProject.id}`, "project", selectedProject.title, selectedProject.status, 0, projectChildren, selectedProject.dueDate);
     return [projectRow, ...ordered];
