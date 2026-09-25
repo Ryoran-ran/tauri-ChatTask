@@ -199,6 +199,9 @@ function App() {
   const deleteProject = (id: string) => setData((current) => ({
     ...current,
     goals: current.goals.filter((project) => project.id !== id),
+    habits: current.habits.map((habit) => habit.projectId === id
+      ? { ...habit, projectId: "", updatedAt: new Date().toISOString() }
+      : habit),
   }));
   const projectStatusFromTask = (status: TaskStatus): GoalStatus => {
     switch (status) {
