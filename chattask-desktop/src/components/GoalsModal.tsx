@@ -15,6 +15,21 @@ const WORK_STATUS = { "not-started": "未着手", "in-progress": "進行中", do
 const MILESTONE_STATUS = { "not-started": "未着手", "in-progress": "進行中", achieved: "達成" } as const;
 type CreateRelatedTask = (title: string, parentTaskId?: string, changes?: Partial<Task>, openAfterCreate?: boolean) => string;
 
+const changedProjectFields = (before: Goal, after: Goal): Partial<Goal> => {
+  const changes: Partial<Goal> = {};
+  (Object.keys(after) as (keyof Goal)[]).forEach((key) => {
+    if (key === "id" || key === "createdAt" || key === "updatedAt") return;
+    if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) {
+      Object.assign(changes, { [key]: after[key] });
+    }
+  });
+  return changes;
+};
+
+const effectiveProjectChanges = (project: Goal, changes: Partial<Goal>): Partial<Goal> => Object.fromEntries(
+  Object.entries(changes).filter(([key, value]) => JSON.stringify(project[key as keyof Goal]) !== JSON.stringify(value)),
+) as Partial<Goal>;
+
 const normalizeProject = (project: Goal): Goal => {
   const now = new Date().toISOString();
   const existingWork = (project.workItems || []).flatMap((item, index) => {
@@ -341,7 +356,7 @@ function ScheduleDate({ ranges, showUnscheduled = false }: { ranges: PlannedRang
 function StatusSyncState(_: { task: Task | null | undefined; status: "not-started" | "in-progress" | "achieved" | "done"; enabled: boolean; onReflect: () => void }) {
   return null;
 }
-export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onSave: (projects: Goal[]) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
+export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreateProject, onUpdateProject, onDeleteProject, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onCreateProject: (project: Goal) => void; onUpdateProject: (id: string, changes: Partial<Goal>) => void; onDeleteProject: (id: string) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
   const [items, setItems] = useState<Goal[]>(() => projects.map(normalizeProject).map((project) => ({
     ...project,
     workItems: (project.workItems || []).map((work) => restoreWorkTitleFromLinkedSchedule(work, tasks)),
@@ -443,9 +458,6 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       dailyActualHours: restore(linkedTask.dailyActualHours),
     }, "プロジェクトとの関連解除により、Task側の予定を復元しました。");
   };
-  useEffect(() => {
-    onSave(items);
-  }, [items]);
   useEffect(() => { localStorage.setItem("chatTaskProjectAdvancedFilter", JSON.stringify(advancedFilter)); }, [advancedFilter]);
   useEffect(() => { localStorage.setItem("chatTaskProjectSortRules", JSON.stringify(sortRules)); }, [sortRules]);
   useEffect(() => {
@@ -466,6 +478,11 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     });
   };
   const completeProjectEdit = () => {
+    const currentProject = items.find((item) => item.id === editSnapshot?.id);
+    if (editSnapshot && currentProject) {
+      const changes = changedProjectFields(editSnapshot, currentProject);
+      if (Object.keys(changes).length) onUpdateProject(currentProject.id, changes);
+    }
     setEditSnapshot(null);
     setEditTaskSnapshots([]);
     setEditingBoard(false);
@@ -474,7 +491,6 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     if (!editSnapshot) return completeProjectEdit();
     const next = items.map((item) => item.id === editSnapshot.id ? editSnapshot : item);
     setItems(next);
-    onSave(next);
     const currentProject = items.find((item) => item.id === editSnapshot.id);
     const linkedTaskIds = (project: Goal | null | undefined) => [
       ...(project?.milestones || []).map((milestone) => milestone.linkedTaskId || ""),
@@ -590,8 +606,20 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       localStorage.setItem(LAST_SELECTED_PROJECT_KEY, selectedId);
     }
   }, [items, selectedId]);
-  const update = (changes: Partial<Goal>) => setItems((current) => current.map((item) => item.id === selectedId ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item));
-  const add = () => { const next = blankProject(); setItems((current) => [next, ...current]); setSelectedId(next.id); };
+  const update = (changes: Partial<Goal>) => {
+    if (!storedProject) return;
+    const effectiveChanges = effectiveProjectChanges(storedProject, changes);
+    if (!Object.keys(effectiveChanges).length) return;
+    const updatedAt = new Date().toISOString();
+    setItems((current) => current.map((item) => item.id === selectedId ? { ...item, ...effectiveChanges, updatedAt } : item));
+    if (selectedId && !editingBoard) onUpdateProject(selectedId, effectiveChanges);
+  };
+  const add = () => {
+    const next = blankProject();
+    setItems((current) => [next, ...current]);
+    onCreateProject(next);
+    setSelectedId(next.id);
+  };
   const remove = () => {
     if (project) {
       void removeTaskAttachments(`project:${project.id}`).catch(() => undefined);
@@ -604,7 +632,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     }
     const next = items.filter((item) => item.id !== selectedId);
     setItems(next);
-    onSave(next);
+    onDeleteProject(selectedId);
     setSelectedId(visible.find((item) => item.id !== selectedId)?.id || "");
     setDeleteConfirm(false);
   };
@@ -748,10 +776,13 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     if (work.linkedTaskId) syncProjectSchedule(work.linkedTaskId, plannedRanges, "project-work", work.id, plannedHours, "プロジェクトの作業項目から予定と予定工数を更新しました。");
   };
   const persistProjectChanges = (changes: Partial<Goal>) => {
+    if (!storedProject) return;
+    const effectiveChanges = effectiveProjectChanges(storedProject, changes);
+    if (!Object.keys(effectiveChanges).length) return;
     const now = new Date().toISOString();
-    const next = items.map((item) => item.id === selectedId ? { ...item, ...changes, updatedAt: now } : item);
+    const next = items.map((item) => item.id === selectedId ? { ...item, ...effectiveChanges, updatedAt: now } : item);
     setItems(next);
-    onSave(next);
+    if (selectedId) onUpdateProject(selectedId, effectiveChanges);
   };
   const deleteMilestone = (id: string) => {
     if (!storedProject) return;
@@ -821,7 +852,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       {advancedFilterOpen && <ProjectAdvancedFilterModal filter={advancedFilter} tags={tags} onApply={setAdvancedFilter} onClose={() => setAdvancedFilterOpen(false)} />}
       {sortEditorOpen && <ProjectSortModal rules={sortRules} onChange={setSortRules} onClose={() => setSortEditorOpen(false)} />}
       <div className="goal-footer">{deleteConfirm ? <div><span>プロジェクトだけを削除します。起点ToDoは残ります。</span><button onClick={() => setDeleteConfirm(false)}>取消</button><button className="danger" onClick={remove}>削除する</button></div> : <button className="danger-text" onClick={() => setDeleteConfirm(true)}>プロジェクトを削除</button>}<span className="autosave-status">自動保存</span><button className="primary" onClick={onClose}>閉じる</button></div>
-      {projectEditDraft && createPortal(<div className="project-editor-backdrop" onPointerDown={() => setProjectEditDraft(null)}><section className="project-editor-dialog" role="dialog" aria-modal="true" aria-label="プロジェクトを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>PROJECT</small><h3>プロジェクトを編集</h3><p>名称や状態、期限などの基本情報を変更します。</p></div><button type="button" aria-label="閉じる" onClick={() => setProjectEditDraft(null)}>×</button></header><div className="project-editor-fields"><label className="project-editor-title">プロジェクト名<input autoFocus value={projectEditDraft.title} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, title: event.target.value })} /></label><label>状態<select value={projectEditDraft.status} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, status: event.target.value as GoalStatus })}>{Object.entries(STATUS_LABELS).filter(([value]) => value !== "cancelled").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>優先度<select value={projectEditDraft.priority} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, priority: event.target.value as Goal["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>案件タグ<select value={projectEditDraft.projectTagId} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, projectTagId: event.target.value })}><option value="">タグなし</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label><label>GOAL期限<WorkDatePicker ariaLabel="GOAL期限" value={projectEditDraft.dueDate} onChange={(dueDate) => setProjectEditDraft({ ...projectEditDraft, dueDate })} /></label><label className="project-editor-description">プロジェクトの説明<textarea rows={5} value={projectEditDraft.description} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, description: event.target.value })} /></label><label className="project-editor-description">GOAL（最終達成条件）<textarea rows={4} value={projectEditDraft.successCriteria} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, successCriteria: event.target.value })} placeholder="どの状態になれば完了か" /></label></div><footer><button type="button" onClick={() => setProjectEditDraft(null)}>キャンセル</button><button type="button" className="primary" disabled={!projectEditDraft.title.trim()} onClick={() => { persistProjectChanges(projectEditDraft); setProjectEditDraft(null); }}>保存</button></footer></section></div>, document.body)}
+      {projectEditDraft && createPortal(<div className="project-editor-backdrop" onPointerDown={() => setProjectEditDraft(null)}><section className="project-editor-dialog" role="dialog" aria-modal="true" aria-label="プロジェクトを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>PROJECT</small><h3>プロジェクトを編集</h3><p>名称や状態、期限などの基本情報を変更します。</p></div><button type="button" aria-label="閉じる" onClick={() => setProjectEditDraft(null)}>×</button></header><div className="project-editor-fields"><label className="project-editor-title">プロジェクト名<input autoFocus value={projectEditDraft.title} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, title: event.target.value })} /></label><label>状態<select value={projectEditDraft.status} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, status: event.target.value as GoalStatus })}>{Object.entries(STATUS_LABELS).filter(([value]) => value !== "cancelled").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>優先度<select value={projectEditDraft.priority} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, priority: event.target.value as Goal["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>案件タグ<select value={projectEditDraft.projectTagId} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, projectTagId: event.target.value })}><option value="">タグなし</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label><label>GOAL期限<WorkDatePicker ariaLabel="GOAL期限" value={projectEditDraft.dueDate} onChange={(dueDate) => setProjectEditDraft({ ...projectEditDraft, dueDate })} /></label><label className="project-editor-description">プロジェクトの説明<textarea rows={5} value={projectEditDraft.description} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, description: event.target.value })} /></label><label className="project-editor-description">GOAL（最終達成条件）<textarea rows={4} value={projectEditDraft.successCriteria} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, successCriteria: event.target.value })} placeholder="どの状態になれば完了か" /></label></div><footer><button type="button" onClick={() => setProjectEditDraft(null)}>キャンセル</button><button type="button" className="primary" disabled={!projectEditDraft.title.trim()} onClick={() => { if (storedProject) persistProjectChanges(changedProjectFields(storedProject, projectEditDraft)); setProjectEditDraft(null); }}>保存</button></footer></section></div>, document.body)}
     </> : <div className="empty-list">プロジェクトを追加してください。</div>}</main>
   </div></Modal>;
 }

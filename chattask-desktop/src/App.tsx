@@ -186,18 +186,19 @@ function App() {
     }));
   }, []);
   const openProjects = (projectId = "") => { setProjectFocusId(projectId); setGoalsOpen(true); };
-  const saveProjects = (goals: Goal[]) => setData((current) => repairDuplicateProjectSchedules({
+  const createProject = (project: Goal) => setData((current) => ({
     ...current,
-    goals,
-    tasks: current.tasks.map((task) => ({
-      ...task,
-      plannedRanges: task.plannedRanges.map((range) => {
-        if (range.sourceType !== "project-milestone" || !range.sourceId) return range;
-        const migratedWork = goals.flatMap((goal) => goal.workItems || []).find((work) =>
-          work.linkedTaskId === task.id && work.plannedRanges?.some((workRange) => workRange.id === range.id));
-        return migratedWork ? { ...range, sourceType: "project-work" as const, sourceId: migratedWork.id } : range;
-      }),
-    })),
+    goals: current.goals.some((item) => item.id === project.id) ? current.goals : [project, ...current.goals],
+  }));
+  const updateProject = (id: string, changes: Partial<Goal>) => setData((current) => ({
+    ...current,
+    goals: current.goals.map((project) => project.id === id
+      ? { ...project, ...changes, updatedAt: new Date().toISOString() }
+      : project),
+  }));
+  const deleteProject = (id: string) => setData((current) => ({
+    ...current,
+    goals: current.goals.filter((project) => project.id !== id),
   }));
   const projectStatusFromTask = (status: TaskStatus): GoalStatus => {
     switch (status) {
@@ -1042,7 +1043,7 @@ function App() {
     {reportOpen && <ReportModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} activity={data.activityLog} dailyNotes={data.dailyNotes} nonWorkingPeriods={data.nonWorkingPeriods} onClose={() => setReportOpen(false)} />}
     {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     {profileOpen && <ProfileModal profile={data.userProfile} onSave={(userProfile) => setData((current) => ({ ...current, userProfile }))} onClose={() => setProfileOpen(false)} />}
-    {goalsOpen && <ProjectsModal projects={data.goals} tasks={data.tasks} tags={data.projectTags} initialProjectId={projectFocusId} onSave={saveProjects} onCreateTask={createRelatedTask} onUpdateTask={updateTaskById} onSelectTask={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); }} onOpenGantt={(id) => { setProjectFocusId(id); setGanttProjectId(id); setGanttReturnProjectId(id); setGanttOpen(true); }} onClose={() => { setGoalsOpen(false); setProjectFocusId(""); }} />}
+    {goalsOpen && <ProjectsModal projects={data.goals} tasks={data.tasks} tags={data.projectTags} initialProjectId={projectFocusId} onCreateProject={createProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} onCreateTask={createRelatedTask} onUpdateTask={updateTaskById} onSelectTask={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); }} onOpenGantt={(id) => { setProjectFocusId(id); setGanttProjectId(id); setGanttReturnProjectId(id); setGanttOpen(true); }} onClose={() => { setGoalsOpen(false); setProjectFocusId(""); }} />}
     {ganttOpen && <GanttModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} periods={data.nonWorkingPeriods} calculationPeriods={effectiveNonWorkingPeriods} initialProjectId={ganttProjectId} onSelect={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); setGanttOpen(false); setGanttProjectId(""); setGanttReturnProjectId(""); }} onClose={() => { setGanttOpen(false); setGanttProjectId(""); if (ganttReturnProjectId) { setProjectFocusId(ganttReturnProjectId); setGoalsOpen(true); } setGanttReturnProjectId(""); }} />}
     {weeklyLoadOpen && <WeeklyLoadModal tasks={data.tasks} tags={data.projectTags} periods={effectiveNonWorkingPeriods} onSelect={(id) => { setSelectedId(id); setWeeklyLoadOpen(false); }} onClose={() => setWeeklyLoadOpen(false)} />}
     {issuesOpen && <IssuesModal issues={data.issues} onSave={(issues) => setData((current) => ({ ...current, issues }))} onClose={() => setIssuesOpen(false)} />}
