@@ -119,7 +119,7 @@ export function checkAppDataIntegrity(data: AppData): IntegrityCheckResult {
     });
     (goal.workItems || []).forEach((work) => {
       const workTarget = `${target} / 作業「${work.title || work.id}」`;
-      if (!milestoneById.has(work.milestoneId) || !goal.milestones.some((milestone) => milestone.id === work.milestoneId)) add({ severity: "error", category: "プロジェクト構造", target: workTarget, message: "所属マイルストーンが見つかりません。", suggestion: "正しいマイルストーンへ移動するか、不要な作業を削除してください。" });
+      if (work.milestoneId && (!milestoneById.has(work.milestoneId) || !goal.milestones.some((milestone) => milestone.id === work.milestoneId))) add({ severity: "error", category: "プロジェクト構造", target: workTarget, message: "所属マイルストーンが見つかりません。", suggestion: "正しいマイルストーンへ移動するか、プロジェクト直属へ変更してください。" });
       if (work.linkedTaskId && !taskById.has(work.linkedTaskId)) add({ severity: "error", category: "プロジェクト連携", target: workTarget, message: "関連タスクが見つかりません。", suggestion: "関連タスクを選び直してください。" });
       if (!finiteNonNegative(work.plannedHours) || !finiteNonNegative(work.actualHours)) add({ severity: "error", category: "工数", target: workTarget, message: "予定または実績工数が負数・不正値です。", suggestion: "0以上の数値へ修正してください。" });
       if ((work.plannedRanges || []).length > 1) add({ severity: "warning", category: "予定", target: workTarget, message: "1作業に複数の予定が登録されています。", suggestion: "現在の仕様に合わせ、作業予定を1件へ統合してください。" });
