@@ -52,7 +52,7 @@ const remapRecordKeysWithoutOverwrite = <T,>(
 
 const normalizeProject = (project: Goal): Goal => {
   const now = new Date().toISOString();
-  const existingWork = (project.workItems || []).flatMap((item, index) => {
+  const existingWork = (project.workItems || []).map((item, index) => {
     const plannedRanges = item.plannedRanges || [];
     const baselinePlannedRanges = item.baselinePlannedRanges || [];
     const base = {
@@ -70,27 +70,7 @@ const normalizeProject = (project: Goal): Goal => {
       linkedTaskPlannedHoursSnapshot: Number(item.linkedTaskPlannedHoursSnapshot) || 0,
       syncLinkedTaskStatus: item.syncLinkedTaskStatus !== false,
     };
-    if (plannedRanges.length <= 1) return [base];
-
-    // 旧形式では1つの作業に複数の予定を持てたため、予定単位の作業へ分割する。
-    // 通常のChatTaskの複数予定は対象外で、ProjectWorkItemだけを移行する。
-    return plannedRanges.map((range, rangeIndex) => {
-      const baseline = baselinePlannedRanges.find((candidate) => candidate.id === range.id)
-        || baselinePlannedRanges[rangeIndex]
-        || range;
-      return {
-        ...base,
-        id: rangeIndex === 0 ? item.id : `${item.id}:${range.id}`,
-        title: range.title?.trim() || item.title,
-        description: range.description?.trim() || range.note?.trim() || item.description,
-        dueDate: item.dueDate || range.endDate || range.startDate,
-        plannedHours: Number(range.plannedHours) || 0,
-        plannedRanges: [range],
-        baselinePlannedRanges: [baseline],
-        baselinePlannedHours: Number(baseline.plannedHours) || 0,
-        sortOrder: (item.sortOrder ?? index) + rangeIndex / 100,
-      };
-    });
+    return base;
   });
   const migratedWork: ProjectWorkItem[] = [];
   const milestones = (project.milestones || []).map((item, index) => {

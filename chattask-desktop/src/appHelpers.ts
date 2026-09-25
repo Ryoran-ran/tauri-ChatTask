@@ -1,4 +1,4 @@
-import type { AppData, HistoryEntry, Task } from "./types";
+import type { AppData, Goal, HistoryEntry, ProjectWorkItem, Task } from "./types";
 import { isActiveProjectScheduleSource } from "./projectContext";
 import { generateId } from "./utils";
 
@@ -18,6 +18,55 @@ export const appendHistory = (task: Task, text: string): HistoryEntry[] => [
   ...task.history,
   { id: generateId(), type: "system", text, timestamp: new Date().toISOString() },
 ];
+
+type ProjectWorkSourceMigration = {
+  linkedTaskId: string;
+  previousSourceId: string;
+  rangeId: string;
+  nextSourceId: string;
+};
+
+const splitLegacyProjectWork = (project: Goal): { project: Goal; migrations: ProjectWorkSourceMigration[]; changed: boolean } => {
+  const existingIds = new Set((project.workItems || []).map((work) => work.id));
+  const migrations: ProjectWorkSourceMigration[] = [];
+  let changed = false;
+  const workItems = (project.workItems || []).flatMap((item, index): ProjectWorkItem[] => {
+    const plannedRanges = item.plannedRanges || [];
+    if (plannedRanges.length <= 1) return [item];
+    changed = true;
+    const baselines = item.baselinePlannedRanges || [];
+    return plannedRanges.map((range, rangeIndex) => {
+      let nextId = item.id;
+      if (rangeIndex > 0) {
+        const baseId = `${item.id}:${range.id}`;
+        nextId = baseId;
+        let suffix = 2;
+        while (existingIds.has(nextId)) nextId = `${baseId}:${suffix++}`;
+        existingIds.add(nextId);
+      }
+      if (item.linkedTaskId) migrations.push({
+        linkedTaskId: item.linkedTaskId,
+        previousSourceId: item.id,
+        rangeId: range.id,
+        nextSourceId: nextId,
+      });
+      const baseline = baselines.find((candidate) => candidate.id === range.id) || baselines[rangeIndex] || range;
+      return {
+        ...item,
+        id: nextId,
+        title: range.title?.trim() || item.title,
+        description: range.description?.trim() || range.note?.trim() || item.description,
+        dueDate: item.dueDate || range.endDate || range.startDate,
+        plannedHours: Number(range.plannedHours) || 0,
+        plannedRanges: [range],
+        baselinePlannedRanges: [baseline],
+        baselinePlannedHours: Number(baseline.plannedHours) || 0,
+        sortOrder: (item.sortOrder ?? index) + rangeIndex / 100,
+      };
+    });
+  });
+  return { project: changed ? { ...project, workItems } : project, migrations, changed };
+};
 
 export const jumpToTaskMatch = (query: string) => {
   window.setTimeout(() => {
@@ -65,11 +114,33 @@ export const jumpToTaskMatch = (query: string) => {
  */
 export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
   let repaired = false;
+  const sourceMigrations = new Map<string, Set<string>>();
+  const goals = data.goals.map((project) => {
+    const split = splitLegacyProjectWork(project);
+    if (split.changed) repaired = true;
+    split.migrations.forEach((migration) => {
+      const key = [migration.linkedTaskId, migration.previousSourceId, migration.rangeId].join("\u0000");
+      const candidates = sourceMigrations.get(key) || new Set<string>();
+      candidates.add(migration.nextSourceId);
+      sourceMigrations.set(key, candidates);
+    });
+    return split.project;
+  });
   const tasks = data.tasks.map((task) => {
     let taskRepaired = false;
-    const normalizedProjectRanges = task.plannedRanges.map((range) => {
+    const remappedProjectRanges = task.plannedRanges.map((range) => {
+      if (range.sourceType !== "project-work" || !range.sourceId) return range;
+      const candidates = sourceMigrations.get([task.id, range.sourceId, range.id].join("\u0000"));
+      if (!candidates || candidates.size !== 1) return range;
+      const [nextSourceId] = candidates;
+      if (nextSourceId === range.sourceId) return range;
+      repaired = true;
+      taskRepaired = true;
+      return { ...range, sourceId: nextSourceId };
+    });
+    const normalizedProjectRanges = remappedProjectRanges.map((range) => {
       const hasProjectMetadata = Boolean(range.sourceType || range.sourceId);
-      if (!hasProjectMetadata || isActiveProjectScheduleSource(data.goals, task.id, range.sourceType, range.sourceId)) return range;
+      if (!hasProjectMetadata || isActiveProjectScheduleSource(goals, task.id, range.sourceType, range.sourceId)) return range;
 
       // Keep the user's schedule itself. Only release the stale project ownership
       // so it can be edited or deleted in the same way as an ordinary plan.
@@ -109,5 +180,5 @@ export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
         : task.plannedHours,
     };
   });
-  return repaired ? { ...data, tasks } : data;
+  return repaired ? { ...data, goals, tasks } : data;
 };
