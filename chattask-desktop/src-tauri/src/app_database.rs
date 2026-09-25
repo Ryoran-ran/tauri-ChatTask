@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
-use std::{collections::HashMap, fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{collections::HashMap, fs, path::{Component, Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{AppHandle, Manager};
 
 #[derive(Serialize)]
@@ -11,6 +11,67 @@ pub struct BackupInfo {
     pub path: String,
     pub created_at: u64,
     pub size: u64,
+    pub complete: bool,
+}
+
+const COMPLETE_BACKUP_EXTENSION: &str = "chattask-backup";
+
+fn safe_component(value: &str) -> Option<String> {
+    let path = Path::new(value);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(component)), None) => {
+            let safe = component.to_string_lossy().chars()
+                .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+                .collect::<String>();
+            (!safe.is_empty()).then_some(safe)
+        }
+        _ => None,
+    }
+}
+
+fn copy_directory(source: &Path, destination: &Path) -> Result<u64, String> {
+    if !source.exists() { return Ok(0); }
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let mut total = 0_u64;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        if file_type.is_symlink() { continue; }
+        let target = destination.join(entry.file_name());
+        if file_type.is_dir() {
+            total = total.saturating_add(copy_directory(&entry.path(), &target)?);
+        } else if file_type.is_file() {
+            total = total.saturating_add(fs::copy(entry.path(), target).map_err(|error| error.to_string())?);
+        }
+    }
+    Ok(total)
+}
+
+fn path_size(path: &Path) -> Result<u64, String> {
+    if path.is_file() { return Ok(path.metadata().map_err(|error| error.to_string())?.len()); }
+    if !path.is_dir() { return Ok(0); }
+    let mut total = 0_u64;
+    for entry in fs::read_dir(path).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if entry.file_type().map_err(|error| error.to_string())?.is_symlink() { continue; }
+        total = total.saturating_add(path_size(&entry.path())?);
+    }
+    Ok(total)
+}
+
+fn prune_automatic_backups(root: &Path, keep: usize) -> Result<(), String> {
+    let mut backups = fs::read_dir(root).map_err(|error| error.to_string())?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("automatic-"))
+        .collect::<Vec<_>>();
+    backups.sort_by_key(|entry| std::cmp::Reverse(entry.metadata().and_then(|metadata| metadata.modified()).ok()));
+    for entry in backups.into_iter().skip(keep) {
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        if file_type.is_dir() { fs::remove_dir_all(entry.path()).map_err(|error| error.to_string())?; }
+        else if file_type.is_file() { fs::remove_file(entry.path()).map_err(|error| error.to_string())?; }
+    }
+    Ok(())
 }
 
 fn normalized_environment(environment: &str) -> &'static str {
@@ -21,6 +82,11 @@ fn database_path(app: &AppHandle, environment: &str) -> Result<PathBuf, String> 
     let directory = app.path().app_data_dir().map_err(|error| error.to_string())?;
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
     Ok(directory.join(if normalized_environment(environment) == "test" { "app-data-test.sqlite3" } else { "app-data.sqlite3" }))
+}
+
+#[tauri::command]
+pub fn get_app_database_path(app: AppHandle, environment: String) -> Result<String, String> {
+    Ok(database_path(&app, &environment)?.to_string_lossy().into_owned())
 }
 
 fn backup_root(app: &AppHandle, environment: &str) -> Result<PathBuf, String> {
@@ -304,13 +370,66 @@ fn load_from_connection(connection: &Connection) -> Result<Option<Value>, String
     })))
 }
 
+fn backup_destination(root: &Path, prefix: &str, created_at: u64) -> PathBuf {
+    let mut path = root.join(format!("{prefix}-{created_at}.{COMPLETE_BACKUP_EXTENSION}"));
+    let mut suffix = 2;
+    while path.exists() {
+        path = root.join(format!("{prefix}-{created_at}-{suffix}.{COMPLETE_BACKUP_EXTENSION}"));
+        suffix += 1;
+    }
+    path
+}
+
+fn copy_file_if_exists(source: &Path, destination: &Path) -> Result<(), String> {
+    if !source.is_file() { return Ok(()); }
+    if let Some(parent) = destination.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
+    fs::copy(source, destination).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn backup_managed_tools(data: &Value, destination: &Path) -> Result<(), String> {
+    let Some(tools) = data.get("localTools").and_then(Value::as_array) else { return Ok(()); };
+    for tool in tools {
+        if tool.get("managedCopy").and_then(Value::as_bool) != Some(true) { continue; }
+        let id = tool.get("id").and_then(Value::as_str).and_then(safe_component)
+            .ok_or_else(|| "管理ツールのIDが不正です。".to_string())?;
+        let folder = tool.get("folderPath").and_then(Value::as_str).map(PathBuf::from)
+            .ok_or_else(|| format!("管理ツール {id} の保存先がありません。"))?;
+        if !folder.is_dir() { return Err(format!("管理ツール {id} の保存先が見つかりません。")); }
+        let marker = fs::read_to_string(folder.join(".chattask-tool")).map_err(|_| format!("管理ツール {id} の管理情報を確認できません。"))?;
+        if marker != id { return Err(format!("管理ツール {id} の管理情報が一致しません。")); }
+        copy_directory(&folder, &destination.join(id))?;
+    }
+    Ok(())
+}
+
 fn write_backup(app: &AppHandle, environment: &str, data: &Value, prefix: &str) -> Result<BackupInfo, String> {
     let created_at = now_epoch();
-    let file_name = format!("{prefix}-{created_at}.json");
-    let path = backup_root(app, environment)?.join(&file_name);
-    let bytes = serde_json::to_vec_pretty(data).map_err(|error| error.to_string())?;
-    fs::write(&path, &bytes).map_err(|error| error.to_string())?;
-    Ok(BackupInfo { file_name, path: path.to_string_lossy().into_owned(), created_at, size: bytes.len() as u64 })
+    let root = backup_root(app, environment)?;
+    let path = backup_destination(&root, prefix, created_at);
+    let temporary = root.join(format!(".creating-{prefix}-{created_at}-{}", std::process::id()));
+    if temporary.exists() { fs::remove_dir_all(&temporary).map_err(|error| error.to_string())?; }
+    fs::create_dir(&temporary).map_err(|error| error.to_string())?;
+    let result = (|| {
+        let bytes = serde_json::to_vec_pretty(data).map_err(|error| error.to_string())?;
+        fs::write(temporary.join("data.json"), bytes).map_err(|error| error.to_string())?;
+        let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+        copy_file_if_exists(&app_data.join("attachments.sqlite3"), &temporary.join("attachments.sqlite3"))?;
+        copy_directory(&app_data.join("attachments"), &temporary.join("attachments"))?;
+        copy_directory(&app_data.join("profile"), &temporary.join("profile"))?;
+        backup_managed_tools(data, &temporary.join("local-tools"))?;
+        fs::write(temporary.join("backup-format.json"), br#"{"version":1,"kind":"complete"}"#).map_err(|error| error.to_string())?;
+        fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
+        Ok::<(), String>(())
+    })();
+    if let Err(error) = result {
+        let _ = fs::remove_dir_all(&temporary);
+        return Err(error);
+    }
+    let size = path_size(&path)?;
+    let file_name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default().to_string();
+    if prefix == "automatic" { prune_automatic_backups(&root, 7)?; }
+    Ok(BackupInfo { file_name, path: path.to_string_lossy().into_owned(), created_at, size, complete: true })
 }
 
 fn maybe_automatic_backup(app: &AppHandle, environment: &str, connection: &Connection) -> Result<(), String> {
@@ -318,8 +437,12 @@ fn maybe_automatic_backup(app: &AppHandle, environment: &str, connection: &Conne
         .and_then(|value| value.parse::<u64>().ok()).unwrap_or(0);
     if now_epoch().saturating_sub(last) < 86_400 { return Ok(()); }
     if let Some(data) = load_from_connection(connection)? {
-        write_backup(app, environment, &data, "automatic")?;
-        connection.execute("INSERT INTO app_meta(key,value) VALUES ('last_backup_at',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![now_epoch().to_string()]).map_err(|error| error.to_string())?;
+        match write_backup(app, environment, &data, "automatic") {
+            Ok(_) => {
+                connection.execute("INSERT INTO app_meta(key,value) VALUES ('last_backup_at',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![now_epoch().to_string()]).map_err(|error| error.to_string())?;
+            }
+            Err(error) => eprintln!("完全バックアップの自動作成に失敗しました: {error}"),
+        }
     }
     Ok(())
 }
@@ -360,23 +483,142 @@ pub fn list_app_backups(app: AppHandle, environment: String) -> Result<Vec<Backu
     for entry in fs::read_dir(backup_root(&app, &environment)?).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
         let metadata = entry.metadata().map_err(|error| error.to_string())?;
-        if !metadata.is_file() || entry.path().extension().and_then(|value| value.to_str()) != Some("json") { continue; }
+        let complete = metadata.is_dir() && entry.path().extension().and_then(|value| value.to_str()) == Some(COMPLETE_BACKUP_EXTENSION);
+        let legacy = metadata.is_file() && entry.path().extension().and_then(|value| value.to_str()) == Some("json");
+        if !complete && !legacy { continue; }
         let created_at = metadata.modified().ok().and_then(|value| value.duration_since(UNIX_EPOCH).ok()).map(|value| value.as_secs()).unwrap_or(0);
-        backups.push(BackupInfo { file_name: entry.file_name().to_string_lossy().into_owned(), path: entry.path().to_string_lossy().into_owned(), created_at, size: metadata.len() });
+        backups.push(BackupInfo { file_name: entry.file_name().to_string_lossy().into_owned(), path: entry.path().to_string_lossy().into_owned(), created_at, size: path_size(&entry.path())?, complete });
     }
     backups.sort_by(|left, right| right.created_at.cmp(&left.created_at));
     Ok(backups)
 }
 
+fn replace_directory_from_backup(source: &Path, destination: &Path) -> Result<(), String> {
+    let parent = destination.parent().ok_or_else(|| "復元先を確認できません。".to_string())?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let name = destination.file_name().and_then(|value| value.to_str()).unwrap_or("resource");
+    let staging = parent.join(format!(".{name}-restore-{}", now_epoch()));
+    if staging.exists() { fs::remove_dir_all(&staging).map_err(|error| error.to_string())?; }
+    if source.is_dir() { copy_directory(source, &staging)?; }
+    if destination.exists() { fs::remove_dir_all(destination).map_err(|error| error.to_string())?; }
+    if staging.exists() { fs::rename(staging, destination).map_err(|error| error.to_string())?; }
+    Ok(())
+}
+
+fn replace_file_from_backup(source: &Path, destination: &Path) -> Result<(), String> {
+    if source.is_file() {
+        let temporary = destination.with_extension(format!("restore-{}", now_epoch()));
+        fs::copy(source, &temporary).map_err(|error| error.to_string())?;
+        if destination.exists() { fs::remove_file(destination).map_err(|error| error.to_string())?; }
+        fs::rename(temporary, destination).map_err(|error| error.to_string())?;
+    } else if destination.exists() {
+        fs::remove_file(destination).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn restore_managed_tools(app: &AppHandle, environment: &str, backup: &Path, data: &mut Value) -> Result<(), String> {
+    let configured = data.get("localToolsStoragePath").and_then(Value::as_str).map(PathBuf::from);
+    let storage = match configured.filter(|path| path.is_dir()) {
+        Some(path) => path,
+        None => {
+            let path = app.path().app_data_dir().map_err(|error| error.to_string())?
+                .join("restored-tools").join(normalized_environment(environment));
+            fs::create_dir_all(&path).map_err(|error| error.to_string())?;
+            if let Some(root) = data.as_object_mut() {
+                root.insert("localToolsStoragePath".into(), Value::String(path.to_string_lossy().into_owned()));
+            }
+            path
+        }
+    };
+    let tools = data.get_mut("localTools").and_then(Value::as_array_mut);
+    let Some(tools) = tools else { return Ok(()); };
+    for tool in tools {
+        if tool.get("managedCopy").and_then(Value::as_bool) != Some(true) { continue; }
+        let original_id = tool.get("id").and_then(Value::as_str).ok_or_else(|| "管理ツールのIDがありません。".to_string())?;
+        let id = safe_component(original_id).ok_or_else(|| "管理ツールのIDが不正です。".to_string())?;
+        let source = backup.join("local-tools").join(&id);
+        if !source.is_dir() { return Err(format!("完全バックアップ内に管理ツール {id} がありません。")); }
+        let folder_name = tool.get("folderPath").and_then(Value::as_str)
+            .and_then(|value| Path::new(value).file_name()).and_then(|value| value.to_str())
+            .filter(|value| !value.trim().is_empty()).map(str::to_owned).unwrap_or_else(|| format!("tool-{id}"));
+        let mut destination = storage.join(&folder_name);
+        let mut replace_owned = false;
+        if destination.exists() {
+            let owned = fs::read_to_string(destination.join(".chattask-tool")).ok().as_deref() == Some(original_id);
+            if owned {
+                replace_owned = true;
+            } else {
+                let mut suffix = 2;
+                while destination.exists() {
+                    destination = storage.join(format!("{folder_name} (復元 {suffix})"));
+                    suffix += 1;
+                }
+            }
+        }
+        if replace_owned { replace_directory_from_backup(&source, &destination)?; }
+        else { copy_directory(&source, &destination)?; }
+        if let Some(object) = tool.as_object_mut() {
+            object.insert("folderPath".into(), Value::String(destination.to_string_lossy().into_owned()));
+        }
+    }
+    Ok(())
+}
+
+fn restore_complete_resources(app: &AppHandle, environment: &str, backup: &Path, data: &mut Value) -> Result<(), String> {
+    restore_managed_tools(app, environment, backup, data)?;
+    let app_data = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    replace_file_from_backup(&backup.join("attachments.sqlite3"), &app_data.join("attachments.sqlite3"))?;
+    replace_directory_from_backup(&backup.join("attachments"), &app_data.join("attachments"))?;
+    replace_directory_from_backup(&backup.join("profile"), &app_data.join("profile"))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn restore_app_backup(app: AppHandle, file_name: String, environment: String) -> Result<Value, String> {
-    if file_name.contains('/') || file_name.contains('\\') { return Err("バックアップ名が不正です。".into()); }
+    if safe_component(&file_name).as_deref() != Some(file_name.as_str()) { return Err("バックアップ名が不正です。".into()); }
     let path = backup_root(&app, &environment)?.join(file_name);
-    let data: Value = serde_json::from_slice(&fs::read(path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
+    let complete = path.is_dir() && path.extension().and_then(|value| value.to_str()) == Some(COMPLETE_BACKUP_EXTENSION);
+    let data_path = if complete { path.join("data.json") } else { path.clone() };
+    let mut data: Value = serde_json::from_slice(&fs::read(data_path).map_err(|error| error.to_string())?).map_err(|error| error.to_string())?;
     let mut connection = database(&app, &environment)?;
     if let Some(current) = load_from_connection(&connection)? { write_backup(&app, &environment, &current, "before-restore")?; }
+    if complete { restore_complete_resources(&app, &environment, &path, &mut data)?; }
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
     save_in_transaction(&transaction, &data)?;
     transaction.commit().map_err(|error| error.to_string())?;
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("chattask-{name}-{}-{unique}", std::process::id()))
+    }
+
+    #[test]
+    fn backup_names_are_single_safe_components() {
+        assert_eq!(safe_component("manual-1.chattask-backup").as_deref(), Some("manual-1.chattask-backup"));
+        assert_eq!(safe_component("../outside"), None);
+        assert_eq!(safe_component("folder/file"), None);
+        assert_eq!(safe_component(""), None);
+    }
+
+    #[test]
+    fn recursive_backup_copy_preserves_files() {
+        let root = test_directory("copy");
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("root.txt"), b"root").unwrap();
+        fs::write(source.join("nested/item.bin"), [1_u8, 2, 3]).unwrap();
+
+        assert_eq!(copy_directory(&source, &destination).unwrap(), 7);
+        assert_eq!(fs::read(destination.join("root.txt")).unwrap(), b"root");
+        assert_eq!(fs::read(destination.join("nested/item.bin")).unwrap(), [1_u8, 2, 3]);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

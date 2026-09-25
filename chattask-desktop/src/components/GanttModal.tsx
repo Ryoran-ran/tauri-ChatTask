@@ -9,6 +9,7 @@ import { createGanttSvg } from "../services/ganttSvg";
 import { createImagePdf } from "../services/imagePdf";
 import { xmlEscape, zipFiles } from "../services/xmlSpreadsheet";
 import { effectiveProjectWorkActualHours, projectItemActual } from "../projectEffort";
+import { ganttProjectWorkItems } from "../projectDataProtection";
 
 type GanttStatusFilter = "all" | "active" | "waiting" | "done";
 type GanttDisplay = "compare" | "planned" | "actual";
@@ -244,8 +245,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
     return () => window.removeEventListener("pointerdown", close);
   }, [exportMenuOpen]);
   const selectedProject = projects.find((project) => project.id === projectId);
-  const selectedMilestoneIds = new Set(selectedProject?.milestones.map((milestone) => milestone.id) || []);
-  const selectedProjectWorks = (selectedProject?.workItems || []).filter((work) => !work.milestoneId || selectedMilestoneIds.has(work.milestoneId));
+  const selectedProjectWorks = selectedProject ? ganttProjectWorkItems(selectedProject) : [];
   const projectDates = selectedProject ? [
     selectedProject.dueDate,
     ...selectedProject.milestones.flatMap((milestone) => [
@@ -451,8 +451,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
         actualStart: "", actualEnd: "", actualDates: [], achievedDates: [], plannedHours: plannedHours(ranges, 0), actualHours: 0, dueDate: item.dueDate || "",
       };
     });
-    const validMilestoneIds = new Set(selectedProject.milestones.map((milestone) => milestone.id));
-    const projectWorkItems = (selectedProject.workItems || []).filter((item) => !item.milestoneId || validMilestoneIds.has(item.milestoneId));
+    const projectWorkItems = ganttProjectWorkItems(selectedProject);
     const workBase: GanttRow[] = projectWorkItems.map((item) => {
       const linked = ganttTasks.find((task) => task.id === item.linkedTaskId);
       // 作業項目と関連ChatTaskの予定は独立している。

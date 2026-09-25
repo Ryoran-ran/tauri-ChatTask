@@ -6,6 +6,7 @@ import { AttachmentCards } from "./AttachmentCards";
 import { Modal } from "./Modal";
 import { parseReviewChecklist, TaskReviewChecklist } from "./TaskReviewChecklist";
 import { defaultReviewBaseBranch, gitDiffClipboardCommand, reviewBaseBranchCandidates } from "../reviewBranches";
+import { ignoredDecisionPrompt, relevantIgnoredReviewDecisions } from "../reviewIgnoreDecisions";
 import "./CodeReviewActivityBar.css";
 
 const reviewPoints = [
@@ -135,7 +136,9 @@ const parseTestResult = (text: string): GeneratedTestResult | null => {
   }
 };
 
-const buildReviewPrompt = (task: Task, repository: GithubRepository | undefined, diff: string, base: string, target: string, selectedPoints: string[]) => `あなたはシニアソフトウェアエンジニアです。次のGit Diffをコードレビューし、実際に対応すべき指摘だけを抽出してください。
+const buildReviewPrompt = (task: Task, repository: GithubRepository | undefined, diff: string, base: string, target: string, selectedPoints: string[]) => {
+  const ignoredDecisions = relevantIgnoredReviewDecisions(task, repository?.id || "", diff);
+  return `あなたはシニアソフトウェアエンジニアです。次のGit Diffをコードレビューし、実際に対応すべき指摘だけを抽出してください。
 
 変更された全ファイルと全差分ブロックを順番に確認してください。指摘件数に上限は設けず、互いに独立した問題は省略せず、それぞれ別のレビュー項目として漏れなく列挙してください。ただし、同じ原因による重複指摘や根拠の弱い推測は追加しないでください。
 
@@ -152,6 +155,15 @@ ${base || "base"} → ${target || "target"}
 ${reviewPoints.filter(([id]) => selectedPoints.includes(id)).map(([, label]) => `- ${label}`).join("\n") || "- 総合的に確認"}
 ${selectedPoints.includes("wording") ? `
 「文言・コメント」では、誤字脱字だけでなく、実装内容と食い違うコメント、意味が古くなったコメント、不要なコメントアウト、誤解を招くUI文言・エラーメッセージも確認してください。` : ""}
+
+## 関連する過去の「対応しない」判断
+${ignoredDecisionPrompt(ignoredDecisions)}
+
+過去判断は、同じリポジトリかつ今回変更されたファイルに関係するものだけです。次のルールで扱ってください。
+- 過去判断を正解として無条件に追認しないでください。
+- 現在も同じ問題・同じ前提で、記録された理由が有効なら重複指摘を避けてください。
+- コード、仕様、影響範囲などの前提が変わり、以前の理由が成立しなくなった場合は再度指摘してください。その場合、reasonに「過去判断から何が変わったか」を明記してください。
+- 過去判断とは別の問題は通常どおり指摘してください。
 
 ## 出力形式
 説明文は付けず、次のJSONだけを必ず \`\`\`json のコードブロックで囲んで返してください。
@@ -181,6 +193,7 @@ ${selectedPoints.includes("wording") ? `
 
 ## Git Diff
 ${diff}`;
+};
 
 const buildTestPrompt = (task: Task, sources: TestPromptSource[], selectedPoints: string[]) => `あなたはデスクトップ・Webアプリの品質確認に詳しいQA担当者です。次の1つ以上のリポジトリのGit Diffを横断して確認し、利用者がアプリを実際に操作して変更内容を確認するための動作確認手順を作成してください。
 

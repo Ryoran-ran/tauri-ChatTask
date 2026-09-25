@@ -91,6 +91,7 @@ export function Header(props: Props) {
           <button type="button" className="settings-center-open" onClick={() => { setSettings(false); setSettingsCenterOpen(true); }}><span><b>設定を開く</b><small>すべての設定をカテゴリーから選択</small></span><em>→</em></button>
           <span className="settings-group-label">よく使う設定</span>
           <div className="settings-quick-links">
+            <button type="button" onClick={() => { setSettings(false); props.onTags(); }}><i aria-hidden="true">#</i><span><b>案件タグ管理</b><small>タグ・共有資料・リポジトリを管理</small></span><em>›</em></button>
             <button type="button" onClick={() => { setSettings(false); props.onNonWorking(); }}><i aria-hidden="true">休</i><span><b>休暇・祝日設定</b><small>個別の休暇と非稼働日</small></span><em>›</em></button>
             <button type="button" onClick={() => { setSettings(false); props.onTools(); }}><i aria-hidden="true">◇</i><span><b>ツール</b><small>登録したローカルツールを管理</small></span><em>›</em></button>
           </div>

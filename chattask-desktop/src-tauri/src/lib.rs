@@ -583,7 +583,8 @@ pub fn run() {
             list_tool_html_files, open_tool_in_chrome, open_tool_folder,
             report_frontend_error, app_database::initialize_app_database,
             app_database::load_app_data_sqlite, app_database::save_app_data_sqlite,
-            app_database::create_app_backup, app_database::list_app_backups, app_database::restore_app_backup
+            app_database::get_app_database_path, app_database::create_app_backup,
+            app_database::list_app_backups, app_database::restore_app_backup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

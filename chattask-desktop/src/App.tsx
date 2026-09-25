@@ -40,8 +40,10 @@ import { isTaskScheduleManagedByProject, taskProjectContexts } from "./projectCo
 import type { AdvancedTaskFilter, AppData, Goal, GoalStatus, Habit, InboxItem, NonWorkingPeriod, Priority, RecurrenceRecord, SavedTaskView, Task, TaskFilter, TaskSortRule, TaskStatus, TaskTemplate } from "./types";
 import { addDays, generateId, hasIncompletePlanForDate, isRecurringDue, isTaskPlannedForDate, mergeRanges, removeDateFromRanges, todayValue } from "./utils";
 import { appendHistory, createTask, jumpToTaskMatch, repairDuplicateProjectSchedules } from "./appHelpers";
+import { deleteProjectReferences } from "./projectDataProtection";
 
 const PERSONAL_MODE_ACTIVE_DAYS: NonWorkingPeriod[] = [{ id: "personal-mode-active-days", startDate: "0001-01-01", endDate: "", type: "weekend", weekdays: [], note: "" }];
+const RESTORE_NOTICE_KEY = "chatTaskBackupRestoreNotice";
 
 function App() {
   const [environment] = useState<AppEnvironment>(() => getActiveEnvironment());
@@ -150,6 +152,14 @@ function App() {
   const dropNoticeTimer = useRef<number | null>(null);
 
   useEffect(() => {
+    const restoreNotice = sessionStorage.getItem(RESTORE_NOTICE_KEY);
+    if (!restoreNotice) return;
+    sessionStorage.removeItem(RESTORE_NOTICE_KEY);
+    setDropNotice({ text: restoreNotice, error: false });
+    dropNoticeTimer.current = window.setTimeout(() => setDropNotice(null), 7000);
+  }, []);
+
+  useEffect(() => {
     const openWaiting = (event: Event) => {
       setWaitingTaskId((event as CustomEvent<{ taskId?: string }>).detail?.taskId || "");
       setWaitingOpen(true);
@@ -196,13 +206,7 @@ function App() {
       ? { ...project, ...changes, updatedAt: new Date().toISOString() }
       : project),
   }));
-  const deleteProject = (id: string) => setData((current) => ({
-    ...current,
-    goals: current.goals.filter((project) => project.id !== id),
-    habits: current.habits.map((habit) => habit.projectId === id
-      ? { ...habit, projectId: "", updatedAt: new Date().toISOString() }
-      : habit),
-  }));
+  const deleteProject = (id: string) => setData((current) => deleteProjectReferences(current, id));
   const projectStatusFromTask = (status: TaskStatus): GoalStatus => {
     switch (status) {
       case "doing":
@@ -1068,12 +1072,13 @@ function App() {
         await saveAppData(blank, storageBackend || "localStorage", "test");
         if (environment === "test") window.location.reload();
       }}
-      onRestore={async (restored) => {
+      onRestore={async (restored, backup) => {
         const repaired = repairDuplicateProjectSchedules(restored);
         await saveAppData(repaired, storageBackend || "localStorage", environment);
         setData(repaired);
         setSelectedId(null);
         setDataManagementOpen(false);
+        sessionStorage.setItem(RESTORE_NOTICE_KEY, `「${backup.fileName}」を復元しました（タスク ${repaired.tasks.length}件・プロジェクト ${repaired.goals.length}件）。`);
         window.location.reload();
       }} onClose={() => setDataManagementOpen(false)} />}
     {notificationsOpen && <NotificationsModal tasks={data.tasks} tags={data.projectTags} onSelect={revealTaskFromPalette} onClose={() => setNotificationsOpen(false)} />}
