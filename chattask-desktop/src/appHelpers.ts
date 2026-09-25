@@ -7,7 +7,13 @@ export const createTask = (parent?: Task): Task => {
   return {
     id: generateId(), title: "新規タスク", description: "", priority: "B", status: "todo",
     progressStatus: "not-started", waitingReason: "none", taskKind: "normal",
-    projectTagId: parent?.projectTagId || "", parentTaskId: parent?.id || "", repositoryBranches: [], links: [], relatedTasks: [], nextAction: "",
+    projectTagId: parent?.projectTagId || "", parentTaskId: parent?.id || "",
+    repositoryBranches: (parent?.repositoryBranches || []).map((group) => ({
+      ...group,
+      branchNames: [...group.branchNames],
+      pullRequestTargets: group.pullRequestTargets ? [...group.pullRequestTargets] : undefined,
+    })),
+    links: [], relatedTasks: [], nextAction: "",
     reminderDate: "", dueDate: "", isToday: false, plannedRanges: [], recurrence: null, recurrenceMemoTemplate: "", recurrenceRecords: [], dailyPlans: {},
     dailyPlanCompleted: {}, plannedHours: 0, actualHours: 0, dailyActualHours: {}, documents: [], createdAt: now, updatedAt: now, completedAt: null,
     history: [], reflections: [],
