@@ -53,3 +53,21 @@ export const isTaskScheduleManagedByProject = (projects: Goal[], taskId: string)
   projects.some((project) =>
     project.milestones.some((milestone) => milestone.linkedTaskId === taskId)
     || (project.workItems || []).some((work) => work.linkedTaskId === taskId));
+
+/** Resolve a schedule against its own project item, never another item on the same task. */
+export const projectScheduleSource = (projects: Goal[], taskId: string, range: PlannedRange) => {
+  for (const project of projects) {
+    const work = (project.workItems || []).find((item) => item.linkedTaskId === taskId
+      && (range.sourceType === "project-work" && item.id === range.sourceId
+        || !range.sourceId && (item.plannedRanges || []).some((planned) => planned.id === range.id)));
+    if (work) return { projectId: project.id, title: work.title, status: work.status === "done" ? "completed" : work.status, label: work.status === "done" ? "達成" : work.status === "in-progress" ? "進行中" : "未着手" };
+    const milestone = project.milestones.find((item) => item.linkedTaskId === taskId
+      && (range.sourceType === "project-milestone" && item.id === range.sourceId
+        || !range.sourceId && (item.plannedRanges || []).some((planned) => planned.id === range.id)));
+    if (milestone) {
+      const status = milestone.status || (milestone.completed ? "achieved" : "not-started");
+      return { projectId: project.id, title: milestone.title, status: status === "achieved" ? "completed" : status, label: status === "achieved" ? "達成" : status === "in-progress" ? "進行中" : "未着手" };
+    }
+  }
+  return null;
+};
