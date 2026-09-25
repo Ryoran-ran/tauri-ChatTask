@@ -57,25 +57,16 @@ export const jumpToTaskMatch = (query: string) => {
   }, 80);
 };
 
-const scheduleDuplicateKey = (range: Task["plannedRanges"][number]) => JSON.stringify([
-  range.startDate,
-  range.endDate,
-  (range.title || "").trim(),
-  Number(range.plannedHours) || 0,
-  range.status || "not-started",
-]);
-
-const canRepairScheduleDuplicate = (range: Task["plannedRanges"][number], canonical: Task["plannedRanges"][number]) => {
-  const rangeSource = range.sourceType && range.sourceId ? `${range.sourceType}:${range.sourceId}` : "";
-  const canonicalSource = canonical.sourceType && canonical.sourceId ? `${canonical.sourceType}:${canonical.sourceId}` : "";
-  if (!rangeSource && !canonicalSource) return false;
-  return !rangeSource || !canonicalSource || rangeSource === canonicalSource;
-};
-
-/** Repairs orphaned and duplicate schedules left by older project-linking flows. */
+/**
+ * Repairs stale project ownership and exact array duplicates left by older
+ * project-linking flows. Schedules with different IDs are never merged here:
+ * matching dates, titles, hours and statuses do not prove that they are the
+ * same user-created schedule.
+ */
 export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
   let repaired = false;
   const tasks = data.tasks.map((task) => {
+    let taskRepaired = false;
     const normalizedProjectRanges = task.plannedRanges.map((range) => {
       const hasProjectMetadata = Boolean(range.sourceType || range.sourceId);
       if (!hasProjectMetadata || isActiveProjectScheduleSource(data.goals, task.id, range.sourceType, range.sourceId)) return range;
@@ -86,39 +77,36 @@ export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
       delete ordinaryRange.sourceType;
       delete ordinaryRange.sourceId;
       repaired = true;
+      taskRepaired = true;
       return ordinaryRange;
     });
-    const canonicalByKey = new Map<string, Task["plannedRanges"][number]>();
+    const fingerprintsById = new Map<string, Set<string>>();
     normalizedProjectRanges.forEach((range) => {
-      const key = scheduleDuplicateKey(range);
-      const current = canonicalByKey.get(key);
-      if (!current || (range.sourceId && !current.sourceId)) canonicalByKey.set(key, range);
+      const fingerprints = fingerprintsById.get(range.id) || new Set<string>();
+      fingerprints.add(JSON.stringify(range));
+      fingerprintsById.set(range.id, fingerprints);
     });
-    const migratedIds = new Map<string, string>();
+    const seenExactIds = new Set<string>();
+    let removedExactDuplicate = false;
     const plannedRanges = normalizedProjectRanges.filter((range) => {
-      const canonical = canonicalByKey.get(scheduleDuplicateKey(range));
-      if (!canonical || canonical.id === range.id || !canRepairScheduleDuplicate(range, canonical)) return true;
-      migratedIds.set(range.id, canonical.id);
+      // A reused ID with different contents is ambiguous, so preserve every entry.
+      if ((fingerprintsById.get(range.id)?.size || 0) !== 1) return true;
+      if (!seenExactIds.has(range.id)) {
+        seenExactIds.add(range.id);
+        return true;
+      }
       repaired = true;
+      taskRepaired = true;
+      removedExactDuplicate = true;
       return false;
     });
-    if (!migratedIds.size && plannedRanges.every((range, index) => range === task.plannedRanges[index])) return task;
-    const migrateRecord = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(
-      Object.entries(record || {}).map(([key, value]) => {
-        const separator = key.indexOf("::");
-        if (separator < 0) return [key, value];
-        const migratedId = migratedIds.get(key.slice(separator + 2));
-        return [migratedId ? `${key.slice(0, separator)}::${migratedId}` : key, value];
-      }),
-    );
+    if (!taskRepaired) return task;
     return {
       ...task,
       plannedRanges,
-      plannedHours: plannedRanges.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0),
-      dailyPlans: migrateRecord(task.dailyPlans),
-      dailyPlanCompleted: migrateRecord(task.dailyPlanCompleted),
-      dailyPlanStatuses: migrateRecord(task.dailyPlanStatuses),
-      dailyActualHours: migrateRecord(task.dailyActualHours),
+      plannedHours: removedExactDuplicate
+        ? plannedRanges.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0)
+        : task.plannedHours,
     };
   });
   return repaired ? { ...data, tasks } : data;
