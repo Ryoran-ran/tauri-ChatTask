@@ -100,9 +100,9 @@ const projectAchievedDates = (task: Task | undefined, sourceType: PlannedRange["
 };
 const projectActualRange = (task: Task | undefined, sourceType: PlannedRange["sourceType"], sourceId: string, fallbackRanges: PlannedRange[]) => {
   if (!task) return { start: "", end: "", dates: [] as string[], hours: 0 };
-  const rangeIds = new Set(task.plannedRanges
-    .filter((range) => range.sourceType === sourceType && range.sourceId === sourceId)
-    .map((range) => range.id));
+  const linkedRanges = task.plannedRanges
+    .filter((range) => range.sourceType === sourceType && range.sourceId === sourceId);
+  const rangeIds = new Set([...linkedRanges, ...fallbackRanges].map((range) => range.id));
   const entries = Object.entries(task.dailyActualHours || {})
     .filter(([planKey, value]) => {
       if (Number(value) <= 0) return false;
@@ -479,7 +479,10 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
       return {
         id: `work:${item.id}`, kind: "work", title: item.title, parentId: item.milestoneId ? `milestone:${item.milestoneId}` : `project:${selectedProject.id}`, depth: item.milestoneId ? 2 : 1, linkedTaskId: item.linkedTaskId, status: item.status,
         priority: item.priority, baselineRanges: item.baselinePlannedRanges?.length ? item.baselinePlannedRanges : ranges, plannedRanges: ranges, actualStart: actual.start, actualEnd: actual.end, actualDates: actual.dates, achievedDates: projectAchievedDates(linked, "project-work", item.id, ranges),
-        plannedHours: plannedHours(ranges, Number(item.plannedHours) || 0), actualHours: Number(item.actualHours) || actual.hours,
+        plannedHours: plannedHours(ranges, Number(item.plannedHours) || 0),
+        // 関連タスクがある場合は日別実績を正本とする。0時間も最新値なので、
+        // 過去に保存された作業実績へフォールバックしてはならない。
+        actualHours: linked ? actual.hours : Number(item.actualHours) || 0,
         dueDate: item.dueDate || "",
       };
     });
