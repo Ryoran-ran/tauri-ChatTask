@@ -2562,9 +2562,6 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .project-work-row input,
 .project-work-row select { min-width: 0; width: 100%; }
 .project-work-row > textarea { grid-column: 1 / -1; width: 100%; resize: vertical; }
-.project-task-source-notice { display: flex; align-items: center; gap: .65rem; margin: 0 0 .75rem; border: 1px solid #bfdbfe; border-radius: 8px; padding: .55rem .7rem; background: #eff6ff; }
-.project-task-source-notice strong { flex: none; color: #1d4ed8; font-size: .72rem; }
-.project-task-source-notice span { color: #475569; font-size: .68rem; line-height: 1.5; }
 .project-linked-work-source { display: grid; min-width: 0; gap: .18rem; border: 1px solid #bfdbfe; border-radius: 7px; padding: .45rem .55rem; background: #eff6ff; }
 .project-linked-work-source span { color: #2563eb; font-size: .58rem; font-weight: 800; }
 .project-linked-work-source strong { overflow: hidden; color: #1e293b; font-size: .74rem; text-overflow: ellipsis; white-space: nowrap; }

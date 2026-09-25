@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTask } from "../appHelpers";
 import { effectiveProjectWorkActualHours, projectItemActual } from "../projectEffort";
-import { taskProjectContexts } from "../projectContext";
+import { taskProjectContextMarks, taskProjectContexts } from "../projectContext";
 import type { Goal, PlannedRange, ProjectWorkItem, Task } from "../types";
 
 const range = (id: string, sourceId?: string): PlannedRange => ({
@@ -79,6 +79,26 @@ describe("プロジェクト関連情報", () => {
     expect(locations).toEqual([
       "マイルストーン「工程1」／作業項目「作業 work-1」",
       "プロジェクト直属／作業項目「作業 work-2」",
+    ]);
+  });
+
+  it("起点プロジェクト内の関連先はヘッダーの矢印へ重複表示しない", () => {
+    const contexts = taskProjectContexts([project()], "task-1");
+
+    expect(taskProjectContextMarks(contexts).map((context) => context.id)).toEqual([
+      "origin:project-1",
+    ]);
+    expect(contexts).toHaveLength(6);
+  });
+
+  it("起点とは別のプロジェクトにある関連先の矢印は残す", () => {
+    const origin = project();
+    const linked = { ...project(), id: "project-2", originTaskId: "another-task", taskIds: [], milestones: [], workItems: [work("work-3", "")] };
+    const contexts = taskProjectContexts([origin, linked], "task-1");
+
+    expect(taskProjectContextMarks(contexts).map((context) => context.id)).toEqual([
+      "origin:project-1",
+      "work:project-2:work-3",
     ]);
   });
 });

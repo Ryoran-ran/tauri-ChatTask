@@ -43,6 +43,18 @@ export const taskProjectContexts = (projects: Goal[], taskId: string): TaskProje
   return contexts.sort((a, b) => Number(a.kind !== "origin") - Number(b.kind !== "origin"));
 };
 
+/**
+ * Header badges represent projects, not every location inside a project.
+ * When the task is the project's origin, P already conveys that relationship;
+ * linked locations in the same project remain available in the detail panel.
+ */
+export const taskProjectContextMarks = (contexts: TaskProjectContext[]) => {
+  const originProjectIds = new Set(contexts
+    .filter((context) => context.kind === "origin")
+    .map((context) => context.projectId));
+  return contexts.filter((context) => context.kind === "origin" || !originProjectIds.has(context.projectId));
+};
+
 /** A project schedule is managed only while its source still points at this task. */
 export const isActiveProjectScheduleSource = (
   projects: Goal[],

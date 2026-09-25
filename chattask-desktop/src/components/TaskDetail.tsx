@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
-import { projectScheduleSource, taskProjectContexts } from "../projectContext";
+import { projectScheduleSource, taskProjectContextMarks, taskProjectContexts } from "../projectContext";
 import type { GithubRepository, Goal, HistoryEntry, ProjectTag, Task, TaskLink, UserProfile } from "../types";
 import { generateId, mergeRanges, normalizeUrl, quickLinkNameForUrl, rangeDates, recurrenceLabel, removeDateFromRanges, todayValue } from "../utils";
 import { RecurrenceSettingsEditor } from "./RecurrenceSettingsEditor";
@@ -576,7 +576,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   return <section className="detail">
     <div className="detail-header">
       <div className="detail-header-title">
-        {[...projectContexts].sort((a, b) => Number(a.kind === "origin") - Number(b.kind === "origin")).map((context) => <button key={context.id} type="button" className={`task-project-mark detail-header-project-mark ${context.kind}`} title={`${context.projectTitle}\n${context.location}\nクリックしてプロジェクトを開く`} aria-label={`${context.projectTitle}を開く`} onClick={() => onOpenProject(context.projectId)}>{context.kind === "origin" ? "P" : "↗"}</button>)}
+        {taskProjectContextMarks(projectContexts).map((context) => <button key={context.id} type="button" className={`task-project-mark detail-header-project-mark ${context.kind}`} title={`${context.projectTitle}\n${context.location}\nクリックしてプロジェクトを開く`} aria-label={`${context.projectTitle}を開く`} onClick={() => onOpenProject(context.projectId)}>{context.kind === "origin" ? "P" : "↗"}</button>)}
         <input ref={titleInputRef} className="title-input" value={task.title} onFocus={() => { titleFocusRef.current = task.title; }} onChange={(event) => update("title", event.target.value)} onBlur={() => { if (titleFocusRef.current !== task.title) onUpdate({}, "タスク名を更新しました。"); }} />
       </div>
       <select className="detail-status-select" aria-label="ステータス" value={task.status} onChange={(event) => requestStatusChange(event.target.value as Task["status"])}>{STATUS_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.values.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</optgroup>)}</select>

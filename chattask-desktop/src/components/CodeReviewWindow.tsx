@@ -5,6 +5,7 @@ import { addAttachment, listAttachments, removeAttachment, type Attachment } fro
 import { AttachmentCards } from "./AttachmentCards";
 import { Modal } from "./Modal";
 import { parseReviewChecklist, TaskReviewChecklist } from "./TaskReviewChecklist";
+import { defaultReviewBaseBranch, reviewBaseBranchCandidates } from "../reviewBranches";
 import "./CodeReviewActivityBar.css";
 
 const reviewPoints = [
@@ -252,11 +253,12 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     const saved = localStorage.getItem(repositoryStorageKey) || "";
     return saved === "unassigned" || repositories.some((repository) => repository.id === saved) ? saved : repositories[0]?.id || "";
   });
+  const repositoryById = (repositoryId: string) => repositories.find((repository) => repository.id === repositoryId);
   const branchStorageKey = `chatTaskCodeReviewBranches:${taskId}:${selectedRepositoryId || "unassigned"}`;
   const initialBranches = (() => {
     try { return JSON.parse(localStorage.getItem(branchStorageKey) || "{}") as { base?: string; target?: string }; } catch { return {}; }
   })();
-  const [base, setBase] = useState(initialBranches.base || "main");
+  const [base, setBase] = useState(initialBranches.base || defaultReviewBaseBranch(task, repositoryById(selectedRepositoryId)));
   const [target, setTarget] = useState(initialBranches.target || "");
   const [customTargetOpen, setCustomTargetOpen] = useState(Boolean(initialBranches.target));
   const [diff, setDiff] = useState("");
@@ -267,7 +269,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     try { stored = JSON.parse(localStorage.getItem(testSourcesStorageKey) || "{}"); } catch { stored = {}; }
     return Object.fromEntries(repositories.map((repository, index) => [repository.id, {
       selected: stored[repository.id]?.selected ?? index === 0,
-      base: stored[repository.id]?.base || "main",
+      base: stored[repository.id]?.base || defaultReviewBaseBranch(task, repository),
       target: stored[repository.id]?.target || "",
       diff: "",
     }]));
@@ -324,6 +326,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const checklist = task.reviewChecklist || [];
   const verificationTimeline = task.verificationTimeline || [];
   const selectedRepository = repositories.find((repository) => repository.id === selectedRepositoryId);
+  const baseBranchCandidates = reviewBaseBranchCandidates(task, selectedRepository);
   const selectedTestSources = repositories.flatMap((repository) => {
     const settings = testSourceSettings[repository.id];
     return settings?.selected ? [{ repository, base: settings.base, target: settings.target, diff: settings.diff }] : [];
@@ -403,8 +406,8 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   }, [verificationSortRules, verificationSortStorageKey]);
 
   useEffect(() => {
-    setTestSourceSettings((current) => Object.fromEntries(repositories.map((repository, index) => [repository.id, current[repository.id] || { selected: index === 0, base: "main", target: "", diff: "" }])));
-  }, [repositories]);
+    setTestSourceSettings((current) => Object.fromEntries(repositories.map((repository, index) => [repository.id, current[repository.id] || { selected: index === 0, base: defaultReviewBaseBranch(task, repository), target: "", diff: "" }])));
+  }, [repositories, task]);
 
   useEffect(() => {
     localStorage.setItem(testSourcesStorageKey, JSON.stringify(Object.fromEntries(Object.entries(testSourceSettings).map(([id, settings]) => [id, { selected: settings.selected, base: settings.base, target: settings.target }]))));
@@ -459,7 +462,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     let saved: { base?: string; target?: string } = {};
     try { saved = JSON.parse(localStorage.getItem(nextKey) || "{}"); } catch { saved = {}; }
     setSelectedRepositoryId(repositoryId);
-    setBase(saved.base || "main");
+    setBase(saved.base || defaultReviewBaseBranch(task, repositoryById(repositoryId)));
     setTarget(saved.target || "");
     setCustomTargetOpen(Boolean(saved.target));
     localStorage.setItem(repositoryStorageKey, repositoryId);
@@ -1091,7 +1094,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         <header><strong>1. 差分を準備</strong><small>比較対象とGit Diffを入力</small></header>
         <label className="code-review-repository">対象リポジトリ<select value={selectedRepositoryId} onChange={(event) => selectRepository(event.target.value)} disabled={!repositories.length}>{!repositories.length && <option value="">リポジトリ未設定</option>}{selectedRepositoryId === "unassigned" && <option value="unassigned">以前の未分類項目</option>}{repositories.map((repository) => <option value={repository.id} key={repository.id}>{repository.name}</option>)}</select>{!repositories.length && <small>案件タグの設定からリポジトリを登録できます。</small>}</label>
         <div className="code-review-compare-settings">
-          <label className="code-review-branch-field"><span>基準</span><input aria-label="基準ブランチ" value={base} onChange={(event) => setBase(event.target.value)} placeholder="main" /></label>
+          <label className="code-review-branch-field"><span>基準</span><input aria-label="基準ブランチ" list={`review-base-branches-${selectedRepositoryId || "unassigned"}`} value={base} onChange={(event) => setBase(event.target.value)} placeholder="ブランチを選択または入力" /><datalist id={`review-base-branches-${selectedRepositoryId || "unassigned"}`}>{baseBranchCandidates.map((branch) => <option value={branch} key={branch} />)}</datalist></label>
           <span className="code-review-compare-arrow" aria-hidden="true">→</span>
           <div className={`code-review-target-summary ${customTargetOpen ? "editing" : ""}`}><div><span>比較先</span>{customTargetOpen ? <input autoFocus aria-label="任意の比較先" value={target} onChange={(event) => setTarget(event.target.value)} placeholder="feature/example" /> : <p><strong>HEAD</strong><small>現在のブランチ</small></p>}</div><button type="button" onClick={() => { if (customTargetOpen) setTarget(""); setCustomTargetOpen((current) => !current); }}>{customTargetOpen ? "HEADへ戻す" : "変更"}</button></div>
         </div>
@@ -1120,7 +1123,8 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         {!!selectedTestCommandSource && <div className="verification-command-panel"><div className="verification-command-heading"><strong>Diff取得コマンド</strong>{selectedTestSources.length > 1 && <label>対象<select value={selectedTestCommandSource.repository.id} onChange={(event) => setTestCommandRepositoryId(event.target.value)}>{selectedTestSources.map(({ repository }) => <option value={repository.id} key={repository.id}>{repository.name}</option>)}</select></label>}</div><div className="code-review-diff-mode" role="group" aria-label="差分の種類"><span>差分の種類</span><button type="button" className={testDiffMode === "branch" ? "active" : ""} aria-pressed={testDiffMode === "branch"} onClick={() => { setTestDiffMode("branch"); setTestCommandCopiedId(""); }}>ブランチ差分</button><button type="button" className={testDiffMode === "working" ? "active" : ""} aria-pressed={testDiffMode === "working"} onClick={() => { setTestDiffMode("working"); setTestCommandCopiedId(""); }}>未コミット差分</button></div><div className="code-review-command"><code><span aria-hidden="true">$</span>{testDiffCommand}</code><button type="button" className={`primary ${testCommandCopiedId === selectedTestCommandSource.repository.id ? "copied" : ""}`} onClick={() => void copyTestDiffCommand(selectedTestCommandSource.repository.id)}>{testCommandCopiedId === selectedTestCommandSource.repository.id ? "コピー済み" : "コマンドをコピー"}</button></div><small>{testDiffMode === "working" ? "対象リポジトリのフォルダで実行し、コミット前の変更を取得します。" : "対象リポジトリのフォルダで実行し、ブランチ間の差分を取得します。"}</small></div>}
         <fieldset><legend>動作確認の観点</legend><div>{testPoints.map(([id, label]) => <label key={id}><input type="checkbox" checked={selectedTestPoints.includes(id)} onChange={(event) => setSelectedTestPoints((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))} />{label}</label>)}</div></fieldset>
         <div className="verification-source-list">{selectedTestSources.map(({ repository, base: sourceBase, target: sourceTarget, diff: sourceDiff }) => {
-          return <section className="verification-source-card" key={repository.id}><header><strong>{repository.name}</strong><small>このリポジトリの変更差分</small></header><div className="code-review-branches"><label>基準<input value={sourceBase} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], base: event.target.value } }))} placeholder="main" /></label><span>→</span><label>比較先<input value={sourceTarget} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], target: event.target.value } }))} placeholder="HEAD" /></label></div><div className="code-review-textarea compact"><div className="code-review-diff-label"><strong>Git Diff</strong><button type="button" className="secondary" onClick={() => void pasteTestDiff(repository.id)}>クリップボードから貼付</button></div><textarea aria-label={`${repository.name}のGit Diff`} value={sourceDiff} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], diff: event.target.value } }))} placeholder={`${repository.name} の git diffを貼り付けてください`} spellCheck={false} /></div></section>;
+          const branchCandidates = reviewBaseBranchCandidates(task, repository);
+          return <section className="verification-source-card" key={repository.id}><header><strong>{repository.name}</strong><small>このリポジトリの変更差分</small></header><div className="code-review-branches"><label>基準<input list={`verification-base-branches-${repository.id}`} value={sourceBase} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], base: event.target.value } }))} placeholder="ブランチを選択または入力" /><datalist id={`verification-base-branches-${repository.id}`}>{branchCandidates.map((branch) => <option value={branch} key={branch} />)}</datalist></label><span>→</span><label>比較先<input value={sourceTarget} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], target: event.target.value } }))} placeholder="HEAD" /></label></div><div className="code-review-textarea compact"><div className="code-review-diff-label"><strong>Git Diff</strong><button type="button" className="secondary" onClick={() => void pasteTestDiff(repository.id)}>クリップボードから貼付</button></div><textarea aria-label={`${repository.name}のGit Diff`} value={sourceDiff} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], diff: event.target.value } }))} placeholder={`${repository.name} の git diffを貼り付けてください`} spellCheck={false} /></div></section>;
         })}</div>
         <button type="button" className="primary code-review-main-action" disabled={!selectedTestSources.length || selectedTestSources.some((source) => !source.diff.trim())} onClick={generateTestPrompt}>動作確認プロンプトを作成</button>
       </section>
