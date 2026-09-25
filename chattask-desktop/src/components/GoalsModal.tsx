@@ -435,15 +435,32 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
       dailyActualHours: migrate(linkedTask.dailyActualHours),
     }, history);
   };
-  const releaseProjectSchedule = (linkedTaskId: string, sourceId: string, snapshot: PlannedRange[] = [], _plannedHoursSnapshot = 0) => {
+  type ProjectScheduleRelease = {
+    sourceType: NonNullable<PlannedRange["sourceType"]>;
+    sourceId: string;
+    snapshot: PlannedRange[];
+  };
+  const releaseProjectSchedules = (linkedTaskId: string, releases: ProjectScheduleRelease[]) => {
     const linkedTask = tasks.find((task) => task.id === linkedTaskId);
-    if (!linkedTask) return;
-    const releasedRangeIds = new Set(linkedTask.plannedRanges.filter((range) => range.sourceId === sourceId).map((range) => range.id));
-    const unrelatedRanges = linkedTask.plannedRanges.filter((range) => range.sourceId !== sourceId);
+    if (!linkedTask || !releases.length) return;
+    const releaseKeys = new Set(releases.map((release) => `${release.sourceType}\u0000${release.sourceId}`));
+    const isReleased = (range: PlannedRange) => Boolean(range.sourceType && range.sourceId
+      && releaseKeys.has(`${range.sourceType}\u0000${range.sourceId}`));
+    const releasedRangeIds = new Set(linkedTask.plannedRanges.filter(isReleased).map((range) => range.id));
+    const unrelatedRanges = linkedTask.plannedRanges.filter((range) => !isReleased(range));
     const unrelatedIds = new Set(unrelatedRanges.map((range) => range.id));
-    const restoredTransferredRanges = snapshot
-      .filter((range) => releasedRangeIds.has(range.id) && !unrelatedIds.has(range.id))
-      .map((range) => ({ ...range, sourceType: undefined, sourceId: undefined }));
+    const restoredIds = new Set<string>();
+    const restoredTransferredRanges = releases.flatMap((release) => {
+      const sourceRangeIds = new Set(linkedTask.plannedRanges
+        .filter((range) => range.sourceType === release.sourceType && range.sourceId === release.sourceId)
+        .map((range) => range.id));
+      return release.snapshot
+        .filter((range) => sourceRangeIds.has(range.id) && !unrelatedIds.has(range.id) && !restoredIds.has(range.id))
+        .map((range) => {
+          restoredIds.add(range.id);
+          return { ...range, sourceType: undefined, sourceId: undefined };
+        });
+    });
     const restored = [...unrelatedRanges, ...restoredTransferredRanges];
     const restoreKey = (key: string) => {
       const separator = key.indexOf("::");
@@ -458,6 +475,12 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
       dailyActualHours: restore(linkedTask.dailyActualHours),
     }, "プロジェクトとの関連解除により、Task側の予定を復元しました。");
   };
+  const releaseProjectSchedule = (
+    linkedTaskId: string,
+    sourceType: ProjectScheduleRelease["sourceType"],
+    sourceId: string,
+    snapshot: PlannedRange[] = [],
+  ) => releaseProjectSchedules(linkedTaskId, [{ sourceType, sourceId, snapshot }]);
   useEffect(() => { localStorage.setItem("chatTaskProjectAdvancedFilter", JSON.stringify(advancedFilter)); }, [advancedFilter]);
   useEffect(() => { localStorage.setItem("chatTaskProjectSortRules", JSON.stringify(sortRules)); }, [sortRules]);
   useEffect(() => {
@@ -623,12 +646,25 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
   const remove = () => {
     if (project) {
       void removeTaskAttachments(`project:${project.id}`).catch(() => undefined);
+      const releasesByTask = new Map<string, ProjectScheduleRelease[]>();
+      const addRelease = (linkedTaskId: string, release: ProjectScheduleRelease) => {
+        releasesByTask.set(linkedTaskId, [...(releasesByTask.get(linkedTaskId) || []), release]);
+      };
       project.milestones.forEach((milestone) => {
-        if (milestone.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, milestone.id, milestone.linkedTaskScheduleSnapshot, milestone.linkedTaskPlannedHoursSnapshot);
+        if (milestone.linkedTaskId) addRelease(milestone.linkedTaskId, {
+          sourceType: "project-milestone",
+          sourceId: milestone.id,
+          snapshot: milestone.linkedTaskScheduleSnapshot || [],
+        });
       });
       (project.workItems || []).forEach((work) => {
-        if (work.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, work.id, work.linkedTaskScheduleSnapshot, work.linkedTaskPlannedHoursSnapshot);
+        if (work.linkedTaskId) addRelease(work.linkedTaskId, {
+          sourceType: "project-work",
+          sourceId: work.id,
+          snapshot: work.linkedTaskScheduleSnapshot || [],
+        });
       });
+      releasesByTask.forEach((releases, linkedTaskId) => releaseProjectSchedules(linkedTaskId, releases));
     }
     const next = items.filter((item) => item.id !== selectedId);
     setItems(next);
@@ -701,7 +737,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
       nextChanges = { ...nextChanges, plannedRanges, plannedHours: scheduleHours(plannedRanges) };
     }
     if (changes.linkedTaskId !== undefined && changes.linkedTaskId !== work.linkedTaskId) {
-      if (work.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, work.id, work.linkedTaskScheduleSnapshot, work.linkedTaskPlannedHoursSnapshot);
+      if (work.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, "project-work", work.id, work.linkedTaskScheduleSnapshot);
       if (changes.linkedTaskId) {
         const linkedTask = tasks.find((task) => task.id === changes.linkedTaskId);
         const standalone = linkedTask?.plannedRanges.filter((range) => !range.sourceId) || [];
@@ -787,7 +823,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
   const deleteMilestone = (id: string) => {
     if (!storedProject) return;
     const milestone = storedProject.milestones.find((item) => item.id === id);
-    if (milestone?.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, milestone.id, milestone.linkedTaskScheduleSnapshot, milestone.linkedTaskPlannedHoursSnapshot);
+    if (milestone?.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, "project-milestone", milestone.id, milestone.linkedTaskScheduleSnapshot);
     persistProjectChanges({
       milestones: storedProject.milestones.filter((item) => item.id !== id),
       workItems: (storedProject.workItems || []).map((item) => item.milestoneId === id ? { ...item, milestoneId: "" } : item),
@@ -796,7 +832,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
   const deleteWork = (id: string) => {
     if (!storedProject) return;
     const work = (storedProject.workItems || []).find((item) => item.id === id);
-    if (work?.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, work.id, work.linkedTaskScheduleSnapshot, work.linkedTaskPlannedHoursSnapshot);
+    if (work?.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, "project-work", work.id, work.linkedTaskScheduleSnapshot);
     persistProjectChanges({ workItems: (storedProject.workItems || []).filter((item) => item.id !== id) });
   };
   const origin = project?.originTaskId ? tasks.find((task) => task.id === project.originTaskId) : null;
