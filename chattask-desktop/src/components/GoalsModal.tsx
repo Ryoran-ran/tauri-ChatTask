@@ -30,6 +30,26 @@ const effectiveProjectChanges = (project: Goal, changes: Partial<Goal>): Partial
   Object.entries(changes).filter(([key, value]) => JSON.stringify(project[key as keyof Goal]) !== JSON.stringify(value)),
 ) as Partial<Goal>;
 
+/**
+ * 記録のキーを移動する。移動先に既存の記録がある場合は自動統合せず、
+ * 元のキーも残して両方の値を保護する。
+ */
+const remapRecordKeysWithoutOverwrite = <T,>(
+  record: Record<string, T> | undefined,
+  destinationFor: (key: string) => string,
+): Record<string, T> => {
+  const source = record || {};
+  const result = { ...source };
+  Object.entries(source).forEach(([key, value]) => {
+    const destination = destinationFor(key);
+    if (destination === key) return;
+    if (Object.prototype.hasOwnProperty.call(result, destination)) return;
+    result[destination] = value;
+    delete result[key];
+  });
+  return result;
+};
+
 const normalizeProject = (project: Goal): Goal => {
   const now = new Date().toISOString();
   const existingWork = (project.workItems || []).flatMap((item, index) => {
@@ -426,7 +446,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
     const nextPlannedHours = scheduleHours(nextRanges);
     if (scheduleSignature(nextRanges) === scheduleSignature(linkedTask.plannedRanges) && Number(linkedTask.plannedHours) === Number(nextPlannedHours)) return;
     const managedKeyByDate = new Map(projectRanges.flatMap((range) => rangeDates([range]).map((date) => [date, `${date}::${range.id}`] as const)));
-    const migrate = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(Object.entries(record || {}).map(([key, value]) => [managedKeyByDate.get(key) || key, value]));
+    const migrate = <T,>(record: Record<string, T> | undefined) => remapRecordKeysWithoutOverwrite(record, (key) => managedKeyByDate.get(key) || key);
     onUpdateTask(linkedTaskId, {
       plannedRanges: nextRanges, plannedHours: nextPlannedHours,
       dailyPlans: migrate(linkedTask.dailyPlans),
@@ -449,7 +469,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreat
       const separator = key.indexOf("::");
       return separator >= 0 && releasedRangeIds.has(key.slice(separator + 2)) ? key.slice(0, separator) : key;
     };
-    const restore = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(Object.entries(record || {}).map(([key, value]) => [restoreKey(key), value]));
+    const restore = <T,>(record: Record<string, T> | undefined) => remapRecordKeysWithoutOverwrite(record, restoreKey);
     onUpdateTask(linkedTaskId, {
       plannedRanges: restored, plannedHours: scheduleHours(restored),
       dailyPlans: restore(linkedTask.dailyPlans),
