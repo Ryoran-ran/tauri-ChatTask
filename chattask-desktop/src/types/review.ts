@@ -9,6 +9,8 @@ export interface TaskChecklistItem {
   details: string;
   reason?: string;
   suggestion?: string;
+  /** この指摘だけを修正した変更に対する推奨コミット名。 */
+  suggestedCommitMessage?: string;
   severity?: "high" | "medium" | "low";
   reviewStatus?: "pending" | "in-progress" | "completed" | "ignored";
   repositoryId?: string;
@@ -32,7 +34,7 @@ export interface TaskCodeReviewRun {
   itemIds: string[];
   /** 正常にレビューが完了し、指摘が0件だった記録。 */
   noFindings?: boolean;
-  /** Git Diff全体からAIが提案したコミット名。 */
+  /** @deprecated 旧形式のGit Diff全体に対するコミット名。 */
   suggestedCommitMessage?: string;
   createdAt: string;
 }

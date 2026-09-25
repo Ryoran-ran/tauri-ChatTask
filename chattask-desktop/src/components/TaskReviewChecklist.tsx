@@ -13,6 +13,7 @@ type ReviewRecord = {
   title?: unknown;
   reason?: unknown;
   suggestion?: unknown;
+  suggestedCommitMessage?: unknown;
 };
 
 type ReviewSortKey = "severity" | "status" | "file" | "category" | "createdAt" | "title";
@@ -42,7 +43,8 @@ const parseJsonChecklist = (text: string): TaskChecklistItem[] | null => {
       const severity = (["high", "medium", "low"].includes(rawSeverity) ? rawSeverity : undefined) as TaskChecklistItem["severity"];
       const reason = String(review.reason || "").trim();
       const suggestion = String(review.suggestion || "").trim();
-      return [{ id: generateId(), title, file: file || undefined, line: line || undefined, functionName: functionName || undefined, location: location || undefined, category: String(review.category || "その他"), details: "", reason: reason || undefined, suggestion: suggestion || undefined, severity, reviewStatus: "pending", completed: false, createdAt: now }];
+      const suggestedCommitMessage = typeof review.suggestedCommitMessage === "string" ? review.suggestedCommitMessage.trim() : "";
+      return [{ id: generateId(), title, file: file || undefined, line: line || undefined, functionName: functionName || undefined, location: location || undefined, category: String(review.category || "その他"), details: "", reason: reason || undefined, suggestion: suggestion || undefined, suggestedCommitMessage: suggestedCommitMessage || undefined, severity, reviewStatus: "pending", completed: false, createdAt: now }];
     });
   } catch {
     return null;
@@ -181,10 +183,7 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
     detailParts(item).other,
   ].filter((line) => line !== "").join("\n");
 
-  const suggestedCommitMessageForItem = (item: TaskChecklistItem) => [...runs]
-    .reverse()
-    .find((run) => run.itemIds.includes(item.id) && run.suggestedCommitMessage?.trim())
-    ?.suggestedCommitMessage?.trim() || "";
+  const suggestedCommitMessageForItem = (item: TaskChecklistItem) => item.suggestedCommitMessage?.trim() || "";
   const commitCommand = (message: string) => `git commit -m '${message.replace(/'/g, `'"'"'`)}'`;
 
   const importItems = () => {
@@ -305,7 +304,7 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
         const noFindings = Boolean(run.noFindings || run.itemIds.length === 0);
         return <details className="review-run-card" key={run.id}>
           <summary><span><strong>第{runNumber}回</strong><em>{run.repositoryName || "リポジトリ未設定"}</em></span><span>{run.baseBranch} → {run.targetBranch}</span><small>{new Date(run.createdAt).toLocaleString("ja-JP")}・{noFindings ? <b className="review-no-findings-label">指摘なし</b> : `指摘${run.itemIds.length}件`}</small></summary>
-          {run.suggestedCommitMessage && <div className="review-run-commit"><span><small>推奨コミット名</small><code>{run.suggestedCommitMessage}</code></span><button type="button" onClick={() => void copyItemText(`${run.id}:commit`, run.suggestedCommitMessage || "")}>{copiedAction === `${run.id}:commit` ? "コピー済み" : copiedAction === `${run.id}:commit:error` ? "コピー失敗" : "コピー"}</button></div>}
+          {run.suggestedCommitMessage && <div className="review-run-commit"><span><small>旧形式の全体コミット名</small><code>{run.suggestedCommitMessage}</code></span><button type="button" onClick={() => void copyItemText(`${run.id}:commit`, run.suggestedCommitMessage || "")}>{copiedAction === `${run.id}:commit` ? "コピー済み" : copiedAction === `${run.id}:commit:error` ? "コピー失敗" : "コピー"}</button></div>}
           {onChangeReviewData && <div className="review-run-actions">
             {editingRunRepositoryId === run.id
               ? <label><span>移動先</span><select autoFocus value={run.repositoryId || "unassigned"} onChange={(event) => moveReviewRun(run, event.target.value)} onBlur={() => setEditingRunRepositoryId("")}>{repositoryChoices.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label>

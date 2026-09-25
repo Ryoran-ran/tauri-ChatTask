@@ -87,16 +87,6 @@ const isEmptyReviewResult = (text: string) => {
   }
 };
 
-const parseSuggestedCommitMessage = (text: string) => {
-  try {
-    const parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")) as Record<string, unknown> | unknown[];
-    if (Array.isArray(parsed) || !parsed || typeof parsed !== "object") return "";
-    return typeof parsed.suggestedCommitMessage === "string" ? parsed.suggestedCommitMessage.trim() : "";
-  } catch {
-    return "";
-  }
-};
-
 type GeneratedTestResult = {
   environment: string[];
   checks: { id: string; category: string; title: string; screen: string; file: string; line: string; functionName: string; repositories: string[]; preconditions: string[]; steps: string[]; expectedResult: string; status: "pending" | "in-progress" | "passed" | "failed" }[];
@@ -164,14 +154,13 @@ ${selectedPoints.includes("wording") ? `
 
 ## 出力形式
 説明文は付けず、次のJSONだけを必ず \`\`\`json のコードブロックで囲んで返してください。
-suggestedCommitMessageには、Git Diff全体を表すコミット名を1つ提案してください。変更種別が明確なら Conventional Commits（feat:, fix:, refactor:, docs:, test:, chore:）を使い、変更内容が一目で分かる簡潔な日本語にしてください。レビュー指摘の修正内容ではなく、現在の差分で実装した内容を要約し、根拠のないスコープや変更内容は加えないでください。
+各reviewsのsuggestedCommitMessageには、その指摘だけを修正したときに使用するコミット名を提案してください。変更種別が明確なら Conventional Commits（fix:, refactor:, test:, docs:, chore:など）を使い、修正内容が一目で分かる簡潔な日本語にしてください。複数の指摘をまとめた名前や、現在のGit Diff全体を表す名前にはしないでください。
 各位置情報は次の役割を厳守してください。
 - file: リポジトリを基準にしたファイルパスだけを記載します。行番号や関数名を含めません。
 - line: Git Diffで問題を確認できる変更後の行番号だけを「410」または「410-435」の形式で記載します。関数名を含めません。特定できなければ空文字にします。
 - functionName: 問題が含まれる関数・メソッド・コンポーネント・型などの名前だけを記載します。行番号を含めません。該当しなければ空文字にします。
 \`\`\`json
 {
-  "suggestedCommitMessage": "feat: コードレビューの履歴表示を改善",
   "reviews": [
     {
       "category": "バグ・ロジック",
@@ -181,12 +170,13 @@ suggestedCommitMessageには、Git Diff全体を表すコミット名を1つ提�
       "functionName": "exampleFunction",
       "title": "対応内容を短く記載",
       "reason": "問題となる理由",
-      "suggestion": "具体的な修正案"
+      "suggestion": "具体的な修正案",
+      "suggestedCommitMessage": "fix: 指摘内容に対応する短いコミット名"
     }
   ]
 }
 \`\`\`
-問題がなければ、同じコードブロック形式で {"suggestedCommitMessage": "変更内容を表すコミット名", "reviews": []} を返してください。
+問題がなければ、同じコードブロック形式で {"reviews": []} を返してください。
 
 ## Git Diff
 ${diff}`;
@@ -568,7 +558,6 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const importResult = () => {
     const parsed = parseReviewChecklist(result);
     const noFindings = isEmptyReviewResult(result);
-    const suggestedCommitMessage = parseSuggestedCommitMessage(result);
     if (!parsed.length && !noFindings) {
       setMessage("チェック項目を見つけられませんでした。AIの回答形式を確認してください。");
       return;
@@ -601,6 +590,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
           location: parsedItem.location || existing.location,
           reason: parsedItem.reason || existing.reason,
           suggestion: parsedItem.suggestion || existing.suggestion,
+          suggestedCommitMessage: parsedItem.suggestedCommitMessage || existing.suggestedCommitMessage,
           severity: parsedItem.severity || existing.severity,
           repositoryId: selectedRepository?.id,
           repositoryName: selectedRepository?.name || "リポジトリ未設定",
@@ -638,7 +628,6 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         targetBranch: target.trim() || "HEAD",
         itemIds: runItemIds,
         noFindings,
-        suggestedCommitMessage: suggestedCommitMessage || undefined,
         createdAt,
       }],
     }, `${selectedRepository?.name || "リポジトリ未設定"}のコードレビューを取り込みました（${noFindings ? "指摘なし" : `新規${addedCount}件${repeatedCount ? `・再指摘${repeatedCount}件` : ""}`}）。`);
