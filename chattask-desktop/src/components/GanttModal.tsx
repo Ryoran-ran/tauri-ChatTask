@@ -8,6 +8,7 @@ import { createGanttExcel } from "../services/ganttExcel";
 import { createGanttSvg } from "../services/ganttSvg";
 import { createImagePdf } from "../services/imagePdf";
 import { xmlEscape, zipFiles } from "../services/xmlSpreadsheet";
+import { effectiveProjectWorkActualHours, projectItemActual } from "../projectEffort";
 
 type GanttStatusFilter = "all" | "active" | "waiting" | "done";
 type GanttDisplay = "compare" | "planned" | "actual";
@@ -97,24 +98,6 @@ const projectAchievedDates = (task: Task | undefined, sourceType: PlannedRange["
       return fallbackRanges.some((range) => range.startDate <= planKey && range.endDate >= planKey);
     })
     .map(([planKey]) => planKey.split("::")[0]))].sort();
-};
-const projectActualRange = (task: Task | undefined, sourceType: PlannedRange["sourceType"], sourceId: string, fallbackRanges: PlannedRange[]) => {
-  if (!task) return { start: "", end: "", dates: [] as string[], hours: 0 };
-  const linkedRanges = task.plannedRanges
-    .filter((range) => range.sourceType === sourceType && range.sourceId === sourceId);
-  const rangeIds = new Set([...linkedRanges, ...fallbackRanges].map((range) => range.id));
-  const entries = Object.entries(task.dailyActualHours || {})
-    .filter(([planKey, value]) => {
-      if (Number(value) <= 0) return false;
-      const separator = planKey.indexOf("::");
-      if (separator >= 0) return rangeIds.has(planKey.slice(separator + 2));
-      return fallbackRanges.some((range) => range.startDate <= planKey && range.endDate >= planKey);
-    });
-  const carriedWorkDates = task.plannedRanges
-    .filter((range) => range.sourceType === sourceType && range.sourceId === sourceId)
-    .flatMap((range) => Object.entries(range.carriedOverWork || {}).filter(([, worked]) => worked).map(([date]) => date));
-  const dates = [...entries.map(([planKey]) => planKey.split("::")[0]), ...carriedWorkDates].sort();
-  return { start: dates[0] || "", end: dates[dates.length - 1] || "", dates: [...new Set(dates)], hours: entries.reduce((sum, [, value]) => sum + (Number(value) || 0), 0) };
 };
 const contiguousDateRanges = (values: string[]) => {
   const dates = [...new Set(values.filter(Boolean))].sort();
@@ -475,14 +458,12 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
       // 作業項目と関連ChatTaskの予定は独立している。
       // 作業に予定がなければ、関連ChatTaskの予定線を代わりに描画しない。
       const ranges = item.plannedRanges || [];
-      const actual = projectActualRange(linked, "project-work", item.id, ranges);
+      const actual = projectItemActual(linked, item, "project-work");
       return {
         id: `work:${item.id}`, kind: "work", title: item.title, parentId: item.milestoneId ? `milestone:${item.milestoneId}` : `project:${selectedProject.id}`, depth: item.milestoneId ? 2 : 1, linkedTaskId: item.linkedTaskId, status: item.status,
         priority: item.priority, baselineRanges: item.baselinePlannedRanges?.length ? item.baselinePlannedRanges : ranges, plannedRanges: ranges, actualStart: actual.start, actualEnd: actual.end, actualDates: actual.dates, achievedDates: projectAchievedDates(linked, "project-work", item.id, ranges),
         plannedHours: plannedHours(ranges, Number(item.plannedHours) || 0),
-        // 関連タスクがある場合は日別実績を正本とする。0時間も最新値なので、
-        // 過去に保存された作業実績へフォールバックしてはならない。
-        actualHours: linked ? actual.hours : Number(item.actualHours) || 0,
+        actualHours: effectiveProjectWorkActualHours(item, linked),
         dueDate: item.dueDate || "",
       };
     });

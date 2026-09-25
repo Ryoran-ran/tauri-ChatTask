@@ -9,6 +9,7 @@ import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { PROJECT_STATUS_LABELS as STATUS_LABELS, ProjectAdvancedFilterModal, ProjectSortModal, type ProjectAdvancedFilter, type ProjectSortKey, type ProjectSortRule } from "./ProjectFilterModals";
 import { ProjectResources } from "./ProjectResources";
+import { projectItemActual } from "../projectEffort";
 
 const LAST_SELECTED_PROJECT_KEY = "chatTaskLastSelectedProjectId";
 const WORK_STATUS = { "not-started": "未着手", "in-progress": "進行中", done: "達成" } as const;
@@ -216,16 +217,7 @@ const scheduleStart = (ranges: PlannedRange[] | undefined) => ranges?.map((range
 const effectiveRanges = (item: { plannedRanges?: PlannedRange[] }, _tasks: Task[]) => item.plannedRanges || [];
 const actualHoursFromTodayPages = (item: { id: string; linkedTaskId?: string; plannedRanges?: PlannedRange[] }, tasks: Task[], sourceType: PlannedRange["sourceType"]) => {
   const task = tasks.find((candidate) => candidate.id === item.linkedTaskId);
-  if (!task) return 0;
-  const linkedRanges = task.plannedRanges
-    .filter((range) => range.sourceType === sourceType && range.sourceId === item.id)
-  const rangeIds = new Set([...linkedRanges, ...(item.plannedRanges || [])].map((range) => range.id));
-  const fallbackRanges = item.plannedRanges?.length ? item.plannedRanges : linkedRanges;
-  return Object.entries(task.dailyActualHours || {}).reduce((total, [planKey, hours]) => {
-    const rangeId = planKey.includes("::") ? planKey.slice(planKey.indexOf("::") + 2) : "";
-    const plainDateMatches = !rangeId && fallbackRanges.some((range) => range.startDate <= planKey && range.endDate >= planKey);
-    return total + (rangeIds.has(rangeId) || plainDateMatches ? Number(hours) || 0 : 0);
-  }, 0);
+  return projectItemActual(task, item, sourceType).hours;
 };
 const markdownText = (value: string | undefined, fallback = "未設定") => value?.trim() || fallback;
 const markdownRanges = (ranges: PlannedRange[] | undefined) => {

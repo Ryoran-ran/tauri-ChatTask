@@ -1,0 +1,11 @@
+{
+  "name": "chattask-workspace",
+  "private": true,
+  "scripts": {
+    "test": "npm --prefix chattask-desktop test",
+    "test:watch": "npm --prefix chattask-desktop run test:watch",
+    "check": "npm --prefix chattask-desktop run check",
+    "build": "npm --prefix chattask-desktop run build",
+    "dev": "npm --prefix chattask-desktop run dev"
+  }
+}

@@ -61,3 +61,22 @@ src/
 SQLite、添付ファイル、ユーザープロフィールは、Web版に存在しない次段階の機能として含めていません。
 
 移植対象と実装状況は [MIGRATION_CHECKLIST.md](./MIGRATION_CHECKLIST.md) を参照してください。
+# テスト
+
+プロジェクト連携や工数集計など、データを書き換える処理の回帰テストにはVitestを使用します。
+
+```bash
+npm test
+```
+
+開発中にファイル変更を監視して再実行する場合は、次を使用します。
+
+```bash
+npm run test:watch
+```
+
+テストと本番ビルドをまとめて確認する場合は、次を使用します。GitHub Actionsでも同じ確認を自動実行します。
+
+```bash
+npm run check
+```
