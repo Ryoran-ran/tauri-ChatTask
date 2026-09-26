@@ -45,16 +45,10 @@ export const syncProjectScheduleOnTask = (
   sourceId: string,
 ): Partial<Task> | null => {
   const transferredRangeIds = new Set(plannedRanges.map((range) => range.id));
-  const transferredRangeKeys = new Set(plannedRanges.map((range) => JSON.stringify([
-    range.startDate, range.endDate, (range.title || "").trim(),
-    Number(range.plannedHours) || 0, range.status || "not-started",
-  ])));
+  // 同期対象の予定と、同じIDで明示的に引き継ぐ予定だけを置き換える。
+  // 日付・名称・工数が一致しても、別IDの通常予定は独立したデータとして保持する。
   const preserved = task.plannedRanges.filter((range) => !(range.sourceType === sourceType && range.sourceId === sourceId)
-    && !transferredRangeIds.has(range.id)
-    && !(!range.sourceId && transferredRangeKeys.has(JSON.stringify([
-      range.startDate, range.endDate, (range.title || "").trim(),
-      Number(range.plannedHours) || 0, range.status || "not-started",
-    ]))));
+    && !transferredRangeIds.has(range.id));
   const projectRanges = plannedRanges.map((range) => ({ ...range, sourceType, sourceId }));
   const nextRanges = [...preserved, ...projectRanges];
   const nextPlannedHours = scheduleHours(nextRanges);

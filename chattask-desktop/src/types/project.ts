@@ -39,6 +39,9 @@ export interface GoalMilestone {
   taskIds: string[];
   description?: string;
   dueDate?: string;
+  /** Project計画上、このマイルストーンへ取り組む大まかな目標期間。 */
+  targetWorkStartDate?: string;
+  targetWorkEndDate?: string;
   linkedTaskId?: string;
   sortOrder?: number;
   status?: "not-started" | "in-progress" | "achieved";
@@ -66,6 +69,9 @@ export interface ProjectWorkItem {
   linkedTaskId: string;
   plannedHours: number;
   actualHours: number;
+  /** Project計画上、この作業へ時間を割り当てる目標期間。ガントの実作業予定とは分離する。 */
+  targetWorkStartDate?: string;
+  targetWorkEndDate?: string;
   plannedRanges?: PlannedRange[];
   baselinePlannedRanges?: PlannedRange[];
   baselinePlannedHours?: number;

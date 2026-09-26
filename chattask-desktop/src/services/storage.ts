@@ -22,6 +22,7 @@ const KEYS = {
   localToolsStoragePath: "chatTaskLocalToolsStoragePath",
   habits: "chatTaskHabits",
   workspaceMode: "chatTaskWorkspaceMode",
+  projectDailyCapacityHours: "chatTaskProjectDailyCapacityHours",
 };
 
 export type AppEnvironment = "production" | "test";
@@ -527,7 +528,7 @@ export const loadAppData = (environment: AppEnvironment = getActiveEnvironment()
   const tasks = rawTasks.map(normalizeTask);
   const savedActivity = parse<ActivityEvent[]>(get(KEYS.activity), []);
   return {
-    version: 17,
+    version: 18,
     workspaceMode: get(KEYS.workspaceMode) === "personal" ? "personal" : "work",
     organizationSeed: createOrganizationSeed(environment),
     tasks,
@@ -535,6 +536,7 @@ export const loadAppData = (environment: AppEnvironment = getActiveEnvironment()
     activityLog: savedActivity.length ? savedActivity : historyActivity(tasks),
     dailyNotes: parse(get(KEYS.notes), {}), dailyFinalizedAt: parse(get(KEYS.dailyFinalizedAt), {}),
     nonWorkingPeriods: normalizeNonWorkingPeriods(parse(get(KEYS.nonWorking), [])), userProfile: parse(get(KEYS.profile), { displayName: "あなた", avatarUpdatedAt: "" }),
+    projectDailyCapacityHours: Math.min(24, Math.max(0.25, Number(get(KEYS.projectDailyCapacityHours)) || 6)),
     goals: parse(get(KEYS.goals), []), issues: parse(get(KEYS.issues), []), inboxItems: parse(get(KEYS.inbox), []),
     todayTaskOrders: parse(get(KEYS.todayTaskOrders), {}),
     localTools: normalizeLocalTools(parse(get(KEYS.localTools), [])),
@@ -548,6 +550,7 @@ const saveToLocalStorage = (data: AppData, environment: AppEnvironment) => {
   set(KEYS.organizationSeed, String(data.organizationSeed)); set(KEYS.workspaceMode, data.workspaceMode); set(KEYS.tasks, data.tasks); set(KEYS.tags, data.projectTags);
   set(KEYS.activity, data.activityLog); set(KEYS.notes, data.dailyNotes); set(KEYS.dailyFinalizedAt, data.dailyFinalizedAt);
   set(KEYS.nonWorking, data.nonWorkingPeriods); set(KEYS.profile, data.userProfile); set(KEYS.goals, data.goals);
+  set(KEYS.projectDailyCapacityHours, Math.min(24, Math.max(0.25, Number(data.projectDailyCapacityHours) || 6)));
   set(KEYS.issues, data.issues); set(KEYS.inbox, data.inboxItems); set(KEYS.todayTaskOrders, data.todayTaskOrders); set(KEYS.localTools, data.localTools); set(KEYS.localToolsStoragePath, data.localToolsStoragePath); set(KEYS.habits, data.habits);
 };
 
@@ -654,7 +657,7 @@ export const parseImportedData = (text: string): AppData => {
   return {
     // Keep newer top-level sections even when this version does not render them.
     ...(!Array.isArray(imported) ? imported : {}),
-    version: 17,
+    version: 18,
     workspaceMode: (!Array.isArray(imported) && imported.workspaceMode === "personal" ? "personal" : "work") as WorkspaceMode,
     organizationSeed: !Array.isArray(imported) && Number.isInteger(Number(imported.organizationSeed)) && Number(imported.organizationSeed) > 0
       ? Number(imported.organizationSeed)
@@ -665,6 +668,9 @@ export const parseImportedData = (text: string): AppData => {
     dailyNotes: !Array.isArray(imported) && imported.dailyNotes ? imported.dailyNotes : {},
     dailyFinalizedAt: !Array.isArray(imported) && imported.dailyFinalizedAt ? imported.dailyFinalizedAt : {},
     nonWorkingPeriods: normalizeNonWorkingPeriods(!Array.isArray(imported) ? imported.nonWorkingPeriods : []),
+    projectDailyCapacityHours: !Array.isArray(imported)
+      ? Math.min(24, Math.max(0.25, Number(imported.projectDailyCapacityHours) || 6))
+      : 6,
     userProfile: !Array.isArray(imported) && imported.userProfile ? imported.userProfile : { displayName: "あなた", avatarUpdatedAt: "" },
     goals: !Array.isArray(imported) && Array.isArray(imported.goals) ? imported.goals : [],
     issues: !Array.isArray(imported) && Array.isArray(imported.issues) ? imported.issues : [],
