@@ -82,6 +82,8 @@ export interface ProjectWorkItem {
   /** @deprecated 旧保存データの読み込み互換用。ステータスは連動しない。 */
   syncLinkedTaskStatus?: boolean;
   sortOrder: number;
+  /** 作業スケジュール専用。同じマイルストーン・目標開始日内の表示順。 */
+  scheduleSortOrder?: number;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;

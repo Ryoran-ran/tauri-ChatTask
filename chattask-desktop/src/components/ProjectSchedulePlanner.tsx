@@ -1,10 +1,15 @@
-import { Fragment, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { assessProjectWorkCapacity, type WorkCapacityAssessment } from "../projectCapacity";
 import type { Goal, GoalMilestone, NonWorkingPeriod, ProjectWorkItem } from "../types";
 import { addDays, getNonWorkingPeriod, rangeDates, todayValue } from "../utils";
 import { WorkDatePicker } from "./WorkDatePicker";
+import { ProjectTargetLine } from "./ProjectTargetLine";
+import { ProjectScheduleDeadline } from "./ProjectScheduleDeadline";
+import { MilestoneTargetMenu } from "./MilestoneTargetMenu";
+import { compareScheduleWorks, sameStartScheduleWorks } from "../projectScheduleOrder";
 import { ProjectWorkDateSyncButton, WorkDateSyncStatus } from "./WorkDateSyncButton";
 import type { SyncWorkDates } from "../projectWorkDateSync";
+import { calculateScheduleDrag, visibleScheduleRange, type ScheduleDragMode, type ScheduleRange } from "../projectScheduleDrag";
 
 const DAY_WIDTH = 30;
 const LABEL_WIDTH = 320;
@@ -28,6 +33,20 @@ interface WorkGroup {
   works: ProjectWorkItem[];
 }
 
+interface ScheduleDraft {
+  projectId: string;
+  kind: "work" | "milestone";
+  id: string;
+  pointerId: number;
+  mode: ScheduleDragMode;
+  anchorX: number;
+  original: ScheduleRange;
+  storedStart?: string;
+  storedEnd?: string;
+  range: ScheduleRange;
+  error?: string;
+}
+
 export function ProjectSchedulePlanner({
   project,
   projects,
@@ -40,6 +59,7 @@ export function ProjectSchedulePlanner({
   onEditWork,
   onUpdateMilestone,
   onUpdateWork,
+  onReorderWork,
   onSyncWorkDates,
 }: {
   project: Goal;
@@ -53,10 +73,13 @@ export function ProjectSchedulePlanner({
   onEditWork: (id: string) => void;
   onUpdateMilestone: (id: string, changes: Partial<GoalMilestone>) => void;
   onUpdateWork: (id: string, changes: Partial<ProjectWorkItem>) => void;
+  onReorderWork: (id: string, direction: -1 | 1) => void;
   onSyncWorkDates: SyncWorkDates;
 }) {
-  const [draft, setDraft] = useState<{ workId: string; start: number; end: number } | null>(null);
-  const [milestoneDraft, setMilestoneDraft] = useState<{ milestoneId: string; start: number; end: number } | null>(null);
+  const [draft, setDraft] = useState<ScheduleDraft | null>(null);
+  const dragRef = useRef<ScheduleDraft | null>(null);
+  const [dragError, setDragError] = useState("");
+  const cancelDrag = () => { dragRef.current = null; setDraft(null); };
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [dailyHoursInput, setDailyHoursInput] = useState(() => String(dailyCapacityHours));
   useEffect(() => { setDailyHoursInput(String(dailyCapacityHours)); }, [dailyCapacityHours]);
@@ -76,9 +99,9 @@ export function ProjectSchedulePlanner({
       dueDate: milestone.dueDate || "",
       kind: "milestone",
       milestone,
-      works: (project.workItems || []).filter((work) => work.milestoneId === milestone.id).sort((a, b) => a.sortOrder - b.sortOrder),
+      works: (project.workItems || []).filter((work) => work.milestoneId === milestone.id).sort(compareScheduleWorks),
     }));
-    const direct = (project.workItems || []).filter((work) => !work.milestoneId).sort((a, b) => a.sortOrder - b.sortOrder);
+    const direct = (project.workItems || []).filter((work) => !work.milestoneId).sort(compareScheduleWorks);
     if (direct.length) result.push({ id: "direct", title: "マイルストーン未割当", dueDate: project.dueDate || "", kind: "direct", works: direct });
     return result;
   }, [project]);
@@ -108,43 +131,58 @@ export function ProjectSchedulePlanner({
     setViewEnd(addDays(start, 44));
   };
 
-  const indexAt = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    return Math.max(0, Math.min(dates.length - 1, Math.floor((event.clientX - bounds.left) / DAY_WIDTH)));
-  };
-  const begin = (workId: string, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dates.length) return;
+  const pointerX = (event: ReactPointerEvent<HTMLDivElement>) => event.clientX - event.currentTarget.getBoundingClientRect().left;
+  const begin = (kind: ScheduleDraft["kind"], item: ProjectWorkItem | GoalMilestone, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dates.length || event.button !== 0 || dragRef.current) return;
+    const x = pointerX(event);
+    const date = dates[Math.max(0, Math.min(dates.length - 1, Math.floor(x / DAY_WIDTH)))];
+    const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-schedule-drag]") : null;
+    const mode = (target?.dataset.scheduleDrag || "draw") as ScheduleDragMode;
+    if (mode !== "draw" && (!item.targetWorkStartDate || !item.targetWorkEndDate)) return;
+    const original = mode === "draw" ? { start: date, end: date } : { start: item.targetWorkStartDate!, end: item.targetWorkEndDate! };
+    const next: ScheduleDraft = { projectId: project.id, kind, id: item.id, pointerId: event.pointerId, mode, anchorX: x, original,
+      storedStart: item.targetWorkStartDate, storedEnd: item.targetWorkEndDate, range: original };
+    event.preventDefault();
+    event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
-    const index = indexAt(event);
-    setDraft({ workId, start: index, end: index });
+    setDragError("");
+    dragRef.current = next;
+    setDraft(next);
   };
-  const move = (workId: string, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!draft || draft.workId !== workId) return;
-    setDraft({ ...draft, end: indexAt(event) });
+  const move = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const current = dragRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    const x = pointerX(event);
+    const delta = current.mode === "draw"
+      ? Math.max(0, Math.min(dates.length - 1, Math.floor(x / DAY_WIDTH))) - Math.floor(current.anchorX / DAY_WIDTH)
+      : Math.round((x - current.anchorX) / DAY_WIDTH);
+    const result = calculateScheduleDrag(current.mode, current.original, delta, periods);
+    // 成功時には前のエラーを残さない。PointerUpでもこの最新値を使う。
+    const next = { ...current, range: result.range, error: result.error };
+    dragRef.current = next;
+    setDraft(next);
   };
-  const finish = (workId: string) => {
-    if (!draft || draft.workId !== workId) return;
-    const start = Math.min(draft.start, draft.end);
-    const end = Math.max(draft.start, draft.end);
-    onUpdateWork(workId, { targetWorkStartDate: dates[start], targetWorkEndDate: dates[end] });
-    setDraft(null);
+  const finish = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    move(event);
+    const current = dragRef.current!;
+    cancelDrag();
+    if (current.error) { setDragError(current.error); return; }
+    const latest = current.kind === "work" ? project.workItems?.find((work) => work.id === current.id) : project.milestones.find((milestone) => milestone.id === current.id);
+    if (project.id !== current.projectId || !latest || latest.targetWorkStartDate !== current.storedStart || latest.targetWorkEndDate !== current.storedEnd) {
+      setDragError("操作中に目標期間が変更されたため保存しませんでした。もう一度操作してください。");
+      return;
+    }
+    if (current.range.start === current.storedStart && current.range.end === current.storedEnd) return;
+    const changes = { targetWorkStartDate: current.range.start, targetWorkEndDate: current.range.end };
+    if (current.kind === "work") onUpdateWork(current.id, changes);
+    else onUpdateMilestone(current.id, changes);
   };
-  const beginMilestone = (milestoneId: string, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dates.length) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const index = indexAt(event);
-    setMilestoneDraft({ milestoneId, start: index, end: index });
-  };
-  const moveMilestone = (milestoneId: string, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!milestoneDraft || milestoneDraft.milestoneId !== milestoneId) return;
-    setMilestoneDraft({ ...milestoneDraft, end: indexAt(event) });
-  };
-  const finishMilestone = (milestoneId: string) => {
-    if (!milestoneDraft || milestoneDraft.milestoneId !== milestoneId) return;
-    const start = Math.min(milestoneDraft.start, milestoneDraft.end);
-    const end = Math.max(milestoneDraft.start, milestoneDraft.end);
-    onUpdateMilestone(milestoneId, { targetWorkStartDate: dates[start], targetWorkEndDate: dates[end] });
-    setMilestoneDraft(null);
+  const drawnRange = (kind: ScheduleDraft["kind"], item: ProjectWorkItem | GoalMilestone) => {
+    const active = draft?.kind === kind && draft.id === item.id;
+    const range = active ? draft.range : item.targetWorkStartDate && item.targetWorkEndDate ? { start: item.targetWorkStartDate, end: item.targetWorkEndDate } : null;
+    const visible = visibleScheduleRange(range, dates);
+    return visible ? { ...visible, draft: active } : null;
   };
   const updateStart = (work: ProjectWorkItem, targetWorkStartDate: string) => onUpdateWork(work.id, {
     targetWorkStartDate,
@@ -154,9 +192,9 @@ export function ProjectSchedulePlanner({
         ? { targetWorkEndDate: targetWorkStartDate }
         : {}),
   });
-  return <section className="project-capacity-planner is-work-planner">
+  return <section className="project-capacity-planner is-work-planner" onKeyDown={(event) => { if (event.key === "Escape" && dragRef.current) { event.stopPropagation(); cancelDrag(); } }}>
     <header className="project-capacity-heading">
-      <div><strong>作業スケジュール</strong><small>マイルストーンと作業を横になぞり、大まかな目標期間を決めます。◆はマイルストーン期限です。</small></div>
+      <div><strong>作業スケジュール</strong><small>空白をなぞって期間を設定。線の中央は営業日数を保って移動、両端は開始・終了日を変更します。◆は期限日の終わりです。</small></div>
       <ProjectWorkDateSyncButton key={project.id} project={project} onSync={onSyncWorkDates} />
       <button type="button" className="project-capacity-add-milestone" onClick={onAddMilestone}>＋ マイルストーン</button>
       <label>1日の計画可能時間<input type="number" min="0.25" max="24" step="0.25" value={dailyHoursInput} onChange={(event) => setDailyHoursInput(event.target.value)} onBlur={commitDailyHours} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><span>時間</span></label>
@@ -165,7 +203,7 @@ export function ProjectSchedulePlanner({
       <div className="project-capacity-range-fields"><strong>表示期間</strong><WorkDatePicker ariaLabel="表示期間の開始日" value={viewStart} max={viewEnd} showNonWorkingStatus={false} onChange={(value) => { if (!value) return; setViewStart(value); if (value > viewEnd) setViewEnd(addDays(value, 44)); }} /><span>〜</span><WorkDatePicker ariaLabel="表示期間の終了日" value={viewEnd} min={viewStart} showNonWorkingStatus={false} onChange={(value) => { if (value) setViewEnd(value); }} /></div>
       <div className="project-capacity-range-actions"><button type="button" onClick={() => shiftWindow(-28)}>← 4週</button><button type="button" onClick={showToday}>今日</button><button type="button" onClick={() => shiftWindow(28)}>4週 →</button><button type="button" onClick={() => { setViewStart(automaticWindow.start); setViewEnd(automaticWindow.end); }}>自動範囲</button></div>
     </div>
-    {!allWorks.length
+    {!groups.length
       ? <p className="project-capacity-empty">作業項目を追加すると、ここで目標作業期間を線として設定できます。</p>
       : <div className="project-capacity-scroll">
         <div className="project-capacity-grid" style={{ width: LABEL_WIDTH + dates.length * DAY_WIDTH }}>
@@ -181,30 +219,42 @@ export function ProjectSchedulePlanner({
             const groupDueIndex = group.dueDate ? dateIndex.get(group.dueDate) : undefined;
             const groupHours = group.works.filter((work) => work.status !== "done").reduce((sum, work) => sum + (Number(work.plannedHours) || 0), 0);
             const collapsed = collapsedGroups.has(group.id);
-            const drawnMilestone = group.milestone && (milestoneDraft?.milestoneId === group.id
-              ? { start: Math.min(milestoneDraft.start, milestoneDraft.end), end: Math.max(milestoneDraft.start, milestoneDraft.end), draft: true }
-              : group.milestone.targetWorkStartDate && group.milestone.targetWorkEndDate && dateIndex.has(group.milestone.targetWorkStartDate) && dateIndex.has(group.milestone.targetWorkEndDate)
-                ? { start: dateIndex.get(group.milestone.targetWorkStartDate)!, end: dateIndex.get(group.milestone.targetWorkEndDate)!, draft: false }
-                : null);
+            const drawnMilestone = group.milestone && drawnRange("milestone", group.milestone);
             return <Fragment key={group.id}>
-              <div className="project-capacity-group-label"><button type="button" className="project-capacity-tree-toggle" aria-label={collapsed ? `${group.title}を展開` : `${group.title}を折りたたむ`} aria-expanded={!collapsed} onClick={() => setCollapsedGroups((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}>{collapsed ? "▶" : "▼"}</button><span className={`project-capacity-group-kind is-${group.kind}`}>{group.kind === "milestone" ? "◆" : "◫"}</span><span className="project-capacity-group-text"><strong>{group.title}</strong><small>{group.works.length}件・未完了予定 {hours(groupHours)}{group.dueDate ? `・期限 ${group.dueDate}` : ""}{group.milestone?.targetWorkStartDate && group.milestone.targetWorkEndDate ? `・目標 ${group.milestone.targetWorkStartDate.slice(5).replace("-", "/")}〜${group.milestone.targetWorkEndDate.slice(5).replace("-", "/")}` : ""}</small></span>{group.milestone && <div className="project-capacity-group-actions"><button type="button" className="project-capacity-edit-milestone" onClick={() => onEditMilestone(group.milestone!.id)}><span aria-hidden="true">✎</span> 編集</button><button type="button" className="project-capacity-add-work" onClick={() => onAddWork(group.id)}>＋ 作業</button></div>}</div>
-              <div className={`project-capacity-group-lane ${group.milestone ? "is-drawable" : ""}`} style={{ width: dates.length * DAY_WIDTH }} onPointerDown={group.milestone ? (event) => beginMilestone(group.id, event) : undefined} onPointerMove={group.milestone ? (event) => moveMilestone(group.id, event) : undefined} onPointerUp={group.milestone ? () => finishMilestone(group.id) : undefined} onPointerCancel={group.milestone ? () => setMilestoneDraft(null) : undefined} aria-label={group.milestone ? `${group.title}の大まかな目標期間。ドラッグして設定` : undefined}>
-                {drawnMilestone && <span className={`project-target-line project-milestone-target-line ${drawnMilestone.draft ? "is-draft" : ""}`} style={{ left: drawnMilestone.start * DAY_WIDTH + 5, width: (drawnMilestone.end - drawnMilestone.start + 1) * DAY_WIDTH - 10 }}><i /><i /></span>}
+              <div className="project-capacity-group-label">
+                <button type="button" className="project-capacity-tree-toggle" aria-label={collapsed ? `${group.title}を展開` : `${group.title}を折りたたむ`} aria-expanded={!collapsed} onClick={() => setCollapsedGroups((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}>{collapsed ? "▶" : "▼"}</button>
+                <span className={`project-capacity-group-kind is-${group.kind}`}>{group.kind === "milestone" ? "◆" : "◫"}</span>
+                <span className="project-capacity-group-text"><strong>{group.title}</strong><small>{group.works.length}件・未完了予定 {hours(groupHours)}{group.dueDate ? `・期限 ${group.dueDate}` : ""}{group.milestone?.targetWorkStartDate && group.milestone.targetWorkEndDate ? `・目標 ${group.milestone.targetWorkStartDate.slice(5).replace("-", "/")}〜${group.milestone.targetWorkEndDate.slice(5).replace("-", "/")}` : ""}</small></span>
+                {group.milestone && <div className="project-capacity-group-actions">
+                  <button type="button" className="project-capacity-edit-milestone" onClick={() => onEditMilestone(group.milestone!.id)}><span aria-hidden="true">✎</span> 編集</button>
+                  <button type="button" className="project-capacity-add-work" onClick={() => onAddWork(group.id)}>＋ 作業</button>
+                  <MilestoneTargetMenu key={`${project.id}:${group.id}`} milestone={group.milestone} onClear={changes => { cancelDrag(); onUpdateMilestone(group.id, changes); }} />
+                </div>}
+              </div>
+              <div className={`project-capacity-group-lane ${group.milestone ? "is-drawable" : ""}`} style={{ width: dates.length * DAY_WIDTH }} tabIndex={group.milestone ? 0 : undefined} onPointerDown={group.milestone ? (event) => begin("milestone", group.milestone!, event) : undefined} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag} aria-label={group.milestone ? `${group.title}の大まかな目標期間。中央で移動、両端で伸縮、空白で新規設定` : undefined}>
+                {drawnMilestone && <ProjectTargetLine {...drawnMilestone} dayWidth={DAY_WIDTH} className={`project-milestone-target-line ${drawnMilestone.draft ? "is-draft" : ""}`} />}
                 {group.milestone && !drawnMilestone && <span className="project-milestone-draw-hint">ドラッグして目標期間を設定</span>}
-                {groupDueIndex !== undefined && <span className="project-milestone-marker is-group" style={{ left: groupDueIndex * DAY_WIDTH + DAY_WIDTH / 2 }}>◆<small>{group.dueDate.slice(5).replace("-", "/")}</small></span>}
+                {groupDueIndex !== undefined && <ProjectScheduleDeadline date={group.dueDate} index={groupDueIndex} dayWidth={DAY_WIDTH} lastColumn={groupDueIndex === dates.length - 1} milestone />}
               </div>
               {!collapsed && group.works.map((work, workIndex) => {
                 const deadline = work.dueDate || group.dueDate || project.dueDate || "";
                 const assessment = assessProjectWorkCapacity({ projectId: project.id, work, deadline, projects, periods, dailyCapacityHours });
-                const drawn = draft?.workId === work.id
-                  ? { start: Math.min(draft.start, draft.end), end: Math.max(draft.start, draft.end), draft: true }
-                  : work.targetWorkStartDate && work.targetWorkEndDate && dateIndex.has(work.targetWorkStartDate) && dateIndex.has(work.targetWorkEndDate)
-                    ? { start: dateIndex.get(work.targetWorkStartDate)!, end: dateIndex.get(work.targetWorkEndDate)!, draft: false }
-                    : null;
+                const drawn = drawnRange("work", work);
                 const dueIndex = work.dueDate ? dateIndex.get(work.dueDate) : undefined;
+                const peers = sameStartScheduleWorks(group.works, work);
+                const peerIndex = peers.findIndex(item => item.id === work.id);
                 return <div className={`project-capacity-row ${work.status === "done" ? "is-completed" : ""} ${workIndex === group.works.length - 1 ? "is-last-child" : ""}`} key={work.id}>
                   <div className="project-capacity-label">
-                    <div><span className="project-capacity-work-kind" aria-label="作業">▣</span><strong>{work.title || "名称未設定"}</strong><button type="button" className="project-capacity-edit-work" onClick={() => onEditWork(work.id)}><span aria-hidden="true">✎</span> 編集</button><span className={`capacity-status status-${assessment.status} ${assessment.missingEstimateCount ? "has-missing" : ""}`}>{assessment.missingEstimateCount ? "見積未入力" : statusLabel[assessment.status]}</span></div>
+                    <div>
+                      <span className="project-capacity-work-kind" aria-label="作業">▣</span>
+                      <strong title={work.title || "名称未設定"}>{work.title || "名称未設定"}</strong>
+                      {peers.length > 1 && <div className="project-schedule-order" role="group" aria-label={`${work.title}の同じ開始日内の並び替え`}>
+                        <button type="button" disabled={peerIndex === 0} aria-label={`${work.title}を上へ`} title="同じマイルストーン・開始日の中で上へ" onClick={() => onReorderWork(work.id, -1)}>↑</button>
+                        <button type="button" disabled={peerIndex === peers.length - 1} aria-label={`${work.title}を下へ`} title="同じマイルストーン・開始日の中で下へ" onClick={() => onReorderWork(work.id, 1)}>↓</button>
+                      </div>}
+                      <button type="button" className="project-capacity-edit-work" onClick={() => onEditWork(work.id)}><span aria-hidden="true">✎</span> 編集</button>
+                      <span className={`capacity-status status-${assessment.status} ${assessment.missingEstimateCount ? "has-missing" : ""}`}>{assessment.missingEstimateCount ? "見積未入力" : statusLabel[assessment.status]}</span>
+                    </div>
                     <div className="project-capacity-metrics">
                       {assessment.status === "unset" || assessment.status === "invalid" || assessment.status === "completed"
                         ? <span>予定 {hours(assessment.requiredHours)}</span>
@@ -220,11 +270,11 @@ export function ProjectSchedulePlanner({
                     </div>
                     <WorkDateSyncStatus work={work} />
                   </div>
-                  <div className="project-capacity-lane" style={{ width: dates.length * DAY_WIDTH, backgroundSize: `${DAY_WIDTH}px 100%` }} onPointerDown={(event) => begin(work.id, event)} onPointerMove={(event) => move(work.id, event)} onPointerUp={() => finish(work.id)} onPointerCancel={() => setDraft(null)} aria-label={`${work.title}の目標作業期間。ドラッグして設定`}>
+                  <div className="project-capacity-lane" style={{ width: dates.length * DAY_WIDTH, backgroundSize: `${DAY_WIDTH}px 100%` }} tabIndex={0} onPointerDown={(event) => begin("work", work, event)} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag} aria-label={`${work.title}の目標作業期間。中央で移動、両端で伸縮、空白で新規設定`}>
                     {dates.map((date, index) => getNonWorkingPeriod(date, periods) && <span className="capacity-non-working-column" key={date} style={{ left: index * DAY_WIDTH, width: DAY_WIDTH }} />)}
                     {dates.map((date, index) => date === todayValue() && <span className="capacity-today-line" key={date} style={{ left: index * DAY_WIDTH + DAY_WIDTH / 2 }} />)}
-                    {drawn && <span className={`project-target-line status-${assessment.status} ${assessment.exceedsDeadline ? "exceeds-due" : ""} ${drawn.draft ? "is-draft" : ""}`} style={{ left: drawn.start * DAY_WIDTH + 5, width: (drawn.end - drawn.start + 1) * DAY_WIDTH - 10 }}><i /><i /></span>}
-                    {dueIndex !== undefined && <span className="project-work-deadline" style={{ left: dueIndex * DAY_WIDTH + DAY_WIDTH / 2 }} title={`作業期限 ${work.dueDate}`} />}
+                    {drawn && <ProjectTargetLine {...drawn} dayWidth={DAY_WIDTH} className={`status-${assessment.status} ${assessment.exceedsDeadline ? "exceeds-due" : ""} ${drawn.draft ? "is-draft" : ""}`} />}
+                    {dueIndex !== undefined && <ProjectScheduleDeadline date={work.dueDate!} index={dueIndex} dayWidth={DAY_WIDTH} lastColumn={dueIndex === dates.length - 1} />}
                     {!drawn && <span className="project-capacity-draw-hint">ドラッグして作業期間を設定</span>}
                   </div>
                 </div>;
@@ -233,6 +283,9 @@ export function ProjectSchedulePlanner({
           })}
         </div>
       </div>}
-    <footer className="project-capacity-note">作業工数は設定した期間の営業日へ均等配分します。同じ日にある他Projectの作業も利用可能時間から差し引きます。完了済み作業は計算対象外です。</footer>
+    <footer className="project-capacity-note">
+      {(draft || dragError) && <p role="status">{draft?.error || dragError || `${draft!.range.start} 〜 ${draft!.range.end}（指を離して確定・Escでキャンセル）`}</p>}
+      作業工数は設定した期間の営業日へ均等配分します。同じ日にある他Projectの作業も利用可能時間から差し引きます。完了済み作業は計算対象外です。
+    </footer>
   </section>;
 }

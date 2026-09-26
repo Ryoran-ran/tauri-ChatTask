@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Goal, ProjectWorkItem } from "../types";
 import { workDatesDiffer, workDateSyncError, workDateSyncSignature, type SyncWorkDates, type WorkDateSyncDirection } from "../projectWorkDateSync";
 import { Modal } from "./Modal";
@@ -18,6 +19,11 @@ export function ProjectWorkDateSyncButton({ project, onSync }: { project: Goal; 
   const [direction, setDirection] = useState<WorkDateSyncDirection>("schedule-to-work");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const close = () => { setSnapshot(null); setError(""); };
   const rows = (snapshot || []).map((work) => {
     const current = works.find((item) => item.id === work.id);
@@ -32,7 +38,7 @@ export function ProjectWorkDateSyncButton({ project, onSync }: { project: Goal; 
       setSnapshot(next); setDirection("schedule-to-work"); setError(""); setNotice("");
       setSelected(new Set(next.filter((work) => !workDateSyncError(work, "schedule-to-work")).map((work) => work.id)));
     }}>作業日を同期（差異{differences.length}件）</button>
-    {notice && <span role="status" className="work-date-sync-notice">{notice}</span>}
+    {notice && createPortal(<div role="status" aria-atomic="true" className="work-date-sync-notice">{notice}</div>, document.body)}
     {snapshot && <Modal title="プロジェクトの作業日を同期" onClose={close} wide>
       <div className="work-date-sync-dialog">
         <strong>{project.title}</strong>
