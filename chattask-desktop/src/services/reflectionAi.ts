@@ -12,9 +12,10 @@ export const buildReflectionAnalysisPrompt = (task: Task, reflection: TaskReflec
     const related = allTasks.find((candidate) => candidate.id === link.taskId);
     return related ? [{ relation: link.relation, task: related }] : [];
   });
-  const projectData = taskProjectContexts(projects, task.id).flatMap((context) => {
-    const project = projects.find((candidate) => candidate.id === context.projectId);
-    return project ? [{ context, project }] : [];
+  const projectContexts = taskProjectContexts(projects, task.id);
+  const projectData = projects.flatMap((project) => {
+    const contexts = projectContexts.filter((context) => context.projectId === project.id);
+    return contexts.length ? [{ contexts, project }] : [];
   });
   const taskHours = (candidate: Task) => ({
     planned: candidate.plannedRanges.reduce((sum, range) => sum + Math.max(0, Number(range.plannedHours) || 0), 0) || Math.max(0, Number(candidate.plannedHours) || 0),
@@ -78,8 +79,9 @@ export const buildReflectionAnalysisPrompt = (task: Task, reflection: TaskReflec
     `- 関連タスク: ${relatedTasks.length ? relatedTasks.map(({ relation, task: related }) => { const hours = taskHours(related); return `${relation}・状態 ${related.status}・予定 ${hours.planned}h・実績 ${hours.actual}h`; }).join(" / ") : "なし"}`,
     "",
     "## 関連プロジェクト（名称は省略）",
-    ...(projectData.length ? projectData.flatMap(({ context, project }, index) => [
-      `- プロジェクト${index + 1}: 関係 ${context.kind === "origin" ? "起点" : "紐づき"} / 状態 ${project.status} / 優先度 ${project.priority || "未設定"} / 期限 ${project.dueDate || "未設定"}`,
+    ...(projectData.length ? projectData.flatMap(({ contexts, project }, index) => [
+      `- プロジェクト${index + 1}: 関係 ${contexts.some((context) => context.kind === "origin") ? "起点を含む" : "紐づき"} / 状態 ${project.status} / 優先度 ${project.priority || "未設定"} / 期限 ${project.dueDate || "未設定"}`,
+      `  - 関連箇所: ${contexts.map((context) => context.location).join(" / ")}`,
       `  - 目的・説明: ${project.description || "未記入"}`,
       `  - 成功条件: ${project.successCriteria || "未記入"}`,
       `  - 規模: マイルストーン ${project.milestones.length}件 / 作業項目 ${(project.workItems || []).length}件`,

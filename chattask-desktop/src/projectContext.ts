@@ -1,6 +1,7 @@
 import type { Goal, PlannedRange } from "./types";
 
 export interface TaskProjectContext {
+  id: string;
   projectId: string;
   projectTitle: string;
   kind: "origin" | "linked";
@@ -11,26 +12,47 @@ export const taskProjectContexts = (projects: Goal[], taskId: string): TaskProje
   const contexts: TaskProjectContext[] = [];
   projects.forEach((project) => {
     if (project.originTaskId === taskId) {
-      contexts.push({ projectId: project.id, projectTitle: project.title, kind: "origin", location: "プロジェクトの起点" });
-      return;
+      contexts.push({ id: `origin:${project.id}`, projectId: project.id, projectTitle: project.title, kind: "origin", location: "プロジェクトの起点" });
     }
-    const milestone = project.milestones.find((item) => item.linkedTaskId === taskId || item.taskIds.includes(taskId));
-    const work = (project.workItems || []).find((item) => item.linkedTaskId === taskId);
-    if (work) {
+
+    project.milestones
+      .filter((milestone) => milestone.linkedTaskId === taskId || (milestone.taskIds || []).includes(taskId))
+      .forEach((milestone) => contexts.push({
+        id: `milestone:${project.id}:${milestone.id}`,
+        projectId: project.id,
+        projectTitle: project.title,
+        kind: "linked",
+        location: `マイルストーン「${milestone.title}」`,
+      }));
+
+    (project.workItems || []).filter((work) => work.linkedTaskId === taskId).forEach((work) => {
       const parentMilestone = project.milestones.find((item) => item.id === work.milestoneId);
       contexts.push({
+        id: `work:${project.id}:${work.id}`,
         projectId: project.id,
         projectTitle: project.title,
         kind: "linked",
         location: parentMilestone ? `マイルストーン「${parentMilestone.title}」／作業項目「${work.title}」` : `プロジェクト直属／作業項目「${work.title}」`,
       });
-    } else if (milestone) {
-      contexts.push({ projectId: project.id, projectTitle: project.title, kind: "linked", location: `マイルストーン「${milestone.title}」` });
-    } else if (project.taskIds.includes(taskId)) {
-      contexts.push({ projectId: project.id, projectTitle: project.title, kind: "linked", location: "プロジェクト直属" });
+    });
+
+    if ((project.taskIds || []).includes(taskId)) {
+      contexts.push({ id: `direct:${project.id}:${taskId}`, projectId: project.id, projectTitle: project.title, kind: "linked", location: "プロジェクト直属" });
     }
   });
   return contexts.sort((a, b) => Number(a.kind !== "origin") - Number(b.kind !== "origin"));
+};
+
+/**
+ * Header badges represent projects, not every location inside a project.
+ * When the task is the project's origin, P already conveys that relationship;
+ * linked locations in the same project remain available in the detail panel.
+ */
+export const taskProjectContextMarks = (contexts: TaskProjectContext[]) => {
+  const originProjectIds = new Set(contexts
+    .filter((context) => context.kind === "origin")
+    .map((context) => context.projectId));
+  return contexts.filter((context) => context.kind === "origin" || !originProjectIds.has(context.projectId));
 };
 
 /** A project schedule is managed only while its source still points at this task. */

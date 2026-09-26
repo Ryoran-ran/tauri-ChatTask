@@ -40,8 +40,10 @@ import { isTaskScheduleManagedByProject, taskProjectContexts } from "./projectCo
 import type { AdvancedTaskFilter, AppData, Goal, GoalStatus, Habit, InboxItem, NonWorkingPeriod, Priority, RecurrenceRecord, SavedTaskView, Task, TaskFilter, TaskSortRule, TaskStatus, TaskTemplate } from "./types";
 import { addDays, generateId, hasIncompletePlanForDate, isRecurringDue, isTaskPlannedForDate, mergeRanges, removeDateFromRanges, todayValue } from "./utils";
 import { appendHistory, createTask, jumpToTaskMatch, repairDuplicateProjectSchedules } from "./appHelpers";
+import { deleteProjectReferences } from "./projectDataProtection";
 
 const PERSONAL_MODE_ACTIVE_DAYS: NonWorkingPeriod[] = [{ id: "personal-mode-active-days", startDate: "0001-01-01", endDate: "", type: "weekend", weekdays: [], note: "" }];
+const RESTORE_NOTICE_KEY = "chatTaskBackupRestoreNotice";
 
 function App() {
   const [environment] = useState<AppEnvironment>(() => getActiveEnvironment());
@@ -150,6 +152,14 @@ function App() {
   const dropNoticeTimer = useRef<number | null>(null);
 
   useEffect(() => {
+    const restoreNotice = sessionStorage.getItem(RESTORE_NOTICE_KEY);
+    if (!restoreNotice) return;
+    sessionStorage.removeItem(RESTORE_NOTICE_KEY);
+    setDropNotice({ text: restoreNotice, error: false });
+    dropNoticeTimer.current = window.setTimeout(() => setDropNotice(null), 7000);
+  }, []);
+
+  useEffect(() => {
     const openWaiting = (event: Event) => {
       setWaitingTaskId((event as CustomEvent<{ taskId?: string }>).detail?.taskId || "");
       setWaitingOpen(true);
@@ -186,19 +196,17 @@ function App() {
     }));
   }, []);
   const openProjects = (projectId = "") => { setProjectFocusId(projectId); setGoalsOpen(true); };
-  const saveProjects = (goals: Goal[]) => setData((current) => repairDuplicateProjectSchedules({
+  const createProject = (project: Goal) => setData((current) => ({
     ...current,
-    goals,
-    tasks: current.tasks.map((task) => ({
-      ...task,
-      plannedRanges: task.plannedRanges.map((range) => {
-        if (range.sourceType !== "project-milestone" || !range.sourceId) return range;
-        const migratedWork = goals.flatMap((goal) => goal.workItems || []).find((work) =>
-          work.linkedTaskId === task.id && work.plannedRanges?.some((workRange) => workRange.id === range.id));
-        return migratedWork ? { ...range, sourceType: "project-work" as const, sourceId: migratedWork.id } : range;
-      }),
-    })),
+    goals: current.goals.some((item) => item.id === project.id) ? current.goals : [project, ...current.goals],
   }));
+  const updateProject = (id: string, changes: Partial<Goal>) => setData((current) => ({
+    ...current,
+    goals: current.goals.map((project) => project.id === id
+      ? { ...project, ...changes, updatedAt: new Date().toISOString() }
+      : project),
+  }));
+  const deleteProject = (id: string) => setData((current) => deleteProjectReferences(current, id));
   const projectStatusFromTask = (status: TaskStatus): GoalStatus => {
     switch (status) {
       case "doing":
@@ -1042,7 +1050,7 @@ function App() {
     {reportOpen && <ReportModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} activity={data.activityLog} dailyNotes={data.dailyNotes} nonWorkingPeriods={data.nonWorkingPeriods} onClose={() => setReportOpen(false)} />}
     {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     {profileOpen && <ProfileModal profile={data.userProfile} onSave={(userProfile) => setData((current) => ({ ...current, userProfile }))} onClose={() => setProfileOpen(false)} />}
-    {goalsOpen && <ProjectsModal projects={data.goals} tasks={data.tasks} tags={data.projectTags} initialProjectId={projectFocusId} onSave={saveProjects} onCreateTask={createRelatedTask} onUpdateTask={updateTaskById} onSelectTask={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); }} onOpenGantt={(id) => { setProjectFocusId(id); setGanttProjectId(id); setGanttReturnProjectId(id); setGanttOpen(true); }} onClose={() => { setGoalsOpen(false); setProjectFocusId(""); }} />}
+    {goalsOpen && <ProjectsModal projects={data.goals} tasks={data.tasks} tags={data.projectTags} initialProjectId={projectFocusId} onCreateProject={createProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} onCreateTask={createRelatedTask} onUpdateTask={updateTaskById} onSelectTask={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); }} onOpenGantt={(id) => { setProjectFocusId(id); setGanttProjectId(id); setGanttReturnProjectId(id); setGanttOpen(true); }} onClose={() => { setGoalsOpen(false); setProjectFocusId(""); }} />}
     {ganttOpen && <GanttModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} periods={data.nonWorkingPeriods} calculationPeriods={effectiveNonWorkingPeriods} initialProjectId={ganttProjectId} onSelect={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); setGanttOpen(false); setGanttProjectId(""); setGanttReturnProjectId(""); }} onClose={() => { setGanttOpen(false); setGanttProjectId(""); if (ganttReturnProjectId) { setProjectFocusId(ganttReturnProjectId); setGoalsOpen(true); } setGanttReturnProjectId(""); }} />}
     {weeklyLoadOpen && <WeeklyLoadModal tasks={data.tasks} tags={data.projectTags} periods={effectiveNonWorkingPeriods} onSelect={(id) => { setSelectedId(id); setWeeklyLoadOpen(false); }} onClose={() => setWeeklyLoadOpen(false)} />}
     {issuesOpen && <IssuesModal issues={data.issues} onSave={(issues) => setData((current) => ({ ...current, issues }))} onClose={() => setIssuesOpen(false)} />}
@@ -1064,12 +1072,13 @@ function App() {
         await saveAppData(blank, storageBackend || "localStorage", "test");
         if (environment === "test") window.location.reload();
       }}
-      onRestore={async (restored) => {
+      onRestore={async (restored, backup) => {
         const repaired = repairDuplicateProjectSchedules(restored);
         await saveAppData(repaired, storageBackend || "localStorage", environment);
         setData(repaired);
         setSelectedId(null);
         setDataManagementOpen(false);
+        sessionStorage.setItem(RESTORE_NOTICE_KEY, `「${backup.fileName}」を復元しました（タスク ${repaired.tasks.length}件・プロジェクト ${repaired.goals.length}件）。`);
         window.location.reload();
       }} onClose={() => setDataManagementOpen(false)} />}
     {notificationsOpen && <NotificationsModal tasks={data.tasks} tags={data.projectTags} onSelect={revealTaskFromPalette} onClose={() => setNotificationsOpen(false)} />}

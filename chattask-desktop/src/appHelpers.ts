@@ -1,4 +1,4 @@
-import type { AppData, HistoryEntry, Task } from "./types";
+import type { AppData, Goal, HistoryEntry, ProjectWorkItem, Task } from "./types";
 import { isActiveProjectScheduleSource } from "./projectContext";
 import { generateId } from "./utils";
 
@@ -7,7 +7,13 @@ export const createTask = (parent?: Task): Task => {
   return {
     id: generateId(), title: "新規タスク", description: "", priority: "B", status: "todo",
     progressStatus: "not-started", waitingReason: "none", taskKind: "normal",
-    projectTagId: parent?.projectTagId || "", parentTaskId: parent?.id || "", repositoryBranches: [], links: [], relatedTasks: [], nextAction: "",
+    projectTagId: parent?.projectTagId || "", parentTaskId: parent?.id || "",
+    repositoryBranches: (parent?.repositoryBranches || []).map((group) => ({
+      ...group,
+      branchNames: [...group.branchNames],
+      pullRequestTargets: group.pullRequestTargets ? [...group.pullRequestTargets] : undefined,
+    })),
+    links: [], relatedTasks: [], nextAction: "",
     reminderDate: "", dueDate: "", isToday: false, plannedRanges: [], recurrence: null, recurrenceMemoTemplate: "", recurrenceRecords: [], dailyPlans: {},
     dailyPlanCompleted: {}, plannedHours: 0, actualHours: 0, dailyActualHours: {}, documents: [], createdAt: now, updatedAt: now, completedAt: null,
     history: [], reflections: [],
@@ -18,6 +24,55 @@ export const appendHistory = (task: Task, text: string): HistoryEntry[] => [
   ...task.history,
   { id: generateId(), type: "system", text, timestamp: new Date().toISOString() },
 ];
+
+type ProjectWorkSourceMigration = {
+  linkedTaskId: string;
+  previousSourceId: string;
+  rangeId: string;
+  nextSourceId: string;
+};
+
+const splitLegacyProjectWork = (project: Goal): { project: Goal; migrations: ProjectWorkSourceMigration[]; changed: boolean } => {
+  const existingIds = new Set((project.workItems || []).map((work) => work.id));
+  const migrations: ProjectWorkSourceMigration[] = [];
+  let changed = false;
+  const workItems = (project.workItems || []).flatMap((item, index): ProjectWorkItem[] => {
+    const plannedRanges = item.plannedRanges || [];
+    if (plannedRanges.length <= 1) return [item];
+    changed = true;
+    const baselines = item.baselinePlannedRanges || [];
+    return plannedRanges.map((range, rangeIndex) => {
+      let nextId = item.id;
+      if (rangeIndex > 0) {
+        const baseId = `${item.id}:${range.id}`;
+        nextId = baseId;
+        let suffix = 2;
+        while (existingIds.has(nextId)) nextId = `${baseId}:${suffix++}`;
+        existingIds.add(nextId);
+      }
+      if (item.linkedTaskId) migrations.push({
+        linkedTaskId: item.linkedTaskId,
+        previousSourceId: item.id,
+        rangeId: range.id,
+        nextSourceId: nextId,
+      });
+      const baseline = baselines.find((candidate) => candidate.id === range.id) || baselines[rangeIndex] || range;
+      return {
+        ...item,
+        id: nextId,
+        title: range.title?.trim() || item.title,
+        description: range.description?.trim() || range.note?.trim() || item.description,
+        dueDate: item.dueDate || range.endDate || range.startDate,
+        plannedHours: Number(range.plannedHours) || 0,
+        plannedRanges: [range],
+        baselinePlannedRanges: [baseline],
+        baselinePlannedHours: Number(baseline.plannedHours) || 0,
+        sortOrder: (item.sortOrder ?? index) + rangeIndex / 100,
+      };
+    });
+  });
+  return { project: changed ? { ...project, workItems } : project, migrations, changed };
+};
 
 export const jumpToTaskMatch = (query: string) => {
   window.setTimeout(() => {
@@ -57,28 +112,41 @@ export const jumpToTaskMatch = (query: string) => {
   }, 80);
 };
 
-const scheduleDuplicateKey = (range: Task["plannedRanges"][number]) => JSON.stringify([
-  range.startDate,
-  range.endDate,
-  (range.title || "").trim(),
-  Number(range.plannedHours) || 0,
-  range.status || "not-started",
-]);
-
-const canRepairScheduleDuplicate = (range: Task["plannedRanges"][number], canonical: Task["plannedRanges"][number]) => {
-  const rangeSource = range.sourceType && range.sourceId ? `${range.sourceType}:${range.sourceId}` : "";
-  const canonicalSource = canonical.sourceType && canonical.sourceId ? `${canonical.sourceType}:${canonical.sourceId}` : "";
-  if (!rangeSource && !canonicalSource) return false;
-  return !rangeSource || !canonicalSource || rangeSource === canonicalSource;
-};
-
-/** Repairs orphaned and duplicate schedules left by older project-linking flows. */
+/**
+ * Repairs stale project ownership and exact array duplicates left by older
+ * project-linking flows. Schedules with different IDs are never merged here:
+ * matching dates, titles, hours and statuses do not prove that they are the
+ * same user-created schedule.
+ */
 export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
   let repaired = false;
+  const sourceMigrations = new Map<string, Set<string>>();
+  const goals = data.goals.map((project) => {
+    const split = splitLegacyProjectWork(project);
+    if (split.changed) repaired = true;
+    split.migrations.forEach((migration) => {
+      const key = [migration.linkedTaskId, migration.previousSourceId, migration.rangeId].join("\u0000");
+      const candidates = sourceMigrations.get(key) || new Set<string>();
+      candidates.add(migration.nextSourceId);
+      sourceMigrations.set(key, candidates);
+    });
+    return split.project;
+  });
   const tasks = data.tasks.map((task) => {
-    const normalizedProjectRanges = task.plannedRanges.map((range) => {
+    let taskRepaired = false;
+    const remappedProjectRanges = task.plannedRanges.map((range) => {
+      if (range.sourceType !== "project-work" || !range.sourceId) return range;
+      const candidates = sourceMigrations.get([task.id, range.sourceId, range.id].join("\u0000"));
+      if (!candidates || candidates.size !== 1) return range;
+      const [nextSourceId] = candidates;
+      if (nextSourceId === range.sourceId) return range;
+      repaired = true;
+      taskRepaired = true;
+      return { ...range, sourceId: nextSourceId };
+    });
+    const normalizedProjectRanges = remappedProjectRanges.map((range) => {
       const hasProjectMetadata = Boolean(range.sourceType || range.sourceId);
-      if (!hasProjectMetadata || isActiveProjectScheduleSource(data.goals, task.id, range.sourceType, range.sourceId)) return range;
+      if (!hasProjectMetadata || isActiveProjectScheduleSource(goals, task.id, range.sourceType, range.sourceId)) return range;
 
       // Keep the user's schedule itself. Only release the stale project ownership
       // so it can be edited or deleted in the same way as an ordinary plan.
@@ -86,40 +154,37 @@ export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
       delete ordinaryRange.sourceType;
       delete ordinaryRange.sourceId;
       repaired = true;
+      taskRepaired = true;
       return ordinaryRange;
     });
-    const canonicalByKey = new Map<string, Task["plannedRanges"][number]>();
+    const fingerprintsById = new Map<string, Set<string>>();
     normalizedProjectRanges.forEach((range) => {
-      const key = scheduleDuplicateKey(range);
-      const current = canonicalByKey.get(key);
-      if (!current || (range.sourceId && !current.sourceId)) canonicalByKey.set(key, range);
+      const fingerprints = fingerprintsById.get(range.id) || new Set<string>();
+      fingerprints.add(JSON.stringify(range));
+      fingerprintsById.set(range.id, fingerprints);
     });
-    const migratedIds = new Map<string, string>();
+    const seenExactIds = new Set<string>();
+    let removedExactDuplicate = false;
     const plannedRanges = normalizedProjectRanges.filter((range) => {
-      const canonical = canonicalByKey.get(scheduleDuplicateKey(range));
-      if (!canonical || canonical.id === range.id || !canRepairScheduleDuplicate(range, canonical)) return true;
-      migratedIds.set(range.id, canonical.id);
+      // A reused ID with different contents is ambiguous, so preserve every entry.
+      if ((fingerprintsById.get(range.id)?.size || 0) !== 1) return true;
+      if (!seenExactIds.has(range.id)) {
+        seenExactIds.add(range.id);
+        return true;
+      }
       repaired = true;
+      taskRepaired = true;
+      removedExactDuplicate = true;
       return false;
     });
-    if (!migratedIds.size && plannedRanges.every((range, index) => range === task.plannedRanges[index])) return task;
-    const migrateRecord = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(
-      Object.entries(record || {}).map(([key, value]) => {
-        const separator = key.indexOf("::");
-        if (separator < 0) return [key, value];
-        const migratedId = migratedIds.get(key.slice(separator + 2));
-        return [migratedId ? `${key.slice(0, separator)}::${migratedId}` : key, value];
-      }),
-    );
+    if (!taskRepaired) return task;
     return {
       ...task,
       plannedRanges,
-      plannedHours: plannedRanges.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0),
-      dailyPlans: migrateRecord(task.dailyPlans),
-      dailyPlanCompleted: migrateRecord(task.dailyPlanCompleted),
-      dailyPlanStatuses: migrateRecord(task.dailyPlanStatuses),
-      dailyActualHours: migrateRecord(task.dailyActualHours),
+      plannedHours: removedExactDuplicate
+        ? plannedRanges.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0)
+        : task.plannedHours,
     };
   });
-  return repaired ? { ...data, tasks } : data;
+  return repaired ? { ...data, goals, tasks } : data;
 };

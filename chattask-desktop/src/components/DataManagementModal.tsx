@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { AppData } from "../types";
 import {
   createAppBackup,
+  getAppDatabasePath,
   listAppBackups,
+  openAppBackup,
   restoreAppBackup,
   type AppBackupInfo,
   type AppEnvironment,
@@ -18,7 +20,7 @@ interface Props {
   onSwitchEnvironment: (environment: AppEnvironment) => Promise<void>;
   onCopyProductionToTest: () => Promise<void>;
   onResetTest: () => Promise<void>;
-  onRestore: (data: AppData) => Promise<void>;
+  onRestore: (data: AppData, backup: AppBackupInfo) => Promise<void>;
   onClose: () => void;
 }
 
@@ -35,6 +37,10 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
   const [integrityResult, setIntegrityResult] = useState<IntegrityCheckResult | null>(null);
   const [pendingEnvironment, setPendingEnvironment] = useState<AppEnvironment | null>(null);
   const [pendingRestore, setPendingRestore] = useState<AppBackupInfo | null>(null);
+  const [restoringFileName, setRestoringFileName] = useState("");
+  const [databasePath, setDatabasePath] = useState("");
+  const [databasePathError, setDatabasePathError] = useState("");
+  const [databasePathCopied, setDatabasePathCopied] = useState(false);
   const sqliteAvailable = backend === "sqlite";
 
   const refresh = useCallback(async () => {
@@ -45,11 +51,34 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  useEffect(() => {
+    let active = true;
+    setDatabasePath("");
+    setDatabasePathError("");
+    setDatabasePathCopied(false);
+    if (!sqliteAvailable) return () => { active = false; };
+    void getAppDatabasePath(environment)
+      .then((path) => { if (active) setDatabasePath(path); })
+      .catch((error) => { if (active) setDatabasePathError(String(error)); });
+    return () => { active = false; };
+  }, [sqliteAvailable, environment]);
+
+  const copyDatabasePath = async () => {
+    if (!databasePath) return;
+    try {
+      await navigator.clipboard.writeText(databasePath);
+      setDatabasePathCopied(true);
+      window.setTimeout(() => setDatabasePathCopied(false), 2000);
+    } catch (error) {
+      setMessage(`データベースのパスをコピーできませんでした: ${String(error)}`);
+    }
+  };
+
   const create = async () => {
     setBusy(true);
     try {
       await createAppBackup(data, environment);
-      setMessage("バックアップを作成しました。");
+      setMessage("完全バックアップを作成しました。");
       await refresh();
     } catch (error) {
       setMessage(`バックアップに失敗しました: ${String(error)}`);
@@ -59,19 +88,20 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
   const restore = async (backup: AppBackupInfo) => {
     setPendingRestore(null);
     setBusy(true);
-    setMessage("バックアップを復元しています…");
+    setRestoringFileName(backup.fileName);
+    setMessage(`${backup.fileName} を復元しています。画面を閉じずにお待ちください…`);
     try {
-      await onRestore(await restoreAppBackup(backup.fileName, environment));
-      setMessage("バックアップを復元しました。");
+      await onRestore(await restoreAppBackup(backup.fileName, environment), backup);
+      setMessage(`${backup.fileName} を復元しました。`);
     } catch (error) {
       setMessage(`復元に失敗しました: ${String(error)}`);
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setRestoringFileName(""); }
   };
 
   return <Modal title="データ管理・バックアップ" onClose={onClose}>
     <div className="data-management">
       <section className={`environment-settings ${environment === "test" ? "is-test" : ""}`}>
-        <div><h3>使用環境</h3><p>本番とテストのデータ・バックアップは完全に分離されています。</p></div>
+        <div><h3>使用環境</h3><p>本番とテストのタスクデータ・バックアップ一覧は環境別に管理されます。</p></div>
         <div className="environment-choice" role="group" aria-label="使用環境">
           <button type="button" className={environment === "production" ? "active" : ""} onClick={() => environment !== "production" && setPendingEnvironment("production")}>本番環境</button>
           <button type="button" className={environment === "test" ? "active" : ""} onClick={() => environment !== "test" && setPendingEnvironment("test")}>テスト環境</button>
@@ -89,28 +119,41 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
       <p className={`storage-status ${sqliteAvailable ? "ok" : "warning"}`}>
         環境: {environment === "test" ? "テスト" : "本番"}<br />保存先: {sqliteAvailable ? "SQLite（自動保存・1日1回自動バックアップ）" : "localStorage（ブラウザ互換モード）"}
       </p>
+      {sqliteAvailable && <section className="database-location" aria-labelledby="database-location-title">
+        <div>
+          <h3 id="database-location-title">データベースファイル</h3>
+          <p>SQLite対応ツールから接続する場合は、このファイルを指定してください。</p>
+        </div>
+        <div className="database-location-value">
+          <code title={databasePath}>{databasePath || (databasePathError ? "パスを取得できませんでした" : "取得中…")}</code>
+          <button type="button" disabled={!databasePath} onClick={() => void copyDatabasePath()}>{databasePathCopied ? "コピー済み" : "パスをコピー"}</button>
+        </div>
+        {databasePathError && <small className="database-location-error">{databasePathError}</small>}
+        <small>外部ツールから更新すると競合やデータ破損の原因になります。ChatTaskを終了してから操作し、事前にバックアップを作成してください。</small>
+      </section>}
+      {message && <p className={`storage-message ${message.includes("失敗") || message.includes("できません") ? "error" : restoringFileName ? "working" : "success"}`} role="status" aria-live="polite">{restoringFileName && <span className="storage-message-spinner" aria-hidden="true" />}{message}</p>}
       {sqliteAvailable
         ? <>
-          <button type="button" className="primary" disabled={busy} onClick={() => void create()}>今すぐバックアップを作成</button>
+          <p className="muted">タスク・プロジェクトに加えて、添付ファイル、プロフィール画像、ChatTaskが管理するローカルツールを保存します。</p>
+          <button type="button" className="primary" disabled={busy} onClick={() => void create()}>今すぐ完全バックアップを作成</button>
           <h3>復元できるバックアップ</h3>
           {backups.length === 0 && <p className="muted">バックアップはまだありません。</p>}
           <div className="backup-list">
-            {backups.map((backup) => <div className="backup-row" key={backup.fileName}>
+            {backups.map((backup) => <div className={`backup-row ${restoringFileName === backup.fileName ? "is-restoring" : ""}`} key={backup.fileName}>
               <div>
                 <strong>{backup.fileName}</strong>
-                <small>{new Date(backup.createdAt * 1000).toLocaleString("ja-JP")}・{formatSize(backup.size)}</small>
+                <small>{backup.complete ? "完全" : "旧形式（データのみ）"}・{new Date(backup.createdAt * 1000).toLocaleString("ja-JP")}・{formatSize(backup.size)}</small>
               </div>
-              <button type="button" disabled={busy} onClick={() => setPendingRestore(backup)}>復元</button>
+              <span className="backup-row-actions"><button type="button" disabled={busy} onClick={() => void openAppBackup(backup).catch((error) => setMessage(`保存先を開けませんでした: ${String(error)}`))}>保存先を開く</button><button type="button" disabled={busy} onClick={() => setPendingRestore(backup)}>{restoringFileName === backup.fileName ? "復元中…" : "復元"}</button></span>
             </div>)}
           </div>
           {pendingRestore && <div className="backup-restore-confirm" role="alertdialog" aria-label="バックアップ復元の確認">
             <strong>{pendingRestore.fileName} の内容へ復元しますか？</strong>
-            <p>現在の内容は復元前バックアップとして保存されます。復元完了後、アプリを再読み込みします。</p>
+            <p>現在の内容は復元前の完全バックアップとして保存されます。完全バックアップでは添付ファイルなども置き換わります。復元完了後、アプリを再読み込みします。</p>
             <div><button type="button" disabled={busy} onClick={() => setPendingRestore(null)}>キャンセル</button><button type="button" className="primary" disabled={busy} onClick={() => void restore(pendingRestore)}>復元を実行</button></div>
           </div>}
         </>
         : <p>デスクトップアプリで起動すると、SQLiteのバックアップ管理を利用できます。</p>}
-      {message && <p className="storage-message" role="status">{message}</p>}
       <section className="integrity-check">
         <div className="integrity-check-heading">
           <div><h3>データ整合性チェック</h3><p>データは変更せず、参照切れ・重複・不正な日付や工数を診断します。</p></div>

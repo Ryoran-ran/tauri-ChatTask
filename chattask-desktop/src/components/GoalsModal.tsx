@@ -4,11 +4,20 @@ import { PRIORITIES, STATUS_GROUPS, STATUS_LABELS as TASK_STATUS_LABELS } from "
 import { removeTaskAttachments } from "../services/attachments";
 import { exportMarkdown } from "../services/documents";
 import type { Goal, GoalMilestone, GoalStatus, PlannedRange, ProjectTag, ProjectWorkItem, Task } from "../types";
-import { generateId, rangeDates, todayValue } from "../utils";
+import { generateId, todayValue } from "../utils";
 import { Modal } from "./Modal";
 import { WorkDatePicker } from "./WorkDatePicker";
 import { PROJECT_STATUS_LABELS as STATUS_LABELS, ProjectAdvancedFilterModal, ProjectSortModal, type ProjectAdvancedFilter, type ProjectSortKey, type ProjectSortRule } from "./ProjectFilterModals";
 import { ProjectResources } from "./ProjectResources";
+import { projectItemActual } from "../projectEffort";
+import {
+  changedProjectFields,
+  effectiveProjectChanges,
+  releaseProjectSchedulesFromTask,
+  standaloneTaskScheduleSnapshot,
+  syncProjectScheduleOnTask,
+  type ProjectScheduleRelease,
+} from "../projectDataProtection";
 
 const LAST_SELECTED_PROJECT_KEY = "chatTaskLastSelectedProjectId";
 const WORK_STATUS = { "not-started": "未着手", "in-progress": "進行中", done: "達成" } as const;
@@ -17,45 +26,25 @@ type CreateRelatedTask = (title: string, parentTaskId?: string, changes?: Partia
 
 const normalizeProject = (project: Goal): Goal => {
   const now = new Date().toISOString();
-  const existingWork = (project.workItems || []).flatMap((item, index) => {
+  const existingWork = (project.workItems || []).map((item, index) => {
     const plannedRanges = item.plannedRanges || [];
     const baselinePlannedRanges = item.baselinePlannedRanges || [];
     const base = {
       ...item,
       sortOrder: item.sortOrder ?? index,
-      // 作業工数は予定ごとの入力だけを正とし、Taskや旧フィールド由来の値は使わない。
-      plannedHours: scheduleHours(plannedRanges),
+      // 日付なしで工数だけを見積もれるため、予定がない場合は作業側の工数を保持する。
+      plannedHours: plannedRanges.length ? scheduleHours(plannedRanges) : Math.max(0, Number(item.plannedHours) || 0),
       actualHours: Number(item.actualHours) || 0,
       plannedRanges,
       baselinePlannedRanges,
-      baselinePlannedHours: scheduleHours(baselinePlannedRanges),
+      baselinePlannedHours: baselinePlannedRanges.length ? scheduleHours(baselinePlannedRanges) : Math.max(0, Number(item.baselinePlannedHours) || 0),
       replanReason: item.replanReason || "",
       replannedAt: item.replannedAt || "",
       linkedTaskScheduleSnapshot: item.linkedTaskScheduleSnapshot || [],
       linkedTaskPlannedHoursSnapshot: Number(item.linkedTaskPlannedHoursSnapshot) || 0,
       syncLinkedTaskStatus: item.syncLinkedTaskStatus !== false,
     };
-    if (plannedRanges.length <= 1) return [base];
-
-    // 旧形式では1つの作業に複数の予定を持てたため、予定単位の作業へ分割する。
-    // 通常のChatTaskの複数予定は対象外で、ProjectWorkItemだけを移行する。
-    return plannedRanges.map((range, rangeIndex) => {
-      const baseline = baselinePlannedRanges.find((candidate) => candidate.id === range.id)
-        || baselinePlannedRanges[rangeIndex]
-        || range;
-      return {
-        ...base,
-        id: rangeIndex === 0 ? item.id : `${item.id}:${range.id}`,
-        title: range.title?.trim() || item.title,
-        description: range.description?.trim() || range.note?.trim() || item.description,
-        dueDate: item.dueDate || range.endDate || range.startDate,
-        plannedHours: Number(range.plannedHours) || 0,
-        plannedRanges: [range],
-        baselinePlannedRanges: [baseline],
-        baselinePlannedHours: Number(baseline.plannedHours) || 0,
-        sortOrder: (item.sortOrder ?? index) + rangeIndex / 100,
-      };
-    });
+    return base;
   });
   const migratedWork: ProjectWorkItem[] = [];
   const milestones = (project.milestones || []).map((item, index) => {
@@ -163,6 +152,14 @@ const restoreWorkTitleFromLinkedSchedule = (work: ProjectWorkItem, tasks: Task[]
   };
 };
 
+const projectForView = (project: Goal, tasks: Task[]): Goal => {
+  const normalized = normalizeProject(project);
+  return {
+    ...normalized,
+    workItems: (normalized.workItems || []).map((work) => restoreWorkTitleFromLinkedSchedule(work, tasks)),
+  };
+};
+
 /** 関連タスクから進捗情報を表示用に反映する。作業名と説明はプロジェクト側を正本とする。 */
 const workFromLinkedTask = (work: ProjectWorkItem, tasks: Task[]): ProjectWorkItem => {
   if (!work.linkedTaskId) return work;
@@ -193,16 +190,7 @@ const scheduleStart = (ranges: PlannedRange[] | undefined) => ranges?.map((range
 const effectiveRanges = (item: { plannedRanges?: PlannedRange[] }, _tasks: Task[]) => item.plannedRanges || [];
 const actualHoursFromTodayPages = (item: { id: string; linkedTaskId?: string; plannedRanges?: PlannedRange[] }, tasks: Task[], sourceType: PlannedRange["sourceType"]) => {
   const task = tasks.find((candidate) => candidate.id === item.linkedTaskId);
-  if (!task) return 0;
-  const linkedRanges = task.plannedRanges
-    .filter((range) => range.sourceType === sourceType && range.sourceId === item.id)
-  const rangeIds = new Set([...linkedRanges, ...(item.plannedRanges || [])].map((range) => range.id));
-  const fallbackRanges = item.plannedRanges?.length ? item.plannedRanges : linkedRanges;
-  return Object.entries(task.dailyActualHours || {}).reduce((total, [planKey, hours]) => {
-    const rangeId = planKey.includes("::") ? planKey.slice(planKey.indexOf("::") + 2) : "";
-    const plainDateMatches = !rangeId && fallbackRanges.some((range) => range.startDate <= planKey && range.endDate >= planKey);
-    return total + (rangeIds.has(rangeId) || plainDateMatches ? Number(hours) || 0 : 0);
-  }, 0);
+  return projectItemActual(task, item, sourceType).hours;
 };
 const markdownText = (value: string | undefined, fallback = "未設定") => value?.trim() || fallback;
 const markdownRanges = (ranges: PlannedRange[] | undefined) => {
@@ -341,11 +329,8 @@ function ScheduleDate({ ranges, showUnscheduled = false }: { ranges: PlannedRang
 function StatusSyncState(_: { task: Task | null | undefined; status: "not-started" | "in-progress" | "achieved" | "done"; enabled: boolean; onReflect: () => void }) {
   return null;
 }
-export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onSave: (projects: Goal[]) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
-  const [items, setItems] = useState<Goal[]>(() => projects.map(normalizeProject).map((project) => ({
-    ...project,
-    workItems: (project.workItems || []).map((work) => restoreWorkTitleFromLinkedSchedule(work, tasks)),
-  })));
+export function ProjectsModal({ projects, tasks, tags, initialProjectId, onCreateProject, onUpdateProject, onDeleteProject, onCreateTask, onUpdateTask, onSelectTask, onOpenGantt, onClose }: { projects: Goal[]; tasks: Task[]; tags: ProjectTag[]; initialProjectId?: string; onCreateProject: (project: Goal) => void; onUpdateProject: (id: string, changes: Partial<Goal>) => void; onDeleteProject: (id: string) => void; onCreateTask: CreateRelatedTask; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onSelectTask: (id: string) => void; onOpenGantt: (projectId: string) => void; onClose: () => void }) {
+  const [items, setItems] = useState<Goal[]>(() => projects.map((project) => projectForView(project, tasks)));
   const [selectedId, setSelectedId] = useState(() => initialProjectId || localStorage.getItem(LAST_SELECTED_PROJECT_KEY) || "");
   const [filter, setFilter] = useState(() => localStorage.getItem("chatTaskProjectFilter") || "active");
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
@@ -373,85 +358,68 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
   const [exportingMarkdown, setExportingMarkdown] = useState(false);
   const [overviewExpanded, setOverviewExpanded] = useState(() => localStorage.getItem("chatTaskProjectOverviewExpanded") === "true");
   const [projectEditDraft, setProjectEditDraft] = useState<Goal | null>(null);
+  const [projectEditSnapshot, setProjectEditSnapshot] = useState<Goal | null>(null);
   const [editSnapshot, setEditSnapshot] = useState<Goal | null>(null);
   const [editTaskSnapshots, setEditTaskSnapshots] = useState<Task[]>([]);
+  useEffect(() => {
+    setItems((current) => {
+      const activeDraftId = editingBoard ? editSnapshot?.id : undefined;
+      const activeDraft = activeDraftId ? current.find((project) => project.id === activeDraftId) : undefined;
+      return projects.map((project) => activeDraft?.id === project.id ? activeDraft : projectForView(project, tasks));
+    });
+  }, [projects, editingBoard, editSnapshot]);
   const syncProjectSchedule = (
     linkedTaskId: string,
     plannedRanges: PlannedRange[],
     sourceType: NonNullable<PlannedRange["sourceType"]>,
     sourceId: string,
-    _plannedHours: number,
     history: string,
   ) => {
     const linkedTask = tasks.find((task) => task.id === linkedTaskId);
     if (!linkedTask) return;
-    const transferredRangeIds = new Set(plannedRanges.map((range) => range.id));
-    const transferredRangeKeys = new Set(plannedRanges.map((range) => JSON.stringify([
-      range.startDate,
-      range.endDate,
-      (range.title || "").trim(),
-      Number(range.plannedHours) || 0,
-      range.status || "not-started",
-    ])));
-    // A project work item only takes ownership of the explicitly selected range.
-    // Every other standalone or project-managed range must remain on the task.
-    // Legacy flows may have copied the selected schedule under a new id. Treat an
-    // identical standalone range as the transferred range instead of displaying it twice.
-    const preserved = linkedTask.plannedRanges.filter((range) => range.sourceId !== sourceId
-      && !transferredRangeIds.has(range.id)
-      && !(!range.sourceId && transferredRangeKeys.has(JSON.stringify([
-        range.startDate,
-        range.endDate,
-        (range.title || "").trim(),
-        Number(range.plannedHours) || 0,
-        range.status || "not-started",
-      ]))));
-    const projectRanges = plannedRanges.map((range) => ({ ...range, sourceType, sourceId }));
-    const nextRanges = [...preserved, ...projectRanges];
-    const nextPlannedHours = scheduleHours(nextRanges);
-    if (scheduleSignature(nextRanges) === scheduleSignature(linkedTask.plannedRanges) && Number(linkedTask.plannedHours) === Number(nextPlannedHours)) return;
-    const managedKeyByDate = new Map(projectRanges.flatMap((range) => rangeDates([range]).map((date) => [date, `${date}::${range.id}`] as const)));
-    const migrate = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(Object.entries(record || {}).map(([key, value]) => [managedKeyByDate.get(key) || key, value]));
-    onUpdateTask(linkedTaskId, {
-      plannedRanges: nextRanges, plannedHours: nextPlannedHours,
-      dailyPlans: migrate(linkedTask.dailyPlans),
-      dailyPlanCompleted: migrate(linkedTask.dailyPlanCompleted),
-      dailyPlanStatuses: migrate(linkedTask.dailyPlanStatuses),
-      dailyActualHours: migrate(linkedTask.dailyActualHours),
-    }, history);
+    const changes = syncProjectScheduleOnTask(linkedTask, plannedRanges, sourceType, sourceId);
+    if (changes) onUpdateTask(linkedTaskId, changes, history);
   };
-  const releaseProjectSchedule = (linkedTaskId: string, sourceId: string, snapshot: PlannedRange[] = [], _plannedHoursSnapshot = 0) => {
+  const releaseProjectSchedules = (linkedTaskId: string, releases: ProjectScheduleRelease[]) => {
     const linkedTask = tasks.find((task) => task.id === linkedTaskId);
     if (!linkedTask) return;
-    const releasedRangeIds = new Set(linkedTask.plannedRanges.filter((range) => range.sourceId === sourceId).map((range) => range.id));
-    const unrelatedRanges = linkedTask.plannedRanges.filter((range) => range.sourceId !== sourceId);
-    const unrelatedIds = new Set(unrelatedRanges.map((range) => range.id));
-    const restoredTransferredRanges = snapshot
-      .filter((range) => releasedRangeIds.has(range.id) && !unrelatedIds.has(range.id))
-      .map((range) => ({ ...range, sourceType: undefined, sourceId: undefined }));
-    const restored = [...unrelatedRanges, ...restoredTransferredRanges];
-    const restoreKey = (key: string) => {
-      const separator = key.indexOf("::");
-      return separator >= 0 && releasedRangeIds.has(key.slice(separator + 2)) ? key.slice(0, separator) : key;
-    };
-    const restore = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(Object.entries(record || {}).map(([key, value]) => [restoreKey(key), value]));
-    onUpdateTask(linkedTaskId, {
-      plannedRanges: restored, plannedHours: scheduleHours(restored),
-      dailyPlans: restore(linkedTask.dailyPlans),
-      dailyPlanCompleted: restore(linkedTask.dailyPlanCompleted),
-      dailyPlanStatuses: restore(linkedTask.dailyPlanStatuses),
-      dailyActualHours: restore(linkedTask.dailyActualHours),
-    }, "プロジェクトとの関連解除により、Task側の予定を復元しました。");
+    const changes = releaseProjectSchedulesFromTask(linkedTask, releases);
+    if (changes) onUpdateTask(linkedTaskId, changes, "プロジェクトとの関連解除により、Task側の予定を復元しました。");
   };
-  useEffect(() => {
-    onSave(items);
-  }, [items]);
+  const releaseProjectSchedule = (
+    linkedTaskId: string,
+    sourceType: ProjectScheduleRelease["sourceType"],
+    sourceId: string,
+    snapshot: PlannedRange[] = [],
+  ) => releaseProjectSchedules(linkedTaskId, [{ sourceType, sourceId, snapshot }]);
   useEffect(() => { localStorage.setItem("chatTaskProjectAdvancedFilter", JSON.stringify(advancedFilter)); }, [advancedFilter]);
   useEffect(() => { localStorage.setItem("chatTaskProjectSortRules", JSON.stringify(sortRules)); }, [sortRules]);
   useEffect(() => {
     setDescriptionExpanded(false);
   }, [selectedId]);
   const storedProject = items.find((item) => item.id === selectedId) || null;
+  const openProjectEditor = () => {
+    if (!storedProject) return;
+    const snapshot = structuredClone(storedProject);
+    setProjectEditSnapshot(snapshot);
+    setProjectEditDraft(structuredClone(snapshot));
+  };
+  const closeProjectEditor = () => {
+    setProjectEditDraft(null);
+    setProjectEditSnapshot(null);
+  };
+  const saveProjectEditor = () => {
+    if (!projectEditDraft || !projectEditSnapshot) return closeProjectEditor();
+    const requestedChanges = changedProjectFields(projectEditSnapshot, projectEditDraft);
+    const currentProject = items.find((item) => item.id === projectEditDraft.id);
+    const changes = currentProject ? effectiveProjectChanges(currentProject, requestedChanges) : requestedChanges;
+    if (Object.keys(changes).length) {
+      const updatedAt = new Date().toISOString();
+      setItems((current) => current.map((item) => item.id === projectEditDraft.id ? { ...item, ...changes, updatedAt } : item));
+      onUpdateProject(projectEditDraft.id, changes);
+    }
+    closeProjectEditor();
+  };
   const beginProjectEdit = () => {
     if (!storedProject) return;
     setEditSnapshot(structuredClone(storedProject));
@@ -466,6 +434,11 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     });
   };
   const completeProjectEdit = () => {
+    const currentProject = items.find((item) => item.id === editSnapshot?.id);
+    if (editSnapshot && currentProject) {
+      const changes = changedProjectFields(editSnapshot, currentProject);
+      if (Object.keys(changes).length) onUpdateProject(currentProject.id, changes);
+    }
     setEditSnapshot(null);
     setEditTaskSnapshots([]);
     setEditingBoard(false);
@@ -474,7 +447,6 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     if (!editSnapshot) return completeProjectEdit();
     const next = items.map((item) => item.id === editSnapshot.id ? editSnapshot : item);
     setItems(next);
-    onSave(next);
     const currentProject = items.find((item) => item.id === editSnapshot.id);
     const linkedTaskIds = (project: Goal | null | undefined) => [
       ...(project?.milestones || []).map((milestone) => milestone.linkedTaskId || ""),
@@ -590,21 +562,46 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       localStorage.setItem(LAST_SELECTED_PROJECT_KEY, selectedId);
     }
   }, [items, selectedId]);
-  const update = (changes: Partial<Goal>) => setItems((current) => current.map((item) => item.id === selectedId ? { ...item, ...changes, updatedAt: new Date().toISOString() } : item));
-  const add = () => { const next = blankProject(); setItems((current) => [next, ...current]); setSelectedId(next.id); };
+  const update = (changes: Partial<Goal>) => {
+    if (!storedProject) return;
+    const effectiveChanges = effectiveProjectChanges(storedProject, changes);
+    if (!Object.keys(effectiveChanges).length) return;
+    const updatedAt = new Date().toISOString();
+    setItems((current) => current.map((item) => item.id === selectedId ? { ...item, ...effectiveChanges, updatedAt } : item));
+    if (selectedId && !editingBoard) onUpdateProject(selectedId, effectiveChanges);
+  };
+  const add = () => {
+    const next = blankProject();
+    setItems((current) => [next, ...current]);
+    onCreateProject(next);
+    setSelectedId(next.id);
+  };
   const remove = () => {
     if (project) {
       void removeTaskAttachments(`project:${project.id}`).catch(() => undefined);
+      const releasesByTask = new Map<string, ProjectScheduleRelease[]>();
+      const addRelease = (linkedTaskId: string, release: ProjectScheduleRelease) => {
+        releasesByTask.set(linkedTaskId, [...(releasesByTask.get(linkedTaskId) || []), release]);
+      };
       project.milestones.forEach((milestone) => {
-        if (milestone.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, milestone.id, milestone.linkedTaskScheduleSnapshot, milestone.linkedTaskPlannedHoursSnapshot);
+        if (milestone.linkedTaskId) addRelease(milestone.linkedTaskId, {
+          sourceType: "project-milestone",
+          sourceId: milestone.id,
+          snapshot: milestone.linkedTaskScheduleSnapshot || [],
+        });
       });
       (project.workItems || []).forEach((work) => {
-        if (work.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, work.id, work.linkedTaskScheduleSnapshot, work.linkedTaskPlannedHoursSnapshot);
+        if (work.linkedTaskId) addRelease(work.linkedTaskId, {
+          sourceType: "project-work",
+          sourceId: work.id,
+          snapshot: work.linkedTaskScheduleSnapshot || [],
+        });
       });
+      releasesByTask.forEach((releases, linkedTaskId) => releaseProjectSchedules(linkedTaskId, releases));
     }
     const next = items.filter((item) => item.id !== selectedId);
     setItems(next);
-    onSave(next);
+    onDeleteProject(selectedId);
     setSelectedId(visible.find((item) => item.id !== selectedId)?.id || "");
     setDeleteConfirm(false);
   };
@@ -621,11 +618,39 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     if (!project) return;
     update({ milestones: project.milestones.map((item) => {
       if (item.id !== id) return item;
+      let nextChanges = changes;
+      if (changes.linkedTaskId !== undefined && changes.linkedTaskId !== item.linkedTaskId) {
+        if (item.linkedTaskId) {
+          releaseProjectSchedule(item.linkedTaskId, "project-milestone", item.id, item.linkedTaskScheduleSnapshot);
+        }
+        if (changes.linkedTaskId) {
+          const linkedTask = tasks.find((task) => task.id === changes.linkedTaskId);
+          const plannedRanges = item.plannedRanges || [];
+          nextChanges = {
+            ...changes,
+            linkedTaskScheduleSnapshot: standaloneTaskScheduleSnapshot(linkedTask),
+            linkedTaskPlannedHoursSnapshot: Number(linkedTask?.plannedHours) || 0,
+          };
+          syncProjectSchedule(
+            changes.linkedTaskId,
+            plannedRanges,
+            "project-milestone",
+            item.id,
+            "マイルストーンの予定を関連Taskへ反映しました。",
+          );
+        } else {
+          nextChanges = {
+            ...changes,
+            linkedTaskScheduleSnapshot: [],
+            linkedTaskPlannedHoursSnapshot: 0,
+          };
+        }
+      }
       const wasAchieved = item.status === "achieved" || item.completed;
       const achieved = changes.status !== undefined ? changes.status === "achieved" : changes.completed !== undefined ? changes.completed : wasAchieved;
       const completedAt = achieved ? item.completedAt || new Date().toISOString() : undefined;
       // 基本情報の変更で、既存の予定・ベースラインを破壊しない。
-      return { ...item, ...changes, completedAt };
+      return { ...item, ...nextChanges, completedAt };
     }) });
   };
   const addWorkItem = (milestoneId = "") => {
@@ -667,20 +692,21 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     const work = (storedProject.workItems || []).find((item) => item.id === id);
     if (!work) return;
     let nextChanges = changes;
-    if (changes.title !== undefined) {
-      const title = changes.title.trim();
-      const plannedRanges = (changes.plannedRanges ?? work.plannedRanges ?? []).slice(0, 1).map((range) => ({ ...range, title }));
-      nextChanges = { ...nextChanges, plannedRanges, plannedHours: scheduleHours(plannedRanges) };
+    if (changes.title !== undefined || changes.plannedRanges !== undefined || changes.plannedHours !== undefined) {
+      const title = (changes.title ?? work.title).trim();
+      const plannedHours = Math.max(0, Number(changes.plannedHours ?? work.plannedHours) || 0);
+      const plannedRanges = (changes.plannedRanges ?? work.plannedRanges ?? []).slice(0, 1).map((range) => ({ ...range, title, plannedHours }));
+      nextChanges = { ...nextChanges, plannedRanges, plannedHours };
     }
     if (changes.linkedTaskId !== undefined && changes.linkedTaskId !== work.linkedTaskId) {
-      if (work.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, work.id, work.linkedTaskScheduleSnapshot, work.linkedTaskPlannedHoursSnapshot);
+      if (work.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, "project-work", work.id, work.linkedTaskScheduleSnapshot);
       if (changes.linkedTaskId) {
         const linkedTask = tasks.find((task) => task.id === changes.linkedTaskId);
-        const standalone = linkedTask?.plannedRanges.filter((range) => !range.sourceId) || [];
+        const standalone = standaloneTaskScheduleSnapshot(linkedTask);
         // 新規作業では、関連Taskと予定を同じ保存操作で設定する。
         // 作成直後のworkは予定が空のため、常に入力中の変更値を優先する。
-        const plannedRanges = (changes.plannedRanges ?? work.plannedRanges ?? []).slice(0, 1).map((range) => ({ ...range, title: (changes.title ?? work.title).trim() }));
-        const plannedHours = scheduleHours(plannedRanges);
+        const plannedHours = Math.max(0, Number(changes.plannedHours ?? work.plannedHours) || 0);
+        const plannedRanges = (changes.plannedRanges ?? work.plannedRanges ?? []).slice(0, 1).map((range) => ({ ...range, title: (changes.title ?? work.title).trim(), plannedHours }));
         const baselinePlannedRanges = changes.baselinePlannedRanges?.length
           ? changes.baselinePlannedRanges
           : work.baselinePlannedRanges?.length ? work.baselinePlannedRanges : plannedRanges;
@@ -688,7 +714,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
           || Number(work.baselinePlannedHours)
           || plannedHours;
         nextChanges = { ...changes, plannedRanges, plannedHours, baselinePlannedRanges, baselinePlannedHours, linkedTaskScheduleSnapshot: standalone, linkedTaskPlannedHoursSnapshot: Number(linkedTask?.plannedHours) || 0 };
-        syncProjectSchedule(changes.linkedTaskId, plannedRanges, "project-work", work.id, plannedHours, "作業項目の予定を関連Taskへ反映しました。");
+        syncProjectSchedule(changes.linkedTaskId, plannedRanges, "project-work", work.id, "作業項目の予定を関連Taskへ反映しました。");
       }
     }
     if (changes.status !== undefined) nextChanges = {
@@ -700,9 +726,9 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       })),
       completedAt: changes.status === "done" ? work.completedAt || new Date().toISOString() : undefined,
     };
-    if ((changes.title !== undefined || changes.status !== undefined) && work.linkedTaskId && changes.linkedTaskId === undefined) {
+    if ((changes.title !== undefined || changes.status !== undefined || changes.plannedRanges !== undefined || changes.plannedHours !== undefined) && work.linkedTaskId && (changes.linkedTaskId === undefined || changes.linkedTaskId === work.linkedTaskId)) {
       const plannedRanges = (nextChanges.plannedRanges ?? work.plannedRanges ?? []).slice(0, 1);
-      syncProjectSchedule(work.linkedTaskId, plannedRanges, "project-work", work.id, scheduleHours(plannedRanges), changes.status !== undefined ? "作業項目の状態を予定へ反映しました。" : "作業名を予定へ反映しました。");
+      syncProjectSchedule(work.linkedTaskId, plannedRanges, "project-work", work.id, changes.status !== undefined ? "作業項目の状態を予定へ反映しました。" : changes.plannedRanges !== undefined || changes.plannedHours !== undefined ? "作業項目の計画を関連Taskへ反映しました。" : "作業名を予定へ反映しました。");
     }
     update({ workItems: (storedProject.workItems || []).map((item) => item.id === id ? { ...item, ...nextChanges, updatedAt: new Date().toISOString() } : item) });
   };
@@ -729,15 +755,16 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       replannedAt: changedFromBaseline ? new Date().toISOString() : "",
       replanReason: changedFromBaseline ? milestone.replanReason || "" : "",
     });
-    if (milestone.linkedTaskId) syncProjectSchedule(milestone.linkedTaskId, plannedRanges, "project-milestone", milestone.id, plannedHours, "マイルストーンから予定と予定工数を更新しました。");
+    if (milestone.linkedTaskId) syncProjectSchedule(milestone.linkedTaskId, plannedRanges, "project-milestone", milestone.id, "マイルストーンから予定と予定工数を更新しました。");
   };
-  const updateWorkSchedule = (id: string, plannedRanges: PlannedRange[]) => {
+  const updateWorkSchedule = (id: string, plannedRanges: PlannedRange[], explicitPlannedHours?: number) => {
     const work = storedProject?.workItems?.find((item) => item.id === id);
     if (!work) return;
     // プロジェクト作業は「1作業＝1予定」。通常Taskの plannedRanges は変更しない。
     plannedRanges = plannedRanges.slice(0, 1).map((range) => ({ ...range, title: work.title.trim() }));
-    const plannedHours = scheduleHours(plannedRanges);
-    const hasBaseline = Boolean(work.baselinePlannedRanges?.length);
+    const plannedHours = Math.max(0, Number(explicitPlannedHours ?? scheduleHours(plannedRanges)) || 0);
+    plannedRanges = plannedRanges.map((range) => ({ ...range, plannedHours }));
+    const hasBaseline = Boolean(work.baselinePlannedRanges?.length) || Number(work.baselinePlannedHours) > 0;
     const baselinePlannedRanges = hasBaseline ? work.baselinePlannedRanges! : work.plannedRanges?.length ? work.plannedRanges : plannedRanges;
     const baselinePlannedHours = hasBaseline
       ? Number(work.baselinePlannedHours) || scheduleHours(baselinePlannedRanges)
@@ -745,18 +772,21 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     const changed = scheduleSignature(baselinePlannedRanges) !== scheduleSignature(plannedRanges)
       || Number(baselinePlannedHours) !== Number(plannedHours);
     updateWork(id, { plannedRanges, plannedHours, baselinePlannedRanges, baselinePlannedHours, replannedAt: changed ? new Date().toISOString() : "", replanReason: changed ? work.replanReason || "" : "" });
-    if (work.linkedTaskId) syncProjectSchedule(work.linkedTaskId, plannedRanges, "project-work", work.id, plannedHours, "プロジェクトの作業項目から予定と予定工数を更新しました。");
+    if (work.linkedTaskId) syncProjectSchedule(work.linkedTaskId, plannedRanges, "project-work", work.id, "プロジェクトの作業項目から予定と予定工数を更新しました。");
   };
   const persistProjectChanges = (changes: Partial<Goal>) => {
+    if (!storedProject) return;
+    const effectiveChanges = effectiveProjectChanges(storedProject, changes);
+    if (!Object.keys(effectiveChanges).length) return;
     const now = new Date().toISOString();
-    const next = items.map((item) => item.id === selectedId ? { ...item, ...changes, updatedAt: now } : item);
+    const next = items.map((item) => item.id === selectedId ? { ...item, ...effectiveChanges, updatedAt: now } : item);
     setItems(next);
-    onSave(next);
+    if (selectedId) onUpdateProject(selectedId, effectiveChanges);
   };
   const deleteMilestone = (id: string) => {
     if (!storedProject) return;
     const milestone = storedProject.milestones.find((item) => item.id === id);
-    if (milestone?.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, milestone.id, milestone.linkedTaskScheduleSnapshot, milestone.linkedTaskPlannedHoursSnapshot);
+    if (milestone?.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, "project-milestone", milestone.id, milestone.linkedTaskScheduleSnapshot);
     persistProjectChanges({
       milestones: storedProject.milestones.filter((item) => item.id !== id),
       workItems: (storedProject.workItems || []).map((item) => item.milestoneId === id ? { ...item, milestoneId: "" } : item),
@@ -765,7 +795,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
   const deleteWork = (id: string) => {
     if (!storedProject) return;
     const work = (storedProject.workItems || []).find((item) => item.id === id);
-    if (work?.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, work.id, work.linkedTaskScheduleSnapshot, work.linkedTaskPlannedHoursSnapshot);
+    if (work?.linkedTaskId) releaseProjectSchedule(work.linkedTaskId, "project-work", work.id, work.linkedTaskScheduleSnapshot);
     persistProjectChanges({ workItems: (storedProject.workItems || []).filter((item) => item.id !== id) });
   };
   const origin = project?.originTaskId ? tasks.find((task) => task.id === project.originTaskId) : null;
@@ -799,7 +829,7 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
     </aside>
     <main className="project-view-tree">{project ? <>
       <aside className="project-info-pane">
-      <div className="goal-heading"><div className="project-title-area">{editingBoard ? <input value={project.title} onChange={(event) => update({ title: event.target.value })} /> : <h2>{project.title}</h2>}{editingBoard ? <div className="project-edit-actions"><button type="button" className="project-edit-cancel" onClick={cancelProjectEdit}>編集をキャンセル</button><button type="button" onClick={completeProjectEdit}>編集を完了</button></div> : <div className="project-heading-actions"><button type="button" onClick={() => setProjectEditDraft(structuredClone(storedProject))}>基本情報を編集</button></div>}</div><div className="goal-progress"><strong>{progress(project)}%</strong><span><i style={{ width: `${progress(project)}%` }} /></span></div></div>
+      <div className="goal-heading"><div className="project-title-area">{editingBoard ? <input value={project.title} onChange={(event) => update({ title: event.target.value })} /> : <h2>{project.title}</h2>}{editingBoard ? <div className="project-edit-actions"><button type="button" className="project-edit-cancel" onClick={cancelProjectEdit}>編集をキャンセル</button><button type="button" onClick={completeProjectEdit}>編集を完了</button></div> : <div className="project-heading-actions"><button type="button" onClick={openProjectEditor}>基本情報を編集</button></div>}</div><div className="goal-progress"><strong>{progress(project)}%</strong><span><i style={{ width: `${progress(project)}%` }} /></span></div></div>
       <EffortSummary workItems={project.workItems || []} label="プロジェクト工数" plannedOverride={projectPlannedHours || undefined} completed={project.status === "achieved"} />
       <div className="field-grid goal-fields"><label>状態<select value={project.status} onChange={(event) => update({ status: event.target.value as GoalStatus })}>{Object.entries(STATUS_LABELS).filter(([value]) => value !== "cancelled").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>{editingBoard ? <><label>優先度<select value={project.priority} onChange={(event) => update({ priority: event.target.value as Goal["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>案件タグ<select value={project.projectTagId} onChange={(event) => update({ projectTagId: event.target.value })}><option value="">タグなし</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label><label className={`goal-deadline-field ${remaining !== null && remaining < 0 ? "overdue" : ""}`}>GOAL期限<WorkDatePicker ariaLabel="GOAL期限" value={project.dueDate} onChange={(dueDate) => update({ dueDate })} />{deadlineStatusText && <small>{deadlineStatusText}</small>}</label></> : <><div className="project-read-field"><small>優先度</small><strong>{project.priority}</strong></div><div className="project-read-field"><small>案件タグ</small><strong>{tags.find((tag) => tag.id === project.projectTagId)?.name || "タグなし"}</strong></div><div className={`project-read-field project-read-deadline ${remaining !== null && remaining < 0 ? "overdue" : ""}`}><small>GOAL期限</small><strong>{project.dueDate || "未設定"}</strong>{deadlineStatusText && <span>{deadlineStatusText}</span>}</div></>}</div>
       <button type="button" className={`project-summary-toggle ${overviewExpanded || editingBoard ? "active" : ""}`} onClick={() => { const next = !overviewExpanded; setOverviewExpanded(next); localStorage.setItem("chatTaskProjectOverviewExpanded", String(next)); }}><span>{overviewExpanded || editingBoard ? "▼" : "▶"}</span> 詳細情報</button>
@@ -811,7 +841,6 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       </aside>
       <section className="project-milestone-pane">
       <div className="project-workspace-toolbar"><div><strong>マイルストーン</strong><small>目的と到達点を管理し、作業状況は関連タスクから集計します</small></div><div><button type="button" onClick={exportProjectMarkdown} disabled={exportingMarkdown}>{exportingMarkdown ? "出力中..." : "MD出力"}</button><button type="button" onClick={() => onOpenGantt(project.id)}>ガントチャート</button></div></div>
-      <div className="project-task-source-notice"><strong>作業名・状態はプロジェクトで管理します</strong><span>関連タスクがある作業は、期限・予定・工数をタスクから参照します。作業名・状態・説明はプロジェクト側で個別に管理します。</span></div>
       <MilestonePlanOverview milestones={project.milestones} workItems={project.workItems || []} editing={editingBoard} onUpdate={updateMilestone} />
       {view === "board" && <>{!editingBoard && project.milestones.length > 1 && <section className="same-date-order-panel"><strong>マイルストーンの同一期限内順序</strong><small>期限が同じ項目だけ、↑／↓で移動できます。期限が異なる場合は期限の昇順で自動的に並びます。</small>{[...project.milestones].sort(compareMilestonesByDueDate).map((milestone) => <div key={`order-${milestone.id}`}><span>{milestone.title || "名称未設定"}<small>{milestone.dueDate || "期限未設定"}</small></span><div className="same-date-order-controls"><button type="button" title="同じ期限の中で上へ" onClick={() => moveMilestone(milestone.id, -1)}>↑</button><button type="button" title="同じ期限の中で下へ" onClick={() => moveMilestone(milestone.id, 1)}>↓</button></div></div>)}</section>}
       <section className="goal-section"><div className="goal-section-heading"><h3>マイルストーン</h3><div className="goal-section-heading-actions">{editingBoard ? <><button type="button" className="project-edit-cancel" onClick={cancelProjectEdit}>キャンセル</button><button type="button" onClick={completeProjectEdit}>編集を完了</button><button type="button" onClick={addMilestone}>＋ マイルストーン追加</button></> : <button type="button" onClick={beginProjectEdit}>ボードを編集</button>}</div></div><div className="project-milestones">{[...project.milestones].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((milestone, milestoneIndex) => { const linkedTask = tasks.find((task) => task.id === milestone.linkedTaskId); const milestoneWorks = (project.workItems || []).filter((item) => item.milestoneId === milestone.id); const ranges = milestoneWorks.flatMap((work) => work.plannedRanges || []); return <article key={milestone.id}><div className="board-milestone-label"><span>MILESTONE {milestoneIndex + 1}</span><small>配下の作業項目 {milestoneWorks.length}件</small></div><div className={`project-item-main ${editingBoard ? "" : "is-readonly"}`}><select value={milestone.status || (milestone.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; updateMilestone(milestone.id, { status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{editingBoard ? <><input value={milestone.title} className={milestone.completed ? "plan-completed" : ""} onChange={(event) => updateMilestone(milestone.id, { title: event.target.value })} /><WorkDatePicker ariaLabel="マイルストーンの期限" value={milestone.dueDate || ""} onChange={(dueDate) => updateMilestone(milestone.id, { dueDate })} /><button onClick={() => addWorkItem(milestone.id)}>作業追加</button><button className="danger-text" onClick={() => deleteMilestone(milestone.id)}>削除</button></> : <>{milestone.linkedTaskId ? <button type="button" className="project-milestone-title-link" title="関連ChatTaskを開く" onClick={() => onSelectTask(milestone.linkedTaskId!)}>{milestone.title}</button> : <strong>{milestone.title}</strong>}<time>{milestone.dueDate || "期限未設定"}</time></>}</div>{!editingBoard && <ScheduleDate ranges={ranges} />}{editingBoard ? <><textarea rows={2} value={milestone.description || ""} onChange={(event) => updateMilestone(milestone.id, { description: event.target.value })} placeholder="マイルストーンの説明" /><LinkedTaskSelector tasks={tasks} value={milestone.linkedTaskId || ""} suggestedTaskIds={[project.originTaskId || "", ...project.taskIds]} suggestionLabel="このプロジェクトの候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => updateMilestone(milestone.id, { linkedTaskId, taskIds: linkedTaskId ? [linkedTaskId] : [] })} /></> : <><p>{milestone.description || "説明はありません"}</p><StatusSyncState task={linkedTask} status={milestone.status || (milestone.completed ? "achieved" : "not-started")} enabled={milestone.syncLinkedTaskStatus !== false} onReflect={() => reflectMilestoneStatus(milestone)} /></>}<div className="board-milestone-works">{milestoneWorks.map((work) => <WorkRow key={work.id} work={work} tasks={tasks} editing={editingBoard} suggestedTaskIds={[milestone.linkedTaskId || "", ...milestone.taskIds]} onCreateTask={onCreateTask} onUpdate={(changes) => updateWork(work.id, changes)} onSchedule={(nextRanges) => updateWorkSchedule(work.id, nextRanges)} onDelete={() => deleteWork(work.id)} onOpen={onSelectTask} onReflectStatus={() => reflectWorkStatus(work)} />)}{!milestoneWorks.length && !editingBoard && <p className="board-no-work">配下の作業項目はありません</p>}</div></article>; })}</div></section>
@@ -821,12 +850,12 @@ export function ProjectsModal({ projects, tasks, tags, initialProjectId, onSave,
       {advancedFilterOpen && <ProjectAdvancedFilterModal filter={advancedFilter} tags={tags} onApply={setAdvancedFilter} onClose={() => setAdvancedFilterOpen(false)} />}
       {sortEditorOpen && <ProjectSortModal rules={sortRules} onChange={setSortRules} onClose={() => setSortEditorOpen(false)} />}
       <div className="goal-footer">{deleteConfirm ? <div><span>プロジェクトだけを削除します。起点ToDoは残ります。</span><button onClick={() => setDeleteConfirm(false)}>取消</button><button className="danger" onClick={remove}>削除する</button></div> : <button className="danger-text" onClick={() => setDeleteConfirm(true)}>プロジェクトを削除</button>}<span className="autosave-status">自動保存</span><button className="primary" onClick={onClose}>閉じる</button></div>
-      {projectEditDraft && createPortal(<div className="project-editor-backdrop" onPointerDown={() => setProjectEditDraft(null)}><section className="project-editor-dialog" role="dialog" aria-modal="true" aria-label="プロジェクトを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>PROJECT</small><h3>プロジェクトを編集</h3><p>名称や状態、期限などの基本情報を変更します。</p></div><button type="button" aria-label="閉じる" onClick={() => setProjectEditDraft(null)}>×</button></header><div className="project-editor-fields"><label className="project-editor-title">プロジェクト名<input autoFocus value={projectEditDraft.title} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, title: event.target.value })} /></label><label>状態<select value={projectEditDraft.status} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, status: event.target.value as GoalStatus })}>{Object.entries(STATUS_LABELS).filter(([value]) => value !== "cancelled").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>優先度<select value={projectEditDraft.priority} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, priority: event.target.value as Goal["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>案件タグ<select value={projectEditDraft.projectTagId} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, projectTagId: event.target.value })}><option value="">タグなし</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label><label>GOAL期限<WorkDatePicker ariaLabel="GOAL期限" value={projectEditDraft.dueDate} onChange={(dueDate) => setProjectEditDraft({ ...projectEditDraft, dueDate })} /></label><label className="project-editor-description">プロジェクトの説明<textarea rows={5} value={projectEditDraft.description} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, description: event.target.value })} /></label><label className="project-editor-description">GOAL（最終達成条件）<textarea rows={4} value={projectEditDraft.successCriteria} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, successCriteria: event.target.value })} placeholder="どの状態になれば完了か" /></label></div><footer><button type="button" onClick={() => setProjectEditDraft(null)}>キャンセル</button><button type="button" className="primary" disabled={!projectEditDraft.title.trim()} onClick={() => { persistProjectChanges(projectEditDraft); setProjectEditDraft(null); }}>保存</button></footer></section></div>, document.body)}
+      {projectEditDraft && createPortal(<div className="project-editor-backdrop" onPointerDown={closeProjectEditor}><section className="project-editor-dialog" role="dialog" aria-modal="true" aria-label="プロジェクトを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>PROJECT</small><h3>プロジェクトを編集</h3><p>名称や状態、期限などの基本情報を変更します。</p></div><button type="button" aria-label="閉じる" onClick={closeProjectEditor}>×</button></header><div className="project-editor-fields"><label className="project-editor-title">プロジェクト名<input autoFocus value={projectEditDraft.title} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, title: event.target.value })} /></label><label>状態<select value={projectEditDraft.status} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, status: event.target.value as GoalStatus })}>{Object.entries(STATUS_LABELS).filter(([value]) => value !== "cancelled").map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>優先度<select value={projectEditDraft.priority} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, priority: event.target.value as Goal["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>案件タグ<select value={projectEditDraft.projectTagId} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, projectTagId: event.target.value })}><option value="">タグなし</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></label><label>GOAL期限<WorkDatePicker ariaLabel="GOAL期限" value={projectEditDraft.dueDate} onChange={(dueDate) => setProjectEditDraft({ ...projectEditDraft, dueDate })} /></label><label className="project-editor-description">プロジェクトの説明<textarea rows={5} value={projectEditDraft.description} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, description: event.target.value })} /></label><label className="project-editor-description">GOAL（最終達成条件）<textarea rows={4} value={projectEditDraft.successCriteria} onChange={(event) => setProjectEditDraft({ ...projectEditDraft, successCriteria: event.target.value })} placeholder="どの状態になれば完了か" /></label></div><footer><button type="button" onClick={closeProjectEditor}>キャンセル</button><button type="button" className="primary" disabled={!projectEditDraft.title.trim()} onClick={saveProjectEditor}>保存</button></footer></section></div>, document.body)}
     </> : <div className="empty-list">プロジェクトを追加してください。</div>}</main>
   </div></Modal>;
 }
 
-function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSchedule, onAddMilestone, onWork, onWorkSchedule, onAddWork, onDeleteMilestone, onDeleteWork, onOpen, onReflectMilestone, onReflectWork }: { project: Goal; tasks: Task[]; onCreateTask: CreateRelatedTask; onMilestone: (id: string, changes: Partial<GoalMilestone>) => void; onMilestoneSchedule: (id: string, ranges: PlannedRange[]) => void; onAddMilestone: (insertAt?: number) => string; onWork: (id: string, changes: Partial<ProjectWorkItem>) => void; onWorkSchedule: (id: string, ranges: PlannedRange[]) => void; onAddWork: (milestoneId: string) => string; onDeleteMilestone: (id: string) => void; onDeleteWork: (id: string) => void; onOpen: (id: string) => void; onReflectMilestone: (milestone: GoalMilestone) => void; onReflectWork: (work: ProjectWorkItem) => void }) {
+function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSchedule, onAddMilestone, onWork, onWorkSchedule, onAddWork, onDeleteMilestone, onDeleteWork, onOpen, onReflectMilestone, onReflectWork }: { project: Goal; tasks: Task[]; onCreateTask: CreateRelatedTask; onMilestone: (id: string, changes: Partial<GoalMilestone>) => void; onMilestoneSchedule: (id: string, ranges: PlannedRange[]) => void; onAddMilestone: (insertAt?: number) => string; onWork: (id: string, changes: Partial<ProjectWorkItem>) => void; onWorkSchedule: (id: string, ranges: PlannedRange[], plannedHours?: number) => void; onAddWork: (milestoneId: string) => string; onDeleteMilestone: (id: string) => void; onDeleteWork: (id: string) => void; onOpen: (id: string) => void; onReflectMilestone: (milestone: GoalMilestone) => void; onReflectWork: (work: ProjectWorkItem) => void }) {
   const onAddWorkRef = useRef(onAddWork);
   useEffect(() => { onAddWorkRef.current = onAddWork; }, [onAddWork]);
   const editingMilestone = "";
@@ -930,7 +959,6 @@ function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSch
   const cancelWorkEdit = (id: string) => {
     if (workEditSnapshot?.id === id) {
       onWork(id, workEditSnapshot);
-      onWorkSchedule(id, workEditSnapshot.plannedRanges || []);
     } else {
       onDeleteWork(id);
     }
@@ -963,12 +991,52 @@ function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSch
       plannedHours: Number(transferredRange.plannedHours) || 0,
     });
   };
+  const updateWorkDraftDate = (startDate: string) => {
+    if (!workDraft) return;
+    if (!startDate) {
+      setWorkDraft({ ...workDraft, plannedRanges: [] });
+      return;
+    }
+    const current = workDraft.plannedRanges?.[0];
+    const plannedHours = Math.max(0, Number(workDraft.plannedHours) || 0);
+    setWorkDraft({
+      ...workDraft,
+      plannedRanges: [{
+        ...(current || {}),
+        id: current?.id || generateId(),
+        startDate,
+        endDate: current?.endDate && current.endDate >= startDate ? current.endDate : startDate,
+        title: workDraft.title.trim(),
+        description: current?.description || current?.note || "",
+        note: current?.note || current?.description || "",
+        plannedHours,
+      }],
+    });
+  };
+  const updateWorkDraftEndDate = (endDate: string) => {
+    if (!workDraft?.plannedRanges?.[0]) return;
+    const current = workDraft.plannedRanges[0];
+    setWorkDraft({ ...workDraft, plannedRanges: [{ ...current, endDate: endDate && endDate >= current.startDate ? endDate : current.startDate }] });
+  };
+  const updateWorkDraftHours = (value: string) => {
+    if (!workDraft) return;
+    const plannedHours = Math.max(0, Number(value) || 0);
+    setWorkDraft({
+      ...workDraft,
+      plannedHours,
+      plannedRanges: (workDraft.plannedRanges || []).slice(0, 1).map((range) => ({ ...range, plannedHours })),
+    });
+  };
   const saveWorkDraft = (continueAdding: boolean) => {
     if (!workDraft) return;
     const milestoneId = workDraft.milestoneId;
-    const plannedRanges = (workDraft.plannedRanges || []).slice(0, 1).map((range) => ({ ...range, title: workDraft.title.trim() }));
-    const sanitizedDraft = { ...workDraft, plannedRanges, plannedHours: scheduleHours(plannedRanges) };
-    onWorkSchedule(workDraft.id, plannedRanges);
+    const plannedHours = Math.max(0, Number(workDraft.plannedHours) || 0);
+    const plannedRanges = (workDraft.plannedRanges || []).slice(0, 1).map((range) => ({ ...range, title: workDraft.title.trim(), plannedHours }));
+    const hasBaseline = Boolean(workDraft.baselinePlannedRanges?.length) || Number(workDraft.baselinePlannedHours) > 0;
+    const baselinePlannedRanges = hasBaseline ? workDraft.baselinePlannedRanges || [] : plannedRanges;
+    const baselinePlannedHours = hasBaseline ? Math.max(0, Number(workDraft.baselinePlannedHours) || 0) : plannedHours;
+    const changed = scheduleSignature(baselinePlannedRanges) !== scheduleSignature(plannedRanges) || baselinePlannedHours !== plannedHours;
+    const sanitizedDraft = { ...workDraft, plannedRanges, plannedHours, baselinePlannedRanges, baselinePlannedHours, replannedAt: changed ? workDraft.replannedAt || new Date().toISOString() : "", replanReason: changed ? workDraft.replanReason || "" : "" };
     onWork(workDraft.id, sanitizedDraft);
     if (!continueAdding) {
       completeWorkEdit();
@@ -1016,7 +1084,26 @@ function ProjectTree({ project, tasks, onCreateTask, onMilestone, onMilestoneSch
     })}
     <div className={`tree-goal ${allMilestonesAchieved ? "completed" : ""}`}><span className="tree-goal-node">◎</span><small>GOAL</small><strong>{project.title}</strong><p>{project.successCriteria || "最終達成条件を入力してください"}</p>{project.dueDate && <time>期限 {project.dueDate}</time>}<b>{progress(project)}% 達成</b></div>
     {milestoneDraft && createPortal(<div className="milestone-editor-backdrop" onPointerDown={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}><section className="milestone-editor-dialog" role="dialog" aria-modal="true" aria-label="マイルストーンを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>MILESTONE</small><h3>{newMilestoneEditId === milestoneDraft.id ? "マイルストーンを追加" : "マイルストーンを編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>×</button></header><div className="milestone-editor-fields"><label>マイルストーン名<input autoFocus value={milestoneDraft.title} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, title: event.target.value })} placeholder="到達点を入力" /></label><label>期限<WorkDatePicker ariaLabel="マイルストーンの期限" value={milestoneDraft.dueDate || ""} onChange={(dueDate) => setMilestoneDraft({ ...milestoneDraft, dueDate })} /></label><label>状態<select value={milestoneDraft.status || (milestoneDraft.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; setMilestoneDraft({ ...milestoneDraft, status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="milestone-editor-description">説明<textarea rows={5} value={milestoneDraft.description || ""} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, description: event.target.value })} placeholder="完了条件や到達状態を記載" /></label></div><div className="milestone-editor-works"><div><strong>作業項目</strong><button type="button" onClick={() => { const id = onAddWork(milestoneDraft.id); if (id) { setNewWorkEditId(id); setEditingWork(id); } }}>＋ 作業を追加</button></div>{(project.workItems || []).filter((item) => item.milestoneId === milestoneDraft.id).sort((a, b) => a.sortOrder - b.sortOrder).map((work) => <button type="button" className="milestone-editor-work-row" key={work.id} onClick={() => setEditingWork(work.id)}><span><b>{work.title}</b><small>{WORK_STATUS[work.status]}・予定 {formatHours(work.plannedHours)}</small></span><span>編集 ›</span></button>)}{!(project.workItems || []).some((item) => item.milestoneId === milestoneDraft.id) && <p>作業項目はまだありません。ここから続けて追加できます。</p>}</div><p className="milestone-editor-note">予定期間と予定工数は、マイルストーン配下の作業項目で設定します。</p><footer><button type="button" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>キャンセル</button><button type="button" className="primary" disabled={!milestoneDraft.title.trim()} onClick={() => { onMilestone(milestoneDraft.id, milestoneDraft); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>保存</button></footer></section></div>, document.body)}
-    {workDraft && createPortal(<div className="milestone-editor-backdrop work-editor-layer" onPointerDown={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}><section className="milestone-editor-dialog work-editor-dialog" role="dialog" aria-modal="true" aria-label="作業項目を編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>WORK ITEM</small><h3>{newWorkEditId === workDraft.id ? "作業項目を追加" : "作業項目を編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>×</button></header><div className="work-editor-fields"><label className="work-editor-title">作業名<input autoFocus value={workDraft.title} onChange={(event) => setWorkDraft({ ...workDraft, title: event.target.value })} placeholder="実施する作業を入力" /></label><label>状態<select value={workDraft.status} onChange={(event) => setWorkDraft({ ...workDraft, status: event.target.value as ProjectWorkItem["status"] })}>{Object.entries(WORK_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>優先度<select value={workDraft.priority} onChange={(event) => setWorkDraft({ ...workDraft, priority: event.target.value as ProjectWorkItem["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label><label>期限<WorkDatePicker ariaLabel="作業項目の期限" value={workDraft.dueDate || ""} onChange={(dueDate) => setWorkDraft({ ...workDraft, dueDate })} /></label><label className="work-editor-description">説明<textarea rows={4} value={workDraft.description || ""} onChange={(event) => setWorkDraft({ ...workDraft, description: event.target.value })} placeholder="作業内容や完了条件を記載" /></label></div><div className="work-editor-related"><strong>関連ChatTask</strong><LinkedTaskSelector tasks={tasks} value={workDraft.linkedTaskId || ""} suggestedTaskIds={[milestoneDraft?.linkedTaskId || "", ...(milestoneDraft?.taskIds || []), project.originTaskId || "", ...project.taskIds]} suggestionLabel="関連する候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => setWorkDraft({ ...workDraft, linkedTaskId })} /></div><div className="work-editor-schedule"><strong>予定</strong>{!(workDraft.plannedRanges || []).length && <div className="work-unscheduled-state"><b>予定なし</b><span>作業だけを登録し、着手できるタイミングで予定を設定できます。</span></div>}<ScheduleEditor single fixedTitle={workDraft.title} ranges={(workDraft.plannedRanges || []).slice(0, 1)} onChange={(plannedRanges) => { const singleRange = plannedRanges.slice(0, 1).map((range) => ({ ...range, title: workDraft.title.trim() })); setWorkDraft({ ...workDraft, plannedRanges: singleRange, plannedHours: scheduleHours(singleRange) }); }} /></div><footer><button type="button" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>キャンセル</button>{newWorkEditId === workDraft.id && <button type="button" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(false)}>保存して閉じる</button>}<button type="button" className="primary" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(newWorkEditId === workDraft.id)}>{newWorkEditId === workDraft.id ? "保存して次を追加" : "保存"}</button></footer></section></div>, document.body)}
+    {workDraft && createPortal(<div className="milestone-editor-backdrop work-editor-layer" onPointerDown={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>
+      <section className="milestone-editor-dialog work-editor-dialog" role="dialog" aria-modal="true" aria-label="作業項目を編集" onPointerDown={(event) => event.stopPropagation()}>
+        <header><div><small>WORK ITEM</small><h3>{newWorkEditId === workDraft.id ? "作業項目を追加" : "作業項目を編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>×</button></header>
+        <div className="work-editor-fields">
+          <label className="work-editor-title">作業名<input autoFocus value={workDraft.title} onChange={(event) => setWorkDraft({ ...workDraft, title: event.target.value })} placeholder="実施する作業を入力" /></label>
+          <label>状態<select value={workDraft.status} onChange={(event) => setWorkDraft({ ...workDraft, status: event.target.value as ProjectWorkItem["status"] })}>{Object.entries(WORK_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>優先度<select value={workDraft.priority} onChange={(event) => setWorkDraft({ ...workDraft, priority: event.target.value as ProjectWorkItem["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>期限<WorkDatePicker ariaLabel="作業項目の期限" value={workDraft.dueDate || ""} onChange={(dueDate) => setWorkDraft({ ...workDraft, dueDate })} /></label>
+          <fieldset className="work-editor-plan"><legend>作業計画 <small>任意</small></legend>
+            <label>開始日<WorkDatePicker ariaLabel="開始日" value={workDraft.plannedRanges?.[0]?.startDate || ""} onChange={updateWorkDraftDate} /></label>
+            <label>終了日（任意）<WorkDatePicker ariaLabel="終了日" value={workDraft.plannedRanges?.[0]?.endDate === workDraft.plannedRanges?.[0]?.startDate ? "" : workDraft.plannedRanges?.[0]?.endDate || ""} min={workDraft.plannedRanges?.[0]?.startDate || undefined} onChange={updateWorkDraftEndDate} disabled={!workDraft.plannedRanges?.[0]?.startDate} /></label>
+            <label>予定工数（時間）<input type="number" min="0" step="0.25" value={workDraft.plannedHours || ""} onChange={(event) => updateWorkDraftHours(event.target.value)} placeholder="例：3" /></label>
+            <small>期間指定の仕様は従来どおりです。開始日と予定工数は、片方だけでも保存できます。</small>
+          </fieldset>
+          <label className="work-editor-description">説明<textarea rows={4} value={workDraft.description || ""} onChange={(event) => setWorkDraft({ ...workDraft, description: event.target.value })} placeholder="作業内容や完了条件を記載" /></label>
+        </div>
+        <div className="work-editor-related"><strong>関連ChatTask</strong><LinkedTaskSelector tasks={tasks} value={workDraft.linkedTaskId || ""} suggestedTaskIds={[milestoneDraft?.linkedTaskId || "", ...(milestoneDraft?.taskIds || []), project.originTaskId || "", ...project.taskIds]} suggestionLabel="関連する候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => setWorkDraft({ ...workDraft, linkedTaskId })} /></div>
+        <footer><button type="button" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>キャンセル</button>{newWorkEditId === workDraft.id && <button type="button" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(false)}>保存して閉じる</button>}<button type="button" className="primary" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(newWorkEditId === workDraft.id)}>{newWorkEditId === workDraft.id ? "保存して次を追加" : "保存"}</button></footer>
+      </section>
+    </div>, document.body)}
     {workDraft && workTransferCandidates.length > 0 && dismissedWorkTransferId !== workDraft.id && createPortal(
       <aside className="work-schedule-transfer" aria-label="起点タスクの既存予定">
         <div className="work-schedule-transfer-heading">

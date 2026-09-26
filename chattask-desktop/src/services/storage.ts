@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ActivityEvent, AppData, Habit, HabitArea, LocalTool, NonWorkingPeriod, PlannedRange, Priority, ProjectTag, Task, TaskKind, TaskProgressStatus, TaskReflectionTheme, TaskStatus, TaskWaitingReason, WorkspaceMode } from "../types";
 import { randomTagColor } from "../tagColors";
 import { generateId, mergeRanges, todayValue } from "../utils";
+import { remapRecordKeysWithoutOverwrite } from "../projectDataProtection";
 
 const KEYS = {
   tasks: "chatTasksData",
@@ -100,17 +101,18 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
     removedRangeIds.add(carried.id);
   });
   const normalizedRanges = mergeRanges(ranges.filter((range) => !removedRangeIds.has(range.id)));
-  const migratePlannedRecord = <T,>(record: Record<string, T> | undefined) => Object.fromEntries(
-    Object.entries(record || {}).map(([key, value]) => {
+  const migratePlannedRecord = <T,>(record: Record<string, T> | undefined) => remapRecordKeysWithoutOverwrite(
+    record,
+    (key) => {
       const separator = key.indexOf("::");
       if (separator < 0) {
         // 旧形式の日付だけの記録は、その日の予定が1件に特定できる場合だけ予定IDへ移す。
         const matches = normalizedRanges.filter((range) => range.startDate <= key && range.endDate >= key);
-        return matches.length === 1 ? [`${key}::${matches[0].id}`, value] : [key, value];
+        return matches.length === 1 ? `${key}::${matches[0].id}` : key;
       }
       const rangeId = key.slice(separator + 2);
-      return [`${key.slice(0, separator)}::${migratedRangeIds.get(rangeId) || rangeId}`, value];
-    }),
+      return `${key.slice(0, separator)}::${migratedRangeIds.get(rangeId) || rangeId}`;
+    },
   );
   const recurrence = source.recurrence as Task["recurrence"] || (status === "recurring" ? { frequency: "weekly" as const, weekday: new Date().getDay(), monthDay: new Date().getDate(), startDate: todayValue(), endDate: "", paused: false } : null);
   const legacyBranchNames = Array.isArray(source.branchNames)
@@ -136,6 +138,9 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       const reviewStatus = ["pending", "in-progress", "completed", "ignored"].includes(String(item.reviewStatus))
         ? String(item.reviewStatus) as "pending" | "in-progress" | "completed" | "ignored"
         : item.completed === true ? "completed" : "pending";
+      const ignoredReasonCategory = ["as-designed", "false-positive", "accepted-risk", "out-of-scope", "separate-task", "other"].includes(String(item.ignoredReasonCategory))
+        ? String(item.ignoredReasonCategory) as NonNullable<Task["reviewChecklist"]>[number]["ignoredReasonCategory"]
+        : undefined;
       return [{
         ...item,
         id: String(item.id || generateId()),
@@ -150,6 +155,9 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
         suggestion: item.suggestion ? String(item.suggestion) : undefined,
         severity,
         reviewStatus,
+        ignoredReasonCategory,
+        ignoredReasonNote: item.ignoredReasonNote ? String(item.ignoredReasonNote) : undefined,
+        ignoredAt: item.ignoredAt ? String(item.ignoredAt) : undefined,
         repositoryId: item.repositoryId ? String(item.repositoryId) : undefined,
         repositoryName: item.repositoryName ? String(item.repositoryName) : undefined,
         reviewRunId: item.reviewRunId ? String(item.reviewRunId) : undefined,
@@ -555,6 +563,8 @@ export interface AppBackupInfo {
   path: string;
   createdAt: number;
   size: number;
+  /** false for legacy JSON-only backups created by older versions. */
+  complete?: boolean;
 }
 
 const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
@@ -615,6 +625,12 @@ export const createAppBackup = async (data: AppData, environment: AppEnvironment
 
 export const listAppBackups = async (environment: AppEnvironment): Promise<AppBackupInfo[]> =>
   invoke<AppBackupInfo[]>("list_app_backups", { environment });
+
+export const getAppDatabasePath = async (environment: AppEnvironment): Promise<string> =>
+  invoke<string>("get_app_database_path", { environment });
+
+export const openAppBackup = (backup: AppBackupInfo) =>
+  invoke<void>("open_tool_folder", { folderPath: backup.complete ? backup.path : backup.path.replace(/[\\/][^\\/]+$/, "") });
 
 export const restoreAppBackup = async (fileName: string, environment: AppEnvironment): Promise<AppData> => {
   let restoredData: AppData | null = null;

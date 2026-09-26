@@ -1,0 +1,48 @@
+name: ChatTask tests
+
+on:
+  push:
+    paths:
+      - "chattask-desktop/**"
+      - ".github/workflows/chattask-tests.yml"
+  pull_request:
+    paths:
+      - "chattask-desktop/**"
+      - ".github/workflows/chattask-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chattask-desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chattask-desktop/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Test and build
+        run: npm run check
+
+  rust-test:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: chattask-desktop/src-tauri
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chattask-desktop/src-tauri
+      - name: Test native backup and storage code
+        run: cargo test --locked

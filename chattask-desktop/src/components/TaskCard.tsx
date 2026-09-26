@@ -1,5 +1,5 @@
 import { STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
-import type { TaskProjectContext } from "../projectContext";
+import { taskProjectContextMarks, type TaskProjectContext } from "../projectContext";
 import type { NonWorkingPeriod, ProjectTag, Task } from "../types";
 import { TagIcon } from "./TagIcon";
 import { hasIncompletePlanForDate, isRecurringDue, localDateValue, recurrenceLabel, todayValue } from "../utils";
@@ -61,7 +61,7 @@ export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, 
         {progress.childCount > 0 ? <button className={`collapse-button ${hasTodayDescendant ? "has-today-descendant" : ""}`} title={hasTodayDescendant ? "配下の子タスクに今日の予定があります" : undefined} aria-label={`${collapsed ? "子タスクを開く" : "子タスクを閉じる"}${hasTodayDescendant ? "。配下に今日の予定があります" : ""}`} onClick={(event) => { event.stopPropagation(); onToggle(); }}><span>{collapsed ? "▶" : "▼"}</span>{hasTodayDescendant && <i aria-hidden="true" />}</button> : <span className="collapse-spacer" />}
         <span className="task-priority-wrap"><span className={`priority priority-${task.priority}`}>{task.priority}</span>{isToday && <i className="task-today-dot" role="img" aria-label="今日の予定" title="今日の予定" />}</span>
         {projectContexts.length > 0 && <span className="task-relation-marks">
-          {[...projectContexts].sort((a, b) => Number(a.kind === "origin") - Number(b.kind === "origin")).map((context) => <button key={`${context.projectId}-${context.kind}`} type="button" className={`task-project-mark ${context.kind}`} title={`${context.kind === "origin" ? "プロジェクトへ昇華済み" : "関連プロジェクトあり"}\n${context.projectTitle}\n${context.location}`} aria-label={`${context.projectTitle}を開く`} onClick={(event) => { event.stopPropagation(); onOpenProject(context.projectId); }}>{context.kind === "origin" ? "P" : "↗"}</button>)}
+          {taskProjectContextMarks(projectContexts).map((context) => <button key={context.id} type="button" className={`task-project-mark ${context.kind}`} title={`${context.kind === "origin" ? "プロジェクトへ昇華済み" : "関連プロジェクトあり"}\n${context.projectTitle}\n${context.location}`} aria-label={`${context.projectTitle}を開く`} onClick={(event) => { event.stopPropagation(); onOpenProject(context.projectId); }}>{context.kind === "origin" ? "P" : "↗"}</button>)}
         </span>}
         <strong className="task-card-title">{task.title || "無題のタスク"}</strong>
         {deadline && <div className="task-card-state"><span className={`deadline-badge deadline-${deadline.className}`}>{deadline.label}</span></div>}
