@@ -48,6 +48,10 @@ export function checkAppDataIntegrity(data: AppData): IntegrityCheckResult {
       add({ severity: "error", category, target: `${label} ID: ${id}`, message: `同じIDが${count}件あります。`, suggestion: "バックアップを作成したうえで、重複レコードの統合またはID再発行が必要です。" });
     });
   };
+  if (data.projectDailyCapacityHours !== undefined
+    && (!Number.isFinite(Number(data.projectDailyCapacityHours)) || Number(data.projectDailyCapacityHours) <= 0 || Number(data.projectDailyCapacityHours) > 24)) {
+    add({ severity: "error", category: "Project計画", target: "1日の計画可能時間", message: "計画可能時間が0より大きく24以下の値ではありません。", suggestion: "Projectの目標作業スケジュールで有効な時間を設定してください。" });
+  }
 
   duplicateIds(data.tasks, "ID", "タスク");
   duplicateIds(data.projectTags, "ID", "案件タグ");
@@ -115,13 +119,22 @@ export function checkAppDataIntegrity(data: AppData): IntegrityCheckResult {
     if (goal.projectTagId && !tagIds.has(goal.projectTagId)) add({ severity: "error", category: "参照", target, message: "存在しない案件タグを参照しています。", suggestion: "有効な案件タグへ変更してください。" });
     goal.taskIds.forEach((id) => { if (!taskById.has(id)) add({ severity: "error", category: "プロジェクト連携", target, message: `関連タスク（${id}）が見つかりません。`, suggestion: "参照を外すか、関連タスクを選び直してください。" }); });
     goal.milestones.forEach((milestone) => {
-      if (milestone.linkedTaskId && !taskById.has(milestone.linkedTaskId)) add({ severity: "error", category: "プロジェクト連携", target: `${target} / マイルストーン「${milestone.title}」`, message: "関連タスクが見つかりません。", suggestion: "関連タスクを選び直してください。" });
+      const milestoneTarget = `${target} / マイルストーン「${milestone.title}」`;
+      if (milestone.linkedTaskId && !taskById.has(milestone.linkedTaskId)) add({ severity: "error", category: "プロジェクト連携", target: milestoneTarget, message: "関連タスクが見つかりません。", suggestion: "関連タスクを選び直してください。" });
+      if (Boolean(milestone.targetWorkStartDate) !== Boolean(milestone.targetWorkEndDate)) add({ severity: "warning", category: "Project計画", target: milestoneTarget, message: "目標期間の開始日または終了日だけが設定されています。", suggestion: "開始日と終了日の両方を設定するか、期間を消してください。" });
+      if (milestone.targetWorkStartDate && !validDate(milestone.targetWorkStartDate)) add({ severity: "error", category: "Project計画", target: milestoneTarget, message: "目標期間の開始日が不正です。", suggestion: "目標期間を設定し直してください。" });
+      if (milestone.targetWorkEndDate && !validDate(milestone.targetWorkEndDate)) add({ severity: "error", category: "Project計画", target: milestoneTarget, message: "目標期間の終了日が不正です。", suggestion: "目標期間を設定し直してください。" });
+      if (milestone.targetWorkStartDate && milestone.targetWorkEndDate && milestone.targetWorkEndDate < milestone.targetWorkStartDate) add({ severity: "error", category: "Project計画", target: milestoneTarget, message: "目標期間の終了日が開始日より前です。", suggestion: "終了日を開始日以降へ変更してください。" });
     });
     (goal.workItems || []).forEach((work) => {
       const workTarget = `${target} / 作業「${work.title || work.id}」`;
       if (work.milestoneId && (!milestoneById.has(work.milestoneId) || !goal.milestones.some((milestone) => milestone.id === work.milestoneId))) add({ severity: "error", category: "プロジェクト構造", target: workTarget, message: "所属マイルストーンが見つかりません。", suggestion: "正しいマイルストーンへ移動するか、プロジェクト直属へ変更してください。" });
       if (work.linkedTaskId && !taskById.has(work.linkedTaskId)) add({ severity: "error", category: "プロジェクト連携", target: workTarget, message: "関連タスクが見つかりません。", suggestion: "関連タスクを選び直してください。" });
       if (!finiteNonNegative(work.plannedHours) || !finiteNonNegative(work.actualHours)) add({ severity: "error", category: "工数", target: workTarget, message: "予定または実績工数が負数・不正値です。", suggestion: "0以上の数値へ修正してください。" });
+      if (Boolean(work.targetWorkStartDate) !== Boolean(work.targetWorkEndDate)) add({ severity: "warning", category: "Project計画", target: workTarget, message: "目標作業期間の開始日または終了日だけが設定されています。", suggestion: "開始日と終了日の両方を設定するか、期間を消してください。" });
+      if (work.targetWorkStartDate && !validDate(work.targetWorkStartDate)) add({ severity: "error", category: "Project計画", target: workTarget, message: "目標作業期間の開始日が不正です。", suggestion: "カレンダーから開始日を設定し直してください。" });
+      if (work.targetWorkEndDate && !validDate(work.targetWorkEndDate)) add({ severity: "error", category: "Project計画", target: workTarget, message: "目標作業期間の終了日が不正です。", suggestion: "カレンダーから終了日を設定し直してください。" });
+      if (work.targetWorkStartDate && work.targetWorkEndDate && work.targetWorkEndDate < work.targetWorkStartDate) add({ severity: "error", category: "Project計画", target: workTarget, message: "目標作業期間の終了日が開始日より前です。", suggestion: "終了日を開始日以降へ変更してください。" });
       if ((work.plannedRanges || []).length > 1) add({ severity: "warning", category: "予定", target: workTarget, message: "1作業に複数の予定が登録されています。", suggestion: "現在の仕様に合わせ、作業予定を1件へ統合してください。" });
     });
   });

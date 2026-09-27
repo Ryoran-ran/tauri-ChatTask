@@ -39,6 +39,9 @@ export interface GoalMilestone {
   taskIds: string[];
   description?: string;
   dueDate?: string;
+  /** Project計画上、このマイルストーンへ取り組む大まかな目標期間。 */
+  targetWorkStartDate?: string;
+  targetWorkEndDate?: string;
   linkedTaskId?: string;
   sortOrder?: number;
   status?: "not-started" | "in-progress" | "achieved";
@@ -66,6 +69,9 @@ export interface ProjectWorkItem {
   linkedTaskId: string;
   plannedHours: number;
   actualHours: number;
+  /** Project計画上、この作業へ時間を割り当てる目標期間。ガントの実作業予定とは分離する。 */
+  targetWorkStartDate?: string;
+  targetWorkEndDate?: string;
   plannedRanges?: PlannedRange[];
   baselinePlannedRanges?: PlannedRange[];
   baselinePlannedHours?: number;
@@ -76,6 +82,8 @@ export interface ProjectWorkItem {
   /** @deprecated 旧保存データの読み込み互換用。ステータスは連動しない。 */
   syncLinkedTaskStatus?: boolean;
   sortOrder: number;
+  /** 作業スケジュール専用。同じマイルストーン・目標開始日内の表示順。 */
+  scheduleSortOrder?: number;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -88,6 +96,8 @@ export interface GoalReview {
 }
 
 export interface Goal {
+  /** スケジュール操作の変更差分。最新50件、取り消し済みを含む。 */
+  scheduleHistory?: import("../projectScheduleHistory").ScheduleHistoryRecord[];
   id: string;
   title: string;
   description: string;

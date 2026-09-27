@@ -1,6 +1,8 @@
 import type { AppData, Goal, HistoryEntry, ProjectWorkItem, Task } from "./types";
 import { isActiveProjectScheduleSource } from "./projectContext";
 import { generateId } from "./utils";
+import { migrateLegacyMilestoneData } from "./projectLegacyMigration";
+import { inheritLegacyBaseline, inheritLegacyPlannedHours } from "./legacyPlannedHours";
 
 export const createTask = (parent?: Task): Task => {
   const now = new Date().toISOString();
@@ -37,10 +39,10 @@ const splitLegacyProjectWork = (project: Goal): { project: Goal; migrations: Pro
   const migrations: ProjectWorkSourceMigration[] = [];
   let changed = false;
   const workItems = (project.workItems || []).flatMap((item, index): ProjectWorkItem[] => {
-    const plannedRanges = item.plannedRanges || [];
+    const plannedRanges = inheritLegacyPlannedHours(item.plannedRanges || [], item.plannedHours);
     if (plannedRanges.length <= 1) return [item];
     changed = true;
-    const baselines = item.baselinePlannedRanges || [];
+    const baselines = inheritLegacyBaseline(plannedRanges, item.baselinePlannedRanges, item.baselinePlannedHours);
     return plannedRanges.map((range, rangeIndex) => {
       let nextId = item.id;
       if (rangeIndex > 0) {
@@ -118,7 +120,8 @@ export const jumpToTaskMatch = (query: string) => {
  * matching dates, titles, hours and statuses do not prove that they are the
  * same user-created schedule.
  */
-export const repairDuplicateProjectSchedules = (data: AppData): AppData => {
+export const repairDuplicateProjectSchedules = (input: AppData): AppData => {
+  const data = migrateLegacyMilestoneData(input);
   let repaired = false;
   const sourceMigrations = new Map<string, Set<string>>();
   const goals = data.goals.map((project) => {

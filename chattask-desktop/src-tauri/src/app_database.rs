@@ -255,6 +255,7 @@ fn save_in_transaction(tx: &Transaction<'_>, data: &Value) -> Result<(), String>
         ("local_tools_storage_path", root.get("localToolsStoragePath").cloned().unwrap_or_else(|| json!(""))),
         ("habits", root.get("habits").cloned().unwrap_or_else(|| json!([]))),
         ("workspace_mode", root.get("workspaceMode").cloned().unwrap_or_else(|| json!("work"))),
+        ("project_daily_capacity_hours", root.get("projectDailyCapacityHours").cloned().unwrap_or_else(|| json!(6))),
         ("version", root.get("version").cloned().unwrap_or(json!(1))),
     ] {
         tx.execute("INSERT INTO app_settings(key, data_json) VALUES (?1, ?2)", params![key, value_string(&value)?]).map_err(|error| error.to_string())?;
@@ -367,6 +368,7 @@ fn load_from_connection(connection: &Connection) -> Result<Option<Value>, String
         ,"localToolsStoragePath": setting("local_tools_storage_path", json!(""))?
         ,"habits": setting("habits", json!([]))?
         ,"workspaceMode": setting("workspace_mode", json!("work"))?
+        ,"projectDailyCapacityHours": setting("project_daily_capacity_hours", json!(6))?
     })))
 }
 

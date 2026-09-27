@@ -5,7 +5,6 @@ import {
   getAppDatabasePath,
   listAppBackups,
   openAppBackup,
-  restoreAppBackup,
   type AppBackupInfo,
   type AppEnvironment,
   type StorageBackend,
@@ -20,7 +19,7 @@ interface Props {
   onSwitchEnvironment: (environment: AppEnvironment) => Promise<void>;
   onCopyProductionToTest: () => Promise<void>;
   onResetTest: () => Promise<void>;
-  onRestore: (data: AppData, backup: AppBackupInfo) => Promise<void>;
+  onRestore: (backup: AppBackupInfo) => Promise<void>;
   onClose: () => void;
 }
 
@@ -91,7 +90,7 @@ export function DataManagementModal({ data, backend, environment, onSwitchEnviro
     setRestoringFileName(backup.fileName);
     setMessage(`${backup.fileName} を復元しています。画面を閉じずにお待ちください…`);
     try {
-      await onRestore(await restoreAppBackup(backup.fileName, environment), backup);
+      await onRestore(backup);
       setMessage(`${backup.fileName} を復元しました。`);
     } catch (error) {
       setMessage(`復元に失敗しました: ${String(error)}`);

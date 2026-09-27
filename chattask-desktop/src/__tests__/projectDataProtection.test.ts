@@ -117,6 +117,78 @@ describe("プロジェクトデータ保全", () => {
     expect(original.plannedRanges[0].sourceId).toBeUndefined();
   });
 
+  it.each(["project-work", "project-milestone"] as const)("%sの同期で内容が同じ別IDの通常予定と記録を残す", (sourceType) => {
+    const ordinary = range("ordinary-range", { note: "通常予定のメモ" });
+    const incoming = range("project-range");
+    const original = task({
+      plannedRanges: [ordinary],
+      plannedHours: 2,
+      dailyPlans: { "2026-09-25::ordinary-range": "保持する記録" },
+      dailyPlanCompleted: { "2026-09-25::ordinary-range": true },
+      dailyPlanStatuses: { "2026-09-25::ordinary-range": "done" },
+      dailyActualHours: { "2026-09-25::ordinary-range": 1.5 },
+    });
+    const snapshot = structuredClone(original);
+    const changes = syncProjectScheduleOnTask(original, [incoming], sourceType, "source-1");
+
+    expect(changes?.plannedRanges).toEqual([
+      ordinary,
+      { ...incoming, sourceType, sourceId: "source-1" },
+    ]);
+    expect(changes?.plannedHours).toBe(4);
+    expect(changes?.dailyPlans).toEqual(original.dailyPlans);
+    expect(changes?.dailyPlanCompleted).toEqual(original.dailyPlanCompleted);
+    expect(changes?.dailyPlanStatuses).toEqual(original.dailyPlanStatuses);
+    expect(changes?.dailyActualHours).toEqual(original.dailyActualHours);
+    expect(original).toEqual(snapshot);
+    expect(incoming).toEqual(range("project-range"));
+    expect(syncProjectScheduleOnTask({ ...original, ...changes }, [incoming], sourceType, "source-1")).toBeNull();
+  });
+
+  it("同じIDで選択した通常予定だけを引き継ぎ、関連解除時に復元する", () => {
+    const selected = range("selected-range", { note: "引き継ぐメモ" });
+    const unrelated = range("unrelated-range");
+    const original = task({
+      plannedRanges: [selected, unrelated],
+      plannedHours: 4,
+      dailyPlans: { "2026-09-25::selected-range": "選択した予定の記録", "2026-09-25::unrelated-range": "別予定の記録" },
+      dailyActualHours: { "2026-09-25::selected-range": 1, "2026-09-25::unrelated-range": 2 },
+    });
+    const snapshot = standaloneTaskScheduleSnapshot(original);
+    const changes = syncProjectScheduleOnTask(original, [selected], "project-work", "work-1");
+
+    expect(changes?.plannedRanges).toEqual([
+      unrelated,
+      { ...selected, sourceType: "project-work", sourceId: "work-1" },
+    ]);
+    expect(changes?.plannedHours).toBe(4);
+    expect(changes?.dailyPlans).toEqual(original.dailyPlans);
+    expect(changes?.dailyActualHours).toEqual(original.dailyActualHours);
+
+    const restored = releaseProjectSchedulesFromTask({ ...original, ...changes }, [
+      { sourceType: "project-work", sourceId: "work-1", snapshot },
+    ]);
+    expect(restored?.plannedRanges).toEqual([unrelated, selected]);
+    expect(restored?.plannedHours).toBe(4);
+  });
+
+  it("再同期と予定の解除で対象作業だけを更新し、同内容の他予定を保持する", () => {
+    const ordinary = range("ordinary-range");
+    const otherWork = range("other-work-range", { sourceType: "project-work", sourceId: "work-2" });
+    const previous = range("previous-range", { sourceType: "project-work", sourceId: "work-1" });
+    const original = task({ plannedRanges: [ordinary, otherWork, previous], plannedHours: 6 });
+    const replacement = range("replacement-range");
+    const changes = syncProjectScheduleOnTask(original, [replacement], "project-work", "work-1");
+
+    expect(changes?.plannedRanges).toEqual([
+      ordinary, otherWork, { ...replacement, sourceType: "project-work", sourceId: "work-1" },
+    ]);
+    expect(changes?.plannedHours).toBe(6);
+    const cleared = syncProjectScheduleOnTask({ ...original, ...changes }, [], "project-work", "work-1");
+    expect(cleared?.plannedRanges).toEqual([ordinary, otherWork]);
+    expect(cleared?.plannedHours).toBe(4);
+  });
+
   it("同じsourceIdでも別種のプロジェクト予定を上書きしない", () => {
     const milestoneRange = range("milestone-range", { sourceType: "project-milestone", sourceId: "shared-id" });
     const original = task({ plannedRanges: [milestoneRange] });

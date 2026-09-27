@@ -70,6 +70,8 @@ export interface AppData {
   dailyNotes: Record<string, string>;
   dailyFinalizedAt: Record<string, string>;
   nonWorkingPeriods: NonWorkingPeriod[];
+  /** Projectの目標作業期間で、1営業日に確保できる標準時間。 */
+  projectDailyCapacityHours?: number;
   userProfile: UserProfile;
   goals: Goal[];
   issues: AppIssue[];
