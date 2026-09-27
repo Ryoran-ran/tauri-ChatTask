@@ -94,6 +94,15 @@ describe("スケジュール画面の表示設定", () => {
     const html = render();
     expect(html).toContain('checked=""'); expect(html).toContain('title="finished"');
   });
+  it("同期差異がないときは同期ボタンで上部を占有しない", () => {
+    vi.stubGlobal("localStorage", { getItem: () => null });
+    const p = project({ workItems: [
+      { ...work("same"), plannedRanges: [{ id: "r", startDate: "2026-09-21", endDate: "2026-09-25", plannedHours: 3 }] },
+    ] });
+    const html = render(p);
+    expect(html).not.toContain("作業日を同期（差異0件）");
+    expect(html).not.toContain("完了済みの項目はありません");
+  });
   it("すべて非表示でも再表示の操作と案内が残る", () => {
     vi.stubGlobal("localStorage", { getItem: () => null });
     const html = render(project({ milestones: [milestone("m", true)], workItems: [work("done", "m", "done")] }));

@@ -2451,17 +2451,20 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .milestone-plan-overview { margin-top: .8rem; border: 1px solid #dbeafe; border-radius: 10px; padding: .7rem; background: #f8fbff; }
 .project-capacity-planner { margin-top: .8rem; overflow: hidden; border: 1px solid #bfdbfe; border-radius: 10px; background: #fff; }
 .project-capacity-planner.is-collapsed { background: #f8fbff; }
-.project-capacity-heading { display: flex; align-items: center; gap: .8rem; padding: .7rem; background: #f8fbff; }
-.project-capacity-heading > div { display: grid; min-width: 0; flex: 1; gap: .1rem; }
-.project-capacity-heading > div strong { color: #1e293b; font-size: .8rem; }
-.project-capacity-heading > div small { color: #64748b; font-size: .68rem; font-weight: 400; }
+.project-capacity-heading { display: flex; align-items: center; gap: .65rem; min-height: 50px; padding: .45rem .7rem; background: #f8fbff; }
+.project-capacity-heading-title { display: flex; min-width: 0; flex: 1; align-items: center; gap: .4rem; }
+.project-capacity-heading-title > strong { color: #1e293b; font-size: .8rem; }
+.project-capacity-help { position: relative; display: grid; width: 19px; height: 19px; flex: none; place-items: center; border: 1px solid #cbd5e1; border-radius: 50%; background: white; color: #64748b; font-family: Georgia, serif; font-size: .66rem; font-weight: 700; cursor: help; }
+.project-capacity-help > span { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; display: none; width: min(410px, calc(100vw - 3rem)); border: 1px solid #cbd5e1; border-radius: 8px; padding: .5rem .6rem; background: #1e293b; box-shadow: 0 8px 20px rgb(15 23 42 / 18%); color: white; font-family: inherit; font-size: .64rem; font-weight: 500; line-height: 1.5; }
+.project-capacity-help:hover > span, .project-capacity-help:focus > span { display: block; }
+.project-capacity-help:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
 .project-capacity-toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: .5rem; border: 0; padding: 0; background: transparent; color: #1e293b; text-align: left; }
 .project-capacity-toggle > span:last-child { display: grid; gap: .1rem; }
 .project-capacity-toggle strong { font-size: .8rem; }
 .project-capacity-toggle small { color: #64748b; font-size: .68rem; font-weight: 400; }
 .project-capacity-heading > label { display: flex; flex: none; align-items: center; gap: .35rem; color: #475569; font-size: .7rem; font-weight: 700; }
 .project-capacity-heading > label input { width: 4.2rem; min-height: 32px; padding: .35rem .45rem; }
-.project-capacity-period-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .55rem 1rem; border-top: 1px solid #dbeafe; padding: .45rem .7rem; background: #f8fbff; }
+.project-capacity-period-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem 1rem; min-height: 48px; border-top: 1px solid #dbeafe; padding: .35rem .7rem; background: #f8fbff; }
 .project-capacity-range-fields { display: flex; align-items: center; gap: .4rem; }
 .project-capacity-range-fields > strong { margin-right: .15rem; color: #475569; font-size: .68rem; }
 .project-capacity-range-fields > .work-date-picker { width: 132px; }
@@ -2471,15 +2474,16 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .project-capacity-range-actions > button { min-height: 29px; border: 0; border-radius: 6px; padding: .3rem .62rem; background: transparent; color: #475569; font-size: .62rem; font-weight: 720; transition: background .15s ease, box-shadow .15s ease, color .15s ease, transform .15s ease; }
 .project-capacity-range-actions > button:hover { background: white; box-shadow: 0 1px 3px rgb(15 23 42 / 10%); color: #1d4ed8; }
 .project-capacity-range-actions > button:active { transform: translateY(1px); }
-.project-schedule-visibility-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; padding: .4rem .7rem; border-top: 1px solid #dbeafe; background: #f8fbff; }
-.project-schedule-visibility-toolbar > label { display: inline-flex; align-items: center; gap: .4rem; color: #334155; font-size: .7rem; font-weight: 700; cursor: pointer; }
-.project-schedule-visibility-toolbar input[type="checkbox"] { width: 15px; height: 15px; min-height: 0; margin: 0; padding: 0; accent-color: #2563eb; cursor: pointer; }
-.project-schedule-visibility-toolbar input:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
-.project-schedule-visibility-toolbar > span { color: #64748b; font-size: .65rem; }
+.project-capacity-toolbar-actions { display: flex; align-items: center; gap: .6rem; }
+.project-schedule-completed-toggle { display: inline-flex; align-items: center; gap: .35rem; color: #334155; font-size: .65rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.project-schedule-completed-toggle > span { color: #64748b; font-size: .58rem; font-weight: 500; }
+.project-schedule-completed-toggle input[type="checkbox"] { width: 15px; height: 15px; min-height: 0; margin: 0; padding: 0; accent-color: #2563eb; cursor: pointer; }
+.project-schedule-completed-toggle input:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
 .project-capacity-scroll { max-width: 100%; overflow-x: auto; border-top: 1px solid #dbeafe; }
 .project-capacity-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); }
-.project-capacity-label-head { position: sticky; z-index: 8; left: 0; display: flex; height: 52px; align-items: center; border-right: 1px solid #dbe4f0; border-bottom: 1px solid #dbe4f0; padding: 0 .7rem; background: #f8fafc; color: #64748b; font-size: .68rem; font-weight: 750; }
-.project-capacity-calendar-head { display: grid; height: 52px; border-bottom: 1px solid #dbe4f0; background: #f8fafc; }
+/* 日付は縦スクロールに追従し、左上の見出しは横スクロールでも手前に残す。 */
+.project-capacity-label-head { position: sticky; z-index: 10; top: 0; left: 0; display: flex; height: 52px; align-items: center; border-right: 1px solid #dbe4f0; border-bottom: 1px solid #dbe4f0; padding: 0 .7rem; background: #f8fafc; color: #64748b; font-size: .68rem; font-weight: 750; }
+.project-capacity-calendar-head { position: sticky; z-index: 9; top: 0; display: grid; height: 52px; border-bottom: 1px solid #dbe4f0; background: #f8fafc; }
 .project-capacity-calendar-head > span { position: relative; display: grid; place-content: center; border-right: 1px solid #e2e8f0; color: #64748b; text-align: center; }
 .project-capacity-calendar-head > span small { font-size: .55rem; font-weight: 500; }
 .project-capacity-calendar-head > span b { font-size: .68rem; }
@@ -3053,6 +3057,12 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .work-editor-related { grid-column: 1; }
 .work-editor-plan{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;margin:0;border:1px solid #dbe3ef;border-radius:10px;padding:.7rem;background:#f8fbff}.work-editor-plan legend{padding:0 .25rem;color:#334155;font-size:.7rem;font-weight:850}.work-editor-plan legend small{margin-left:.25rem;border-radius:999px;padding:.08rem .35rem;background:#e2e8f0;color:#64748b;font-size:.5rem}.work-editor-plan>label{display:grid;gap:.3rem}.work-editor-plan>small{grid-column:1/-1;color:#64748b;font-size:.58rem;line-height:1.45}
 .work-editor-dialog > footer { position: sticky; bottom: -1.1rem; z-index: 2; margin: 0 -1.1rem -1.1rem; padding: .8rem 1.1rem; background: white; }
+.work-editor-dialog > footer > .work-editor-delete { margin-right: auto; border-color: #fecaca; background: #fff7f7; color: #dc2626; }
+.work-editor-dialog > footer > .work-editor-delete:hover { border-color: #fca5a5; background: #fef2f2; }
+.work-editor-dialog > footer.is-delete-confirm { align-items: center; flex-wrap: wrap; border-top-color: #fecaca; background: #fffafa; }
+.work-editor-delete-confirm { display: grid; min-width: 240px; flex: 1; gap: .1rem; margin-right: auto; color: #991b1b; }
+.work-editor-delete-confirm > strong { font-size: .72rem; }
+.work-editor-delete-confirm > small { color: #64748b; font-size: .61rem; font-weight: 500; }
 .work-editor-schedule > .project-schedule-editor { margin: 0; border: 0; padding: 0; background: transparent; }
 .work-unscheduled-state { display: grid; gap: .12rem; border: 1px solid #cbd5e1; border-radius: 9px; padding: .6rem .7rem; background: white; }
 .work-unscheduled-state b { color: #475569; font-size: .72rem; }

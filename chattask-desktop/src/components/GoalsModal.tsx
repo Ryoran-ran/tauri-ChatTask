@@ -958,6 +958,7 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
   const editingWork = "";
   const [workDialogId, setWorkDialogId] = useState("");
   const [workDraft, setWorkDraft] = useState<ProjectWorkItem | null>(null);
+  const [workDeleteConfirm, setWorkDeleteConfirm] = useState(false);
   const workDraftInitial = useRef<ProjectWorkItem | null>(null);
   const setEditingWork = (id: string) => setWorkDialogId(id);
   const [milestoneEditSnapshot, setMilestoneEditSnapshot] = useState<GoalMilestone | null>(null);
@@ -1047,7 +1048,10 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
       setWorkDraft(structuredClone(initial));
     }
   }, [project.workItems, storedWorkItems, workDialogId, workDraft?.id]);
-  useEffect(() => setDismissedWorkTransferId(""), [workDialogId]);
+  useEffect(() => {
+    setDismissedWorkTransferId("");
+    setWorkDeleteConfirm(false);
+  }, [workDialogId]);
   useEffect(() => {
     if (editingMilestone) document.querySelector<HTMLInputElement>(".tree-title-input")?.focus();
   }, [editingMilestone]);
@@ -1078,6 +1082,7 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
   const completeWorkEdit = () => {
     setWorkDialogId("");
     setWorkDraft(null);
+    setWorkDeleteConfirm(false);
     workDraftInitial.current = null;
     setWorkEditSnapshot(null);
     setNewWorkEditId("");
@@ -1221,7 +1226,7 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
           <label className="work-editor-description">説明<textarea rows={4} value={workDraft.description || ""} onChange={(event) => setWorkDraft({ ...workDraft, description: event.target.value })} placeholder="作業内容や完了条件を記載" /></label>
         </div>
         <div className="work-editor-related"><strong>関連ChatTask</strong><LinkedTaskSelector tasks={tasks} value={workDraft.linkedTaskId || ""} suggestedTaskIds={[milestoneDraft?.linkedTaskId || "", ...(milestoneDraft?.taskIds || []), project.originTaskId || "", ...project.taskIds]} suggestionLabel="関連する候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => setWorkDraft({ ...workDraft, linkedTaskId })} /></div>
-        <footer><button type="button" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>キャンセル</button>{newWorkEditId === workDraft.id && <button type="button" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(false)}>保存して閉じる</button>}<button type="button" className="primary" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(newWorkEditId === workDraft.id)}>{newWorkEditId === workDraft.id ? "保存して次を追加" : "保存"}</button></footer>
+        <footer className={workDeleteConfirm ? "is-delete-confirm" : ""}>{workDeleteConfirm ? <><span className="work-editor-delete-confirm"><strong>この作業項目を削除しますか？</strong><small>{workDraft.linkedTaskId ? "関連ChatTaskは残ります。プロジェクトから反映した予定は解除されます。" : "この作業項目だけが削除されます。"}</small></span><button type="button" onClick={() => setWorkDeleteConfirm(false)}>削除をやめる</button><button type="button" className="danger" onClick={() => { onDeleteWork(workDraft.id); completeWorkEdit(); }}>削除する</button></> : <>{newWorkEditId !== workDraft.id && <button type="button" className="danger-text work-editor-delete" onClick={() => setWorkDeleteConfirm(true)}>作業を削除</button>}<button type="button" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>キャンセル</button>{newWorkEditId === workDraft.id && <button type="button" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(false)}>保存して閉じる</button>}<button type="button" className="primary" disabled={!workDraft.title.trim()} onClick={() => saveWorkDraft(newWorkEditId === workDraft.id)}>{newWorkEditId === workDraft.id ? "保存して次を追加" : "保存"}</button></>}</footer>
       </section>
     </div>, document.body)}
     {workDraft && workTransferCandidates.length > 0 && dismissedWorkTransferId !== workDraft.id && createPortal(

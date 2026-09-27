@@ -32,12 +32,12 @@ export function ProjectWorkDateSyncButton({ project, onSync, showSuccessNotice =
   });
   const selectedRows = rows.filter(({ work }) => selected.has(work.id));
   const blocked = selectedRows.some(({ problem }) => problem);
-  return <div className="project-work-date-sync">
-    <button type="button" className="project-work-date-sync-trigger" disabled={!differences.length} onClick={() => {
+  return <>
+    {differences.length > 0 && <div className="project-work-date-sync"><button type="button" className="project-work-date-sync-trigger" onClick={() => {
       const next = structuredClone(differences);
       setSnapshot(next); setDirection("schedule-to-work"); setError(""); setNotice("");
       setSelected(new Set(next.filter((work) => !workDateSyncError(work, "schedule-to-work")).map((work) => work.id)));
-    }}>作業日を同期（差異{differences.length}件）</button>
+    }}>作業日を同期（差異{differences.length}件）</button></div>}
     {notice && createPortal(<div role="status" aria-atomic="true" className="work-date-sync-notice">{notice}</div>, document.body)}
     {snapshot && <Modal title="プロジェクトの作業日を同期" onClose={close} wide>
       <div className="work-date-sync-dialog">
@@ -79,5 +79,5 @@ export function ProjectWorkDateSyncButton({ project, onSync, showSuccessNotice =
         }}>選択した{selectedRows.length}件を同期</button></div>
       </div>
     </Modal>}
-  </div>;
+  </>;
 }

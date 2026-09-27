@@ -194,9 +194,13 @@ export function ProjectSchedulePlanner({
         ? { targetWorkEndDate: targetWorkStartDate }
         : {}),
   });
+  const scheduleHelp = "空白をなぞって期間を設定します。線の中央は営業日数を保って移動し、両端は開始・終了日を変更します。◆は期限日の終わりです。";
+  const hiddenCompletedLabel = !showCompleted && (hiddenWorkCount || hiddenMilestoneCount)
+    ? `（作業 ${hiddenWorkCount}・マイルストーン ${hiddenMilestoneCount}）`
+    : "";
   return <section className="project-capacity-planner is-work-planner" onKeyDown={(event) => { if (event.key === "Escape" && dragRef.current) { event.stopPropagation(); cancelDrag(); } }}>
     <header className="project-capacity-heading">
-      <div><strong>作業スケジュール</strong><small>空白をなぞって期間を設定。線の中央は営業日数を保って移動、両端は開始・終了日を変更します。◆は期限日の終わりです。</small></div>
+      <div className="project-capacity-heading-title"><strong>作業スケジュール</strong><span className="project-capacity-help" tabIndex={0} aria-label={scheduleHelp} title="操作方法">i<span aria-hidden="true">{scheduleHelp}</span></span></div>
       <ProjectWorkDateSyncButton key={project.id} project={project} onSync={onSyncWorkDates} showSuccessNotice={showSyncSuccessNotice} />
       <button type="button" className="project-capacity-add-milestone" onClick={onAddMilestone}>＋ マイルストーン</button>
       <label>1日の計画可能時間<input type="number" min="0.25" max="24" step="0.25" value={dailyHoursInput} onChange={(event) => setDailyHoursInput(event.target.value)} onBlur={commitDailyHours} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><span>時間</span></label>
@@ -204,11 +208,10 @@ export function ProjectSchedulePlanner({
     </header>
     <div className="project-capacity-period-toolbar">
       <div className="project-capacity-range-fields"><strong>表示期間</strong><WorkDatePicker ariaLabel="表示期間の開始日" value={viewStart} max={viewEnd} showNonWorkingStatus={false} onChange={(value) => { if (!value) return; setViewStart(value); if (value > viewEnd) setViewEnd(addDays(value, 44)); }} /><span>〜</span><WorkDatePicker ariaLabel="表示期間の終了日" value={viewEnd} min={viewStart} showNonWorkingStatus={false} onChange={(value) => { if (value) setViewEnd(value); }} /></div>
-      <div className="project-capacity-range-actions"><button type="button" onClick={() => shiftWindow(-28)}>← 4週</button><button type="button" onClick={showToday}>今日</button><button type="button" onClick={() => shiftWindow(28)}>4週 →</button><button type="button" onClick={() => { setViewStart(automaticWindow.start); setViewEnd(automaticWindow.end); }}>自動範囲</button></div>
-    </div>
-    <div className="project-schedule-visibility-toolbar">
-      <label><input type="checkbox" checked={showCompleted} onChange={event => toggleCompleted(event.target.checked)} />完了済みを表示</label>
-      <span role="status">{showCompleted ? "完了済みを含めて表示中" : hiddenWorkCount || hiddenMilestoneCount ? `完了済みを非表示：作業 ${hiddenWorkCount}件・マイルストーン ${hiddenMilestoneCount}件` : "完了済みの項目はありません"}</span>
+      <div className="project-capacity-toolbar-actions">
+        <label className="project-schedule-completed-toggle" title={hiddenCompletedLabel ? `非表示中：作業 ${hiddenWorkCount}件・マイルストーン ${hiddenMilestoneCount}件` : undefined}><input type="checkbox" checked={showCompleted} onChange={event => toggleCompleted(event.target.checked)} />完了済みを表示{hiddenCompletedLabel && <span>{hiddenCompletedLabel}</span>}</label>
+        <div className="project-capacity-range-actions"><button type="button" onClick={() => shiftWindow(-28)}>← 4週</button><button type="button" onClick={showToday}>今日</button><button type="button" onClick={() => shiftWindow(28)}>4週 →</button><button type="button" onClick={() => { setViewStart(automaticWindow.start); setViewEnd(automaticWindow.end); }}>自動範囲</button></div>
+      </div>
     </div>
     {!groups.length && <p className="project-capacity-empty">{hiddenWorkCount || hiddenMilestoneCount ? "表示対象の項目はありません。「完了済みを表示」で再表示できます。" : "作業項目を追加すると、ここで目標作業期間を線として設定できます。"}</p>}
     <div className="project-capacity-scroll">
