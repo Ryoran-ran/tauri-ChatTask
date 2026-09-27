@@ -12,9 +12,10 @@ export function clearMilestoneTargetChanges(current: GoalMilestone, expected: Ta
   return { targetWorkStartDate: "", targetWorkEndDate: "" };
 }
 
-export function MilestoneTargetMenu({ milestone, onClear }: {
+export function MilestoneTargetMenu({ milestone, onClear, onMoveWorks }: {
   milestone: GoalMilestone;
   onClear: (changes: ReturnType<typeof clearMilestoneTargetChanges>) => void;
+  onMoveWorks?: () => void;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -42,10 +43,11 @@ export function MilestoneTargetMenu({ milestone, onClear }: {
     <button ref={triggerRef} type="button" className="project-capacity-milestone-more" aria-label={`${milestone.title || "マイルストーン"}のその他の操作`} aria-haspopup="menu" aria-expanded={Boolean(position)} onClick={() => {
       if (position) { setPosition(null); return; }
       const rect = triggerRef.current!.getBoundingClientRect();
-      setPosition({ top: Math.max(8, Math.min(rect.bottom + 5, window.innerHeight - 60)), left: Math.max(8, Math.min(rect.right - 190, window.innerWidth - 198)) });
+      setPosition({ top: Math.max(8, Math.min(rect.bottom + 5, window.innerHeight - (onMoveWorks ? 110 : 60))), left: Math.max(8, Math.min(rect.right - 190, window.innerWidth - 198)) });
     }}>…</button>
     {position && createPortal(<div ref={menuRef} role="menu" aria-label="マイルストーンの操作" className="project-capacity-milestone-menu" style={position} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } if (event.key === "Tab") setPosition(null); }}>
-      <button autoFocus type="button" role="menuitem" aria-disabled={!hasTarget} onClick={() => {
+      {onMoveWorks && <button autoFocus type="button" role="menuitem" onClick={() => { setPosition(null); onMoveWorks(); }}>配下の作業をまとめて移動</button>}
+      <button autoFocus={!onMoveWorks} type="button" role="menuitem" aria-disabled={!hasTarget} onClick={() => {
         if (!hasTarget) return;
         setPosition(null); setError("");
         setConfirmation({ id: milestone.id, targetWorkStartDate: milestone.targetWorkStartDate, targetWorkEndDate: milestone.targetWorkEndDate });

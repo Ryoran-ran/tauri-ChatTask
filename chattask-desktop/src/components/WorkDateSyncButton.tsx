@@ -11,7 +11,7 @@ export function WorkDateSyncStatus({ work }: { work: ProjectWorkItem }) {
   return workDatesDiffer(work) ? <small className="work-date-sync-status">日付に差異あり</small> : null;
 }
 
-export function ProjectWorkDateSyncButton({ project, onSync }: { project: Goal; onSync: SyncWorkDates }) {
+export function ProjectWorkDateSyncButton({ project, onSync, showSuccessNotice = true }: { project: Goal; onSync: SyncWorkDates; showSuccessNotice?: boolean }) {
   const works = project.workItems || [];
   const differences = works.filter(workDatesDiffer);
   const [snapshot, setSnapshot] = useState<ProjectWorkItem[] | null>(null);
@@ -74,7 +74,8 @@ export function ProjectWorkDateSyncButton({ project, onSync }: { project: Goal; 
           if (!selectedRows.length || blocked) return;
           const failure = onSync(selectedRows.map(({ work }) => ({ id: work.id, expectedSignature: workDateSyncSignature(work) })), direction);
           if (failure) { setError(failure); return; }
-          setNotice(`${selectedRows.length}件の作業日を同期しました`); close();
+          if (showSuccessNotice) setNotice(`${selectedRows.length}件の作業日を同期しました`);
+          close();
         }}>選択した{selectedRows.length}件を同期</button></div>
       </div>
     </Modal>}

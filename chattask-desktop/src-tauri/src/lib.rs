@@ -4,6 +4,7 @@ use std::{fs, path::{Path, PathBuf}, process::Command};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 mod app_database;
+mod app_exit;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -574,6 +575,7 @@ fn export_markdown(app: AppHandle, file_name: String, content: String) -> Result
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(app_exit::ExitGuard::default())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             list_attachments, add_attachment, rename_attachment, get_attachment, open_attachment, copy_attachment,
@@ -581,11 +583,25 @@ pub fn run() {
             export_markdown, select_tool_folder, select_tool_html_file, validate_tool_html_entry,
             copy_tool_folder, delete_managed_tool_folder, rename_managed_tool_folder, import_dropped_tool_files,
             list_tool_html_files, open_tool_in_chrome, open_tool_folder,
-            report_frontend_error, app_database::initialize_app_database,
+            report_frontend_error, app_exit::app_exit_listener_ready, app_exit::finish_app_exit,
+            app_database::initialize_app_database,
             app_database::load_app_data_sqlite, app_database::save_app_data_sqlite,
             app_database::get_app_database_path, app_database::create_app_backup,
             app_database::list_app_backups, app_database::restore_app_backup
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| match event {
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. }
+                if label == "main" && !app.state::<app_exit::ExitGuard>().approved() => {
+                api.prevent_close();
+                app_exit::request_save(app);
+            }
+            // メニューの「終了」やCmd+Qも、ウィンドウのcloseを経由せずここへ来る。
+            tauri::RunEvent::ExitRequested { api, .. } if !app.state::<app_exit::ExitGuard>().approved() => {
+                api.prevent_exit();
+                app_exit::request_save(app);
+            }
+            _ => {}
+        });
 }

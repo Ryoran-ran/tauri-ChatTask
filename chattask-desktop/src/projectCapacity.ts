@@ -31,22 +31,61 @@ export const projectWorkRequiredHours = (work: ProjectWorkItem) => work.status =
   ? 0
   : Math.max(0, Number(work.plannedHours) || 0);
 
-const dailyLoads = (
+interface DailyWorkLoad {
+  plannedHours: number;
+  missingEstimateCount: number;
+  contributions: { projectId: string; projectTitle: string; workTitle: string; hours: number }[];
+}
+
+const collectDailyLoads = (
   projects: Goal[],
   periods: NonWorkingPeriod[],
-  excludedProjectId: string,
-  excludedWorkId: string,
+  excludedProjectId?: string,
+  excludedWorkId?: string,
+  includeContributions = true,
 ) => {
-  const loads = new Map<string, number>();
+  const loads = new Map<string, DailyWorkLoad>();
+  let unscheduledWorkCount = 0;
   projects.forEach((project) => (project.workItems || []).forEach((work) => {
+    if (work.status === "done") return;
     if (project.id === excludedProjectId && work.id === excludedWorkId) return;
     const dates = projectWorkWorkingDates(work, periods);
-    if (!dates.length) return;
+    if (!dates.length) { unscheduledWorkCount++; return; }
     const hoursPerDay = projectWorkRequiredHours(work) / dates.length;
-    dates.forEach((date) => loads.set(date, (loads.get(date) || 0) + hoursPerDay));
+    dates.forEach((date) => {
+      const load = loads.get(date) || { plannedHours: 0, missingEstimateCount: 0, contributions: [] };
+      load.plannedHours += hoursPerDay;
+      if (!(Number(work.plannedHours) > 0)) load.missingEstimateCount++;
+      if (includeContributions) load.contributions.push({ projectId: project.id, projectTitle: project.title, workTitle: work.title, hours: hoursPerDay });
+      loads.set(date, load);
+    });
   }));
-  return loads;
+  return { loads, unscheduledWorkCount };
 };
+
+export interface ProjectDailyCapacity extends DailyWorkLoad {
+  date: string;
+  capacityHours: number;
+  currentProjectHours: number;
+  otherProjectHours: number;
+  nonWorking: boolean;
+  over: boolean;
+}
+
+/** 表示期間ではなく目標期間全体の営業日へ均等配分する。表示フィルターは渡さない。 */
+export function assessProjectDailyCapacity({ projects, periods, dates, dailyCapacityHours, currentProjectId }: {
+  projects: Goal[]; periods: NonWorkingPeriod[]; dates: string[]; dailyCapacityHours: number; currentProjectId: string;
+}) {
+  const { loads, unscheduledWorkCount } = collectDailyLoads(projects, periods);
+  const days: ProjectDailyCapacity[] = dates.map(date => {
+    const load = loads.get(date) || { plannedHours: 0, missingEstimateCount: 0, contributions: [] };
+    const nonWorking = Boolean(getNonWorkingPeriod(date, periods));
+    const capacityHours = nonWorking ? 0 : capacity(dailyCapacityHours);
+    const currentProjectHours = load.contributions.filter(item => item.projectId === currentProjectId).reduce((sum, item) => sum + item.hours, 0);
+    return { ...load, date, capacityHours, currentProjectHours, otherProjectHours: Math.max(0, load.plannedHours - currentProjectHours), nonWorking, over: load.plannedHours - capacityHours > 1e-9 };
+  });
+  return { days, unscheduledWorkCount };
+}
 
 export const assessProjectWorkCapacity = ({
   projectId,
@@ -87,9 +126,9 @@ export const assessProjectWorkCapacity = ({
   const workingDates = projectWorkWorkingDates(work, periods);
   const dailyHours = capacity(dailyCapacityHours);
   const grossCapacityHours = workingDates.length * dailyHours;
-  const competing = dailyLoads(projects, periods, projectId, work.id);
-  const competingHours = workingDates.reduce((sum, date) => sum + (competing.get(date) || 0), 0);
-  const availableHours = workingDates.reduce((sum, date) => sum + Math.max(0, dailyHours - (competing.get(date) || 0)), 0);
+  const { loads: competing } = collectDailyLoads(projects, periods, projectId, work.id, false);
+  const competingHours = workingDates.reduce((sum, date) => sum + (competing.get(date)?.plannedHours || 0), 0);
+  const availableHours = workingDates.reduce((sum, date) => sum + Math.max(0, dailyHours - (competing.get(date)?.plannedHours || 0)), 0);
   const shortageHours = Math.max(0, requiredHours - availableHours);
   const loadRate = availableHours > 0 ? requiredHours / availableHours : requiredHours > 0 ? Infinity : 0;
   const status: WorkCapacityStatus = shortageHours > 0

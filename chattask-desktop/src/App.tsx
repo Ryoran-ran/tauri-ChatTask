@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ChangeEvent, type SetStateAction } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "./App.css";
 import { STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "./data/constants";
@@ -34,20 +34,27 @@ import { WaitingBoxModal } from "./components/WaitingBoxModal";
 import { ToolsModal } from "./components/ToolsModal";
 import { Modal } from "./components/Modal";
 import { CodeReviewWindow } from "./components/CodeReviewWindow";
-import { classifyLegacyStatus, getActiveEnvironment, initializeAppStorage, loadAppData, parseImportedData, saveAppData, setActiveEnvironment, type AppEnvironment, type StorageBackend } from "./services/storage";
+import { classifyLegacyStatus, getActiveEnvironment, initializeAppStorage, loadAppData, parseImportedData, restoreAppBackup, saveAppData, setActiveEnvironment, type AppEnvironment, type StorageBackend } from "./services/storage";
 import { removeTaskAttachments } from "./services/attachments";
 import { isTaskScheduleManagedByProject, taskProjectContexts } from "./projectContext";
 import type { AdvancedTaskFilter, AppData, Goal, GoalStatus, Habit, InboxItem, NonWorkingPeriod, Priority, RecurrenceRecord, SavedTaskView, Task, TaskFilter, TaskSortRule, TaskStatus, TaskTemplate } from "./types";
 import { addDays, generateId, hasIncompletePlanForDate, isRecurringDue, isTaskPlannedForDate, mergeRanges, removeDateFromRanges, todayValue } from "./utils";
 import { appendHistory, createTask, jumpToTaskMatch, repairDuplicateProjectSchedules } from "./appHelpers";
 import { deleteProjectReferences } from "./projectDataProtection";
+import { mergeProjectEdit, type ProjectEditContext } from "./projectEditMerge";
+import { reflectTaskScheduleOnWork } from "./projectWorkEditing";
+import { scheduleAppReducer, type ScheduleCommand, type ScheduleAppState } from "./projectScheduleHistory";
+import { useAppPersistence } from "./useAppPersistence";
+import { SavingBeforeExit } from "./components/SavingBeforeExit";
 
 const PERSONAL_MODE_ACTIVE_DAYS: NonWorkingPeriod[] = [{ id: "personal-mode-active-days", startDate: "0001-01-01", endDate: "", type: "weekend", weekdays: [], note: "" }];
 const RESTORE_NOTICE_KEY = "chatTaskBackupRestoreNotice";
 
 function App() {
   const [environment] = useState<AppEnvironment>(() => getActiveEnvironment());
-  const [data, setData] = useState<AppData>(() => repairDuplicateProjectSchedules(loadAppData(environment)));
+  const [{ data, scheduleResult }, dispatchData] = useReducer(scheduleAppReducer, undefined, (): ScheduleAppState => ({ data: repairDuplicateProjectSchedules(loadAppData(environment)) }));
+  const setData = useCallback((value: SetStateAction<AppData>) => dispatchData({ type: "data", value }), []);
+  const submitSchedule = useCallback((command: ScheduleCommand) => dispatchData({ type: "schedule", command }), []);
   const effectiveNonWorkingPeriods = useMemo(() => data.workspaceMode === "personal" ? PERSONAL_MODE_ACTIVE_DAYS : data.nonWorkingPeriods, [data.workspaceMode, data.nonWorkingPeriods]);
   const templateStorageKey = `chatTaskTemplates:${environment}`;
   const [taskTemplates, setTaskTemplates] = useState<TaskTemplate[]>(() => {
@@ -55,6 +62,7 @@ function App() {
   });
   useEffect(() => { localStorage.setItem(templateStorageKey, JSON.stringify(taskTemplates)); }, [taskTemplates, templateStorageKey]);
   const [storageBackend, setStorageBackend] = useState<StorageBackend | null>(null);
+  const { closing, replacing, replacementError, replaceData } = useAppPersistence(data, storageBackend, environment, setData);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => {
     const openTask = (event: Event) => { const id = (event as CustomEvent<{ id: string }>).detail?.id; if (id) setSelectedId(id); };
@@ -200,10 +208,10 @@ function App() {
     ...current,
     goals: current.goals.some((item) => item.id === project.id) ? current.goals : [project, ...current.goals],
   }));
-  const updateProject = (id: string, changes: Partial<Goal>) => setData((current) => ({
+  const updateProject = (id: string, changes: Partial<Goal>, context: ProjectEditContext) => setData((current) => ({
     ...current,
     goals: current.goals.map((project) => project.id === id
-      ? { ...project, ...changes, updatedAt: new Date().toISOString() }
+      ? { ...mergeProjectEdit(project, changes, context), updatedAt: new Date().toISOString() }
       : project),
   }));
   const deleteProject = (id: string) => setData((current) => deleteProjectReferences(current, id));
@@ -261,15 +269,6 @@ function App() {
       });
     return () => { active = false; };
   }, [environment]);
-  useEffect(() => {
-    if (!storageBackend) return;
-    const timer = window.setTimeout(() => {
-      void saveAppData(data, storageBackend, environment).catch((error) => {
-        console.error("アプリデータの保存に失敗しました。", error);
-      });
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [data, storageBackend, environment]);
   const updateLocalTools = (localTools: AppData["localTools"]) => setData((current) => ({ ...current, localTools }));
   const updateLocalToolsStoragePath = (localToolsStoragePath: string) => setData((current) => ({ ...current, localToolsStoragePath }));
   useEffect(() => localStorage.setItem("chatTaskCurrentFilter", filter), [filter]);
@@ -528,20 +527,7 @@ function App() {
             }
             : milestone),
           workItems: (goal.workItems || []).map((work) => changedSources.has(`project-work:${work.id}`)
-            ? {
-              ...work,
-              plannedRanges: activityTask.plannedRanges
-                .filter((range) => range.sourceType === "project-work" && range.sourceId === work.id)
-                .map((range) => ({ ...range, sourceType: undefined, sourceId: undefined })),
-              plannedHours: activityTask.plannedRanges
-                .filter((range) => range.sourceType === "project-work" && range.sourceId === work.id)
-                .reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0),
-              replanReason: activityTask.plannedRanges
-                .find((range) => range.sourceType === "project-work" && range.sourceId === work.id && range.advanceReason)?.advanceReason || work.replanReason,
-              replannedAt: activityTask.plannedRanges
-                .find((range) => range.sourceType === "project-work" && range.sourceId === work.id && range.advancedAt)?.advancedAt || work.replannedAt,
-              updatedAt: new Date().toISOString(),
-            }
+            ? reflectTaskScheduleOnWork(work, activityTask, new Date().toISOString())
             : work),
         }))
         : current.goals;
@@ -1050,7 +1036,7 @@ function App() {
     {reportOpen && <ReportModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} activity={data.activityLog} dailyNotes={data.dailyNotes} nonWorkingPeriods={data.nonWorkingPeriods} onClose={() => setReportOpen(false)} />}
     {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
     {profileOpen && <ProfileModal profile={data.userProfile} onSave={(userProfile) => setData((current) => ({ ...current, userProfile }))} onClose={() => setProfileOpen(false)} />}
-    {goalsOpen && <ProjectsModal projects={data.goals} tasks={data.tasks} tags={data.projectTags} nonWorkingPeriods={effectiveNonWorkingPeriods} dailyCapacityHours={data.projectDailyCapacityHours || 6} onDailyCapacityHoursChange={(projectDailyCapacityHours) => setData((current) => ({ ...current, projectDailyCapacityHours }))} initialProjectId={projectFocusId} onCreateProject={createProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} onCreateTask={createRelatedTask} onUpdateTask={updateTaskById} onSelectTask={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); }} onOpenGantt={(id) => { setProjectFocusId(id); setGanttProjectId(id); setGanttReturnProjectId(id); setGanttOpen(true); }} onClose={() => { setGoalsOpen(false); setProjectFocusId(""); }} />}
+    {goalsOpen && <ProjectsModal scheduleResult={scheduleResult} onScheduleCommand={submitSchedule} projects={data.goals} tasks={data.tasks} tags={data.projectTags} nonWorkingPeriods={effectiveNonWorkingPeriods} dailyCapacityHours={data.projectDailyCapacityHours || 6} initialProjectId={projectFocusId} onCreateProject={createProject} onUpdateProject={updateProject} onDeleteProject={deleteProject} onCreateTask={createRelatedTask} onUpdateTask={updateTaskById} onSelectTask={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); }} onOpenGantt={(id) => { setProjectFocusId(id); setGanttProjectId(id); setGanttReturnProjectId(id); setGanttOpen(true); }} onClose={() => { setGoalsOpen(false); setProjectFocusId(""); }} />}
     {ganttOpen && <GanttModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} periods={data.nonWorkingPeriods} calculationPeriods={effectiveNonWorkingPeriods} initialProjectId={ganttProjectId} onSelect={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); setGanttOpen(false); setGanttProjectId(""); setGanttReturnProjectId(""); }} onClose={() => { setGanttOpen(false); setGanttProjectId(""); if (ganttReturnProjectId) { setProjectFocusId(ganttReturnProjectId); setGoalsOpen(true); } setGanttReturnProjectId(""); }} />}
     {weeklyLoadOpen && <WeeklyLoadModal tasks={data.tasks} tags={data.projectTags} periods={effectiveNonWorkingPeriods} onSelect={(id) => { setSelectedId(id); setWeeklyLoadOpen(false); }} onClose={() => setWeeklyLoadOpen(false)} />}
     {issuesOpen && <IssuesModal issues={data.issues} onSave={(issues) => setData((current) => ({ ...current, issues }))} onClose={() => setIssuesOpen(false)} />}
@@ -1063,22 +1049,37 @@ function App() {
         });
       }}
       onCopyProductionToTest={async () => {
-        const production = environment === "production" ? data : (await initializeAppStorage(loadAppData("production"), "production")).data;
-        await saveAppData(structuredClone(repairDuplicateProjectSchedules(production)), storageBackend || "localStorage", "test");
+        const copy = async () => {
+          const production = environment === "production" ? data : (await initializeAppStorage(loadAppData("production"), "production")).data;
+          const copied = structuredClone(repairDuplicateProjectSchedules(production));
+          await saveAppData(copied, storageBackend || "localStorage", "test");
+          return copied;
+        };
+        if (environment === "test") { await replaceData(copy); setSelectedId(null); window.location.reload(); }
+        else await copy();
       }}
       onResetTest={async () => {
-        const blank = loadAppData("test");
-        blank.tasks = []; blank.activityLog = []; blank.dailyNotes = {}; blank.dailyFinalizedAt = {}; blank.goals = []; blank.issues = []; blank.inboxItems = []; blank.todayTaskOrders = {}; blank.localTools = []; blank.localToolsStoragePath = ""; blank.habits = []; blank.workspaceMode = "work";
-        await saveAppData(blank, storageBackend || "localStorage", "test");
-        if (environment === "test") window.location.reload();
+        const reset = async () => {
+          const blank = environment === "test" ? structuredClone(data) : loadAppData("test");
+          blank.tasks = []; blank.activityLog = []; blank.dailyNotes = {}; blank.dailyFinalizedAt = {}; blank.goals = []; blank.issues = []; blank.inboxItems = []; blank.todayTaskOrders = {}; blank.localTools = []; blank.localToolsStoragePath = ""; blank.habits = []; blank.workspaceMode = "work";
+          await saveAppData(blank, storageBackend || "localStorage", "test");
+          return blank;
+        };
+        if (environment === "test") { await replaceData(reset); setSelectedId(null); window.location.reload(); }
+        else await reset();
       }}
-      onRestore={async (restored, backup) => {
-        const repaired = repairDuplicateProjectSchedules(restored);
-        await saveAppData(repaired, storageBackend || "localStorage", environment);
-        setData(repaired);
+      onRestore={async (backup) => {
+        let counts = "";
+        await replaceData(async () => {
+          const restored = await restoreAppBackup(backup.fileName, environment);
+          const repaired = repairDuplicateProjectSchedules(restored);
+          await saveAppData(repaired, storageBackend || "localStorage", environment);
+          counts = `タスク ${repaired.tasks.length}件・プロジェクト ${repaired.goals.length}件`;
+          return repaired;
+        });
         setSelectedId(null);
         setDataManagementOpen(false);
-        sessionStorage.setItem(RESTORE_NOTICE_KEY, `「${backup.fileName}」を復元しました（タスク ${repaired.tasks.length}件・プロジェクト ${repaired.goals.length}件）。`);
+        sessionStorage.setItem(RESTORE_NOTICE_KEY, `「${backup.fileName}」を復元しました（${counts}）。`);
         window.location.reload();
       }} onClose={() => setDataManagementOpen(false)} />}
     {notificationsOpen && <NotificationsModal tasks={data.tasks} tags={data.projectTags} onSelect={revealTaskFromPalette} onClose={() => setNotificationsOpen(false)} />}
@@ -1088,6 +1089,7 @@ function App() {
     {reflectionRecordsOpen && <ReflectionRecordsModal tasks={data.tasks} tags={data.projectTags} onUpdateTask={updateTaskById} onOpenTask={(id) => setSelectedId(id)} onClose={() => setReflectionRecordsOpen(false)} />}
     {workTimer && <ActiveTimerBar timer={workTimer} onPause={pauseWorkTimer} onResume={resumeWorkTimer} onOverrun={remindWorkTimer} onFinish={finishWorkTimer} onOpenTask={() => { const task = data.tasks.find((item) => item.id === workTimer.taskId); if (task) revealTaskFromPalette(task); }} />}
     {workTimer && timerFinishOpen && <TimerFinishDialog timer={workTimer} initialMemo={timerMemo} onSave={saveWorkTimer} onDiscard={discardWorkTimer} onClose={() => setTimerFinishOpen(false)} />}
+    {(closing || replacing || replacementError) && <SavingBeforeExit replacing={replacing} error={replacementError} />}
   </div></NonWorkingPeriodsProvider>;
 }
 

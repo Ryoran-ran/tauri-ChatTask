@@ -1,4 +1,21 @@
-import type { ProjectWorkItem } from "./types";
+import type { ProjectWorkItem, Task } from "./types";
+
+/** Task側の欠落・関連解除は、独立した作業計画を削除する指示ではない。 */
+export function reflectTaskScheduleOnWork(work: ProjectWorkItem, task: Task, now: string): ProjectWorkItem {
+  if (work.linkedTaskId !== task.id) return work;
+  const owned = task.plannedRanges.filter(range => range.sourceType === "project-work" && range.sourceId === work.id);
+  if (!owned.length) return work;
+  return {
+    ...work,
+    plannedRanges: owned.map(range => ({ ...range, sourceType: undefined, sourceId: undefined })),
+    plannedHours: owned.every(range => range.plannedHours != null)
+      ? owned.reduce((sum, range) => sum + (Number(range.plannedHours) || 0), 0)
+      : work.plannedHours,
+    replanReason: owned.find(range => range.advanceReason)?.advanceReason || work.replanReason,
+    replannedAt: owned.find(range => range.advancedAt)?.advancedAt || work.replannedAt,
+    updatedAt: now,
+  };
+}
 
 /** 未保存作業の破棄と次の作業の追加を、同じ一覧に対する1回の更新にする。 */
 export const appendProjectWork = (works: ProjectWorkItem[], next: ProjectWorkItem, discardedDraftId?: string): ProjectWorkItem[] => {

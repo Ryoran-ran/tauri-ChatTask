@@ -96,6 +96,8 @@ export interface GoalReview {
 }
 
 export interface Goal {
+  /** スケジュール操作の変更差分。最新50件、取り消し済みを含む。 */
+  scheduleHistory?: import("../projectScheduleHistory").ScheduleHistoryRecord[];
   id: string;
   title: string;
   description: string;
