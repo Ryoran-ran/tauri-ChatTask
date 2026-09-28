@@ -15,8 +15,8 @@ export const reviewBaseBranchCandidates = (task: Task, repository: GithubReposit
   ]);
 };
 
-export const defaultReviewBaseBranch = (task: Task, repository: GithubRepository | undefined) =>
-  reviewBaseBranchCandidates(task, repository)[0] || "main";
+/** A new review starts from main. Saved repository-specific choices are restored by the caller. */
+export const defaultReviewBaseBranch = (_task: Task, _repository: GithubRepository | undefined) => "main";
 
 export const gitDiffClipboardCommand = (mode: "branch" | "working", base: string, target: string) => mode === "working"
   ? "git --no-pager diff | pbcopy"
