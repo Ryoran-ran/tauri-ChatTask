@@ -28,10 +28,10 @@ describe("コードレビュー・動作確認の基準ブランチ候補", () =
     ]);
   });
 
-  it("設定済みのPR作成先を既定の基準ブランチにする", () => {
+  it("PR作成先が設定されていても既定の基準ブランチはmainにする", () => {
     const task = createTask();
 
-    expect(defaultReviewBaseBranch(task, repository)).toBe("develop");
+    expect(defaultReviewBaseBranch(task, repository)).toBe("main");
   });
 
   it("候補が未設定ならmainを使用する", () => {
