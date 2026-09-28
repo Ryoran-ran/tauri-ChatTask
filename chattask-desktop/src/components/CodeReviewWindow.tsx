@@ -79,6 +79,30 @@ type VerificationSortKey = "status" | "category" | "createdAt" | "title";
 type VerificationSortRule = { id: string; key: VerificationSortKey; direction: "asc" | "desc" };
 const verificationSortLabels: Record<VerificationSortKey, string> = { status: "確認状態", category: "確認観点", createdAt: "追加日時", title: "確認項目" };
 
+function BranchInput({ ariaLabel, value, candidates, onChange, placeholder }: { ariaLabel: string; value: string; candidates: string[]; onChange: (value: string) => void; placeholder: string }) {
+  const [open, setOpen] = useState(false);
+  const query = value.trim().toLocaleLowerCase("ja");
+  const visibleCandidates = candidates.filter((branch) => !query || branch.toLocaleLowerCase("ja").includes(query)).slice(0, 8);
+  return <div className="review-branch-combobox" onBlur={(event) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+  }}>
+    <input
+      role="combobox"
+      aria-label={ariaLabel}
+      aria-autocomplete="list"
+      aria-expanded={open && visibleCandidates.length > 0}
+      value={value}
+      onFocus={() => setOpen(true)}
+      onChange={(event) => { onChange(event.target.value); setOpen(true); }}
+      onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+      placeholder={placeholder}
+    />
+    {open && visibleCandidates.length > 0 && <div className="review-branch-options" role="listbox" aria-label={`${ariaLabel}の候補`}>
+      {visibleCandidates.map((branch) => <button type="button" role="option" aria-selected={branch === value} key={branch} onClick={() => { onChange(branch); setOpen(false); }}>{branch}</button>)}
+    </div>}
+  </div>;
+}
+
 const checklistKey = (item: Pick<TaskChecklistItem, "category" | "title" | "file" | "line" | "functionName" | "location">) => [item.category, item.file || "", item.line || "", item.functionName || item.location || "", item.title].map((value) => value.trim().toLowerCase()).join("\n");
 const isEmptyReviewResult = (text: string) => {
   try {
@@ -1096,7 +1120,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         <header><strong>1. 差分を準備</strong><small>比較対象とGit Diffを入力</small></header>
         <label className="code-review-repository">対象リポジトリ<select value={selectedRepositoryId} onChange={(event) => selectRepository(event.target.value)} disabled={!repositories.length}>{!repositories.length && <option value="">リポジトリ未設定</option>}{selectedRepositoryId === "unassigned" && <option value="unassigned">以前の未分類項目</option>}{repositories.map((repository) => <option value={repository.id} key={repository.id}>{repository.name}</option>)}</select>{!repositories.length && <small>案件タグの設定からリポジトリを登録できます。</small>}</label>
         <div className="code-review-compare-settings">
-          <label className="code-review-branch-field"><span>基準</span><input aria-label="基準ブランチ" list={`review-base-branches-${selectedRepositoryId || "unassigned"}`} value={base} onChange={(event) => setBase(event.target.value)} placeholder="ブランチを選択または入力" /><datalist id={`review-base-branches-${selectedRepositoryId || "unassigned"}`}>{baseBranchCandidates.map((branch) => <option value={branch} key={branch} />)}</datalist></label>
+          <div className="code-review-branch-field"><span>基準</span><BranchInput ariaLabel="基準ブランチ" value={base} candidates={baseBranchCandidates} onChange={setBase} placeholder="ブランチを選択または入力" /></div>
           <span className="code-review-compare-arrow" aria-hidden="true">→</span>
           <div className={`code-review-target-summary ${customTargetOpen ? "editing" : ""}`}><div><span>比較先</span>{customTargetOpen ? <input autoFocus aria-label="任意の比較先" value={target} onChange={(event) => setTarget(event.target.value)} placeholder="feature/example" /> : <p><strong>HEAD</strong><small>現在のブランチ</small></p>}</div><button type="button" onClick={() => { if (customTargetOpen) setTarget(""); setCustomTargetOpen((current) => !current); }}>{customTargetOpen ? "HEADへ戻す" : "変更"}</button></div>
         </div>
@@ -1127,7 +1151,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         <div className="verification-source-list">{selectedTestSources.map(({ repository, base: sourceBase, target: sourceTarget, diff: sourceDiff }) => {
           const branchCandidates = reviewBaseBranchCandidates(task, repository);
           const sourceCommand = gitDiffClipboardCommand(testDiffMode, sourceBase, sourceTarget);
-          return <section className="verification-source-card" key={repository.id}><header><strong>{repository.name}</strong><small>このリポジトリの変更差分</small></header><div className="code-review-branches"><label>基準<input list={`verification-base-branches-${repository.id}`} value={sourceBase} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], base: event.target.value } }))} placeholder="ブランチを選択または入力" /><datalist id={`verification-base-branches-${repository.id}`}>{branchCandidates.map((branch) => <option value={branch} key={branch} />)}</datalist></label><span>→</span><label>比較先<input value={sourceTarget} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], target: event.target.value } }))} placeholder="HEAD" /></label></div><div className="code-review-command"><code><span aria-hidden="true">$</span>{sourceCommand}</code><button type="button" className={`primary ${testCommandCopiedId === repository.id ? "copied" : ""}`} onClick={() => void copyTestDiffCommand(repository.id)}>{testCommandCopiedId === repository.id ? "コピー済み" : "コマンドをコピー"}</button></div><div className="code-review-textarea compact"><div className="code-review-diff-label"><strong>Git Diff</strong><button type="button" className="secondary" onClick={() => void pasteTestDiff(repository.id)}>クリップボードから貼付</button></div><textarea aria-label={`${repository.name}のGit Diff`} value={sourceDiff} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], diff: event.target.value } }))} placeholder={`${repository.name} の git diffを貼り付けてください`} spellCheck={false} /></div></section>;
+          return <section className="verification-source-card" key={repository.id}><header><strong>{repository.name}</strong><small>このリポジトリの変更差分</small></header><div className="code-review-branches"><div className="verification-branch-field"><span>基準</span><BranchInput ariaLabel={`${repository.name}の基準ブランチ`} value={sourceBase} candidates={branchCandidates} onChange={(value) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], base: value } }))} placeholder="ブランチを選択または入力" /></div><span>→</span><label>比較先<input value={sourceTarget} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], target: event.target.value } }))} placeholder="HEAD" /></label></div><div className="code-review-command"><code><span aria-hidden="true">$</span>{sourceCommand}</code><button type="button" className={`primary ${testCommandCopiedId === repository.id ? "copied" : ""}`} onClick={() => void copyTestDiffCommand(repository.id)}>{testCommandCopiedId === repository.id ? "コピー済み" : "コマンドをコピー"}</button></div><div className="code-review-textarea compact"><div className="code-review-diff-label"><strong>Git Diff</strong><button type="button" className="secondary" onClick={() => void pasteTestDiff(repository.id)}>クリップボードから貼付</button></div><textarea aria-label={`${repository.name}のGit Diff`} value={sourceDiff} onChange={(event) => setTestSourceSettings((current) => ({ ...current, [repository.id]: { ...current[repository.id], diff: event.target.value } }))} placeholder={`${repository.name} の git diffを貼り付けてください`} spellCheck={false} /></div></section>;
         })}</div>
         <button type="button" className="primary code-review-main-action" disabled={!selectedTestSources.length || selectedTestSources.some((source) => !source.diff.trim())} onClick={generateTestPrompt}>動作確認プロンプトを作成</button>
       </section>
