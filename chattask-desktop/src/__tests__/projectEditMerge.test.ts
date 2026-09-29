@@ -61,6 +61,16 @@ describe("通常編集のID単位マージ", () => {
     expect(saved.milestones.map(m => m.id)).toEqual(["m", "new"]);
     expect(saved.milestones[0].title).toBe("変更");
   });
+  it("新規マイルストーン確定と配下作業追加が連続しても所属を保持する", () => {
+    const before = { ...project(), milestones: [], workItems: [] };
+    const milestone = { id: "new-milestone", title: "新しい到達点", completed: false, taskIds: [] };
+    const child = { ...work("child"), milestoneId: milestone.id };
+    const savedMilestone = mergeProjectEdit(before, { milestones: [milestone] }, { before });
+    const savedWork = mergeProjectEdit(savedMilestone, { workItems: [child] }, { before });
+    expect(savedWork.milestones).toEqual([milestone]);
+    expect(savedWork.workItems).toEqual([child]);
+    expect(savedWork.workItems![0].milestoneId).toBe(savedWork.milestones[0].id);
+  });
   it("マイルストーン削除の間に追加された作業も未割当にして保持する", () => {
     const before = project();
     const current = { ...before, workItems: [...before.workItems!, work("c")] };

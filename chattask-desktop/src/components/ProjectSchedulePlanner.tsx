@@ -15,6 +15,8 @@ import { projectScheduleVisibility } from "../projectScheduleVisibility";
 import { ProjectWorkDateSyncButton, WorkDateSyncStatus } from "./WorkDateSyncButton";
 import type { SyncWorkDates } from "../projectWorkDateSync";
 import { calculateScheduleDrag, visibleScheduleRange, type ScheduleDragMode, type ScheduleRange } from "../projectScheduleDrag";
+import { ProjectScheduleAiDialog } from "./ProjectScheduleAiDialog";
+import type { ProjectScheduleAiResponse } from "../services/projectScheduleAi";
 
 const DAY_WIDTH = 30;
 const LABEL_WIDTH = 320;
@@ -61,6 +63,7 @@ export function ProjectSchedulePlanner({
   onSyncWorkDates,
   showSyncSuccessNotice = true,
   onMoveScheduleWorks,
+  onApplyAiPlan,
   onOpenHistory,
 }: {
   project: Goal;
@@ -78,12 +81,14 @@ export function ProjectSchedulePlanner({
   onSyncWorkDates: SyncWorkDates;
   showSyncSuccessNotice?: boolean;
   onMoveScheduleWorks?: MoveScheduleWorks;
+  onApplyAiPlan?: (response: ProjectScheduleAiResponse) => string | null;
   onOpenHistory?: () => void;
 }) {
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);
   const dragRef = useRef<ScheduleDraft | null>(null);
   const [dragError, setDragError] = useState("");
   const [movingMilestoneId, setMovingMilestoneId] = useState<string | null>(null);
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
   const cancelDrag = () => { dragRef.current = null; setDraft(null); };
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [showCompleted, setShowCompleted] = useState(() => {
@@ -202,6 +207,7 @@ export function ProjectSchedulePlanner({
     <header className="project-capacity-heading">
       <div className="project-capacity-heading-title"><strong>作業スケジュール</strong><span className="project-capacity-help" tabIndex={0} aria-label={scheduleHelp} title="操作方法">i<span aria-hidden="true">{scheduleHelp}</span></span></div>
       <ProjectWorkDateSyncButton key={project.id} project={project} onSync={onSyncWorkDates} showSuccessNotice={showSyncSuccessNotice} />
+      <button type="button" className="project-schedule-ai-button" onClick={() => { cancelDrag(); setAiPromptOpen(true); }}>AIに相談</button>
       <button type="button" className="project-capacity-add-milestone" onClick={onAddMilestone}>＋ マイルストーン</button>
       <label>1日の計画可能時間<input type="number" min="0.25" max="24" step="0.25" value={dailyHoursInput} onChange={(event) => setDailyHoursInput(event.target.value)} onBlur={commitDailyHours} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><span>時間</span></label>
       {onOpenHistory && <ScheduleHistoryMenu onOpen={() => { cancelDrag(); onOpenHistory(); }} />}
@@ -295,6 +301,7 @@ export function ProjectSchedulePlanner({
         </div>
       </div>
     {movingMilestoneId && onMoveScheduleWorks && <BatchScheduleMoveDialog key={`${project.id}:${movingMilestoneId}`} project={project} projects={projects} milestoneId={movingMilestoneId} periods={periods} dailyCapacityHours={dailyCapacityHours} onApply={onMoveScheduleWorks} onClose={() => setMovingMilestoneId(null)} />}
+    {aiPromptOpen && onApplyAiPlan && <ProjectScheduleAiDialog project={project} projects={projects} periods={periods} dailyCapacityHours={dailyCapacityHours} onApply={onApplyAiPlan} onClose={() => setAiPromptOpen(false)} />}
     <footer className="project-capacity-note">
       {dailyLoad.unscheduledWorkCount > 0 && <p className="capacity-missing">全プロジェクトに、目標期間が未設定・不正または営業日がない未完了作業が{dailyLoad.unscheduledWorkCount}件あります。日別の負荷には含まれていません。</p>}
       {(draft || dragError) && <p role="status">{draft?.error || dragError || `${draft!.range.start} 〜 ${draft!.range.end}（指を離して確定・Escでキャンセル）`}</p>}
