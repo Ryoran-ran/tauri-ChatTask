@@ -15,6 +15,8 @@ import { projectScheduleVisibility } from "../projectScheduleVisibility";
 import { ProjectWorkDateSyncButton, WorkDateSyncStatus } from "./WorkDateSyncButton";
 import type { SyncWorkDates } from "../projectWorkDateSync";
 import { calculateScheduleDrag, visibleScheduleRange, type ScheduleDragMode, type ScheduleRange } from "../projectScheduleDrag";
+import { buildProjectScheduleAiPrompt, PROJECT_SCHEDULE_AI_MODE_LABELS, type ProjectScheduleAiMode } from "../services/projectScheduleAi";
+import { Modal } from "./Modal";
 
 const DAY_WIDTH = 30;
 const LABEL_WIDTH = 320;
@@ -84,6 +86,10 @@ export function ProjectSchedulePlanner({
   const dragRef = useRef<ScheduleDraft | null>(null);
   const [dragError, setDragError] = useState("");
   const [movingMilestoneId, setMovingMilestoneId] = useState<string | null>(null);
+  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+  const [aiMode, setAiMode] = useState<ProjectScheduleAiMode>("initial-plan");
+  const [aiConstraints, setAiConstraints] = useState("");
+  const [aiCopyStatus, setAiCopyStatus] = useState<"" | "copied" | "error">("");
   const cancelDrag = () => { dragRef.current = null; setDraft(null); };
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [showCompleted, setShowCompleted] = useState(() => {
@@ -198,10 +204,22 @@ export function ProjectSchedulePlanner({
   const hiddenCompletedLabel = !showCompleted && (hiddenWorkCount || hiddenMilestoneCount)
     ? `（作業 ${hiddenWorkCount}・マイルストーン ${hiddenMilestoneCount}）`
     : "";
+  const aiPrompt = useMemo(() => buildProjectScheduleAiPrompt({
+    project, projects, periods, dailyCapacityHours, mode: aiMode, constraints: aiConstraints, today: todayValue(),
+  }), [aiConstraints, aiMode, dailyCapacityHours, periods, project, projects]);
+  const copyAiPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(aiPrompt);
+      setAiCopyStatus("copied");
+    } catch {
+      setAiCopyStatus("error");
+    }
+  };
   return <section className="project-capacity-planner is-work-planner" onKeyDown={(event) => { if (event.key === "Escape" && dragRef.current) { event.stopPropagation(); cancelDrag(); } }}>
     <header className="project-capacity-heading">
       <div className="project-capacity-heading-title"><strong>作業スケジュール</strong><span className="project-capacity-help" tabIndex={0} aria-label={scheduleHelp} title="操作方法">i<span aria-hidden="true">{scheduleHelp}</span></span></div>
       <ProjectWorkDateSyncButton key={project.id} project={project} onSync={onSyncWorkDates} showSuccessNotice={showSyncSuccessNotice} />
+      <button type="button" className="project-schedule-ai-button" onClick={() => { cancelDrag(); setAiCopyStatus(""); setAiPromptOpen(true); }}>AIに相談</button>
       <button type="button" className="project-capacity-add-milestone" onClick={onAddMilestone}>＋ マイルストーン</button>
       <label>1日の計画可能時間<input type="number" min="0.25" max="24" step="0.25" value={dailyHoursInput} onChange={(event) => setDailyHoursInput(event.target.value)} onBlur={commitDailyHours} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /><span>時間</span></label>
       {onOpenHistory && <ScheduleHistoryMenu onOpen={() => { cancelDrag(); onOpenHistory(); }} />}
@@ -295,6 +313,18 @@ export function ProjectSchedulePlanner({
         </div>
       </div>
     {movingMilestoneId && onMoveScheduleWorks && <BatchScheduleMoveDialog key={`${project.id}:${movingMilestoneId}`} project={project} projects={projects} milestoneId={movingMilestoneId} periods={periods} dailyCapacityHours={dailyCapacityHours} onApply={onMoveScheduleWorks} onClose={() => setMovingMilestoneId(null)} />}
+    {aiPromptOpen && <Modal title="AIに作業スケジュールを相談" onClose={() => setAiPromptOpen(false)} wide>
+      <div className="project-schedule-ai-dialog">
+        <header><strong>{project.title}</strong><p>相談内容を選び、生成したプロンプトをChatGPTなどのAIへ貼り付けてください。この画面ではスケジュールを変更しません。</p></header>
+        <section className="project-schedule-ai-settings">
+          <fieldset><legend>相談内容</legend>{(Object.entries(PROJECT_SCHEDULE_AI_MODE_LABELS) as [ProjectScheduleAiMode, string][]).map(([value, label]) => <label className={aiMode === value ? "selected" : ""} key={value}><input type="radio" name="project-schedule-ai-mode" value={value} checked={aiMode === value} onChange={() => { setAiMode(value); setAiCopyStatus(""); }} /><span><strong>{label}</strong><small>{value === "initial-plan" ? "作業分解・工数見積もり・日程案を作成" : value === "validate-progress" ? "現在の工数・計画・負荷・期限を診断" : "残工数を再見積もりして日程と対策を提案"}</small></span></label>)}</fieldset>
+          <label className="project-schedule-ai-constraints"><span>追加条件・AIに伝えたいこと <small>任意</small></span><textarea rows={6} value={aiConstraints} onChange={(event) => { setAiConstraints(event.target.value); setAiCopyStatus(""); }} placeholder="例：毎週水曜はレビューに2時間確保する／期限変更は不可／作業Aの後に作業Bを行う" /></label>
+          <div className="project-schedule-ai-data-summary"><strong>プロンプトに含まれる情報</strong><span>マイルストーン {project.milestones.length}件</span><span>作業 {(project.workItems || []).length}件</span><span>他プロジェクト {Math.max(0, projects.length - 1)}件</span><span>非稼働設定 {periods.length}件</span><small>プロジェクト名、作業名、説明、工数、実績、期限、他プロジェクトの負荷情報が含まれます。機密情報がある場合はコピー前に内容を確認してください。</small></div>
+        </section>
+        <section className="project-schedule-ai-prompt"><div><strong>生成されたプロンプト</strong><span>{aiPrompt.length.toLocaleString("ja-JP")}文字</span></div><textarea readOnly spellCheck={false} value={aiPrompt} aria-label="生成されたAI相談プロンプト" /></section>
+        <footer><span role="status" className={aiCopyStatus === "error" ? "error" : ""}>{aiCopyStatus === "copied" ? "プロンプトをコピーしました。" : aiCopyStatus === "error" ? "コピーできませんでした。テキストを選択してコピーしてください。" : "AIの回答取り込みは次の段階で対応予定です。"}</span><button type="button" onClick={() => setAiPromptOpen(false)}>閉じる</button><button type="button" className="primary" onClick={() => void copyAiPrompt()}>{aiCopyStatus === "copied" ? "コピー済み" : "プロンプトをコピー"}</button></footer>
+      </div>
+    </Modal>}
     <footer className="project-capacity-note">
       {dailyLoad.unscheduledWorkCount > 0 && <p className="capacity-missing">全プロジェクトに、目標期間が未設定・不正または営業日がない未完了作業が{dailyLoad.unscheduledWorkCount}件あります。日別の負荷には含まれていません。</p>}
       {(draft || dragError) && <p role="status">{draft?.error || dragError || `${draft!.range.start} 〜 ${draft!.range.end}（指を離して確定・Escでキャンセル）`}</p>}
