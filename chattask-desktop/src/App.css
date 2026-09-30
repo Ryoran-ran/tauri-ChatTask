@@ -2639,7 +2639,35 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .project-schedule-ai-prompt > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .project-schedule-ai-prompt strong { color: #5b21b6; font-size: .7rem; }
 .project-schedule-ai-prompt span { color: #64748b; font-size: .58rem; }
+.project-schedule-ai-prompt-actions { display: flex; align-items: center; gap: .45rem; }
+.project-schedule-ai-prompt-actions > button { flex: none; }
 .project-schedule-ai-prompt textarea { width: 100%; height: 100%; min-height: 320px; box-sizing: border-box; resize: none; background: white; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .61rem; line-height: 1.55; }
+.project-schedule-ai-consultation { display: grid; min-height: 0; align-content: start; gap: .7rem; overflow-y: auto; border: 1px solid #ddd6fe; border-radius: 11px; padding: .7rem; background: #fcfbff; }
+.project-schedule-ai-consult-prompt, .project-schedule-ai-summary-prompt, .project-schedule-ai-consult-response { display: grid; gap: .4rem; }
+.project-schedule-ai-consult-prompt > header, .project-schedule-ai-summary-prompt > header, .project-schedule-ai-consult-response > header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.project-schedule-ai-consultation header strong { color: #5b21b6; font-size: .7rem; }
+.project-schedule-ai-consultation header > span { color: #64748b; font-size: .58rem; }
+.project-schedule-ai-consultation textarea { width: 100%; box-sizing: border-box; resize: vertical; background: white; font-size: .62rem; line-height: 1.55; }
+.project-schedule-ai-consult-prompt textarea { min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.project-schedule-ai-summary-prompt { border: 1px solid #dbeafe; border-radius: 9px; padding: .6rem; background: #f8fbff; }
+.project-schedule-ai-summary-prompt > p { margin: 0; color: #475569; font-size: .58rem; line-height: 1.5; }
+.project-schedule-ai-summary-prompt textarea { min-height: 170px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.project-schedule-ai-consult-response textarea { min-height: 130px; }
+.project-schedule-ai-consult-response > small { color: #64748b; font-size: .55rem; line-height: 1.5; }
+.project-schedule-ai-consult-history { border-top: 1px solid #e2e8f0; padding-top: .65rem; }
+.project-schedule-ai-consult-history > summary { display: flex; align-items: center; justify-content: space-between; gap: .5rem; border-radius: 7px; padding: .38rem .45rem; color: #5b21b6; cursor: pointer; list-style: none; }
+.project-schedule-ai-consult-history > summary::-webkit-details-marker { display: none; }
+.project-schedule-ai-consult-history > summary::before { content: "▶"; color: #8b5cf6; font-size: .52rem; transition: transform .15s ease; }
+.project-schedule-ai-consult-history[open] > summary::before { transform: rotate(90deg); }
+.project-schedule-ai-consult-history > summary:hover { background: #f5f3ff; }
+.project-schedule-ai-consult-history > summary strong { margin-right: auto; font-size: .7rem; }
+.project-schedule-ai-consult-history > summary span { color: #64748b; font-size: .58rem; }
+.project-schedule-ai-consult-history > div { display: grid; gap: .4rem; padding-top: .4rem; }
+.project-schedule-ai-consult-history article { display: grid; gap: .4rem; border: 1px solid #e2e8f0; border-radius: 9px; padding: .6rem; background: white; }
+.project-schedule-ai-consult-history article > header { display: grid; gap: .15rem; }
+.project-schedule-ai-consult-history article > header b { color: #475569; font-size: .58rem; }
+.project-schedule-ai-consult-history article > header span { color: #1e293b; font-size: .63rem; font-weight: 700; line-height: 1.5; }
+.project-schedule-ai-consult-history .markdown-text { margin: 0; color: #334155; font-size: .62rem; line-height: 1.6; }
 .project-schedule-ai-dialog > footer { display: flex; grid-column: 1 / -1; align-items: center; justify-content: flex-end; gap: .5rem; border-top: 1px solid #e2e8f0; padding-top: .7rem; }
 .project-schedule-ai-dialog > footer > span { margin-right: auto; color: #475569; font-size: .62rem; }
 .project-schedule-ai-dialog > footer > span.error { color: #b91c1c; }
@@ -2733,6 +2761,8 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
   .project-schedule-ai-dialog { height: auto; grid-template-columns: 1fr; grid-template-rows: auto; }
   .project-schedule-ai-dialog > header, .project-schedule-ai-dialog > footer { grid-column: 1; }
   .project-schedule-ai-prompt textarea { min-height: 300px; resize: vertical; }
+  .project-schedule-ai-consultation { overflow: visible; }
+  .project-schedule-ai-consult-prompt textarea { min-height: 300px; }
   .project-schedule-ai-response-input textarea { min-height: 300px; resize: vertical; }
   .project-schedule-ai-dialog > header { align-items: stretch; flex-direction: column; }
   .project-schedule-ai-tree > header { align-items: flex-start; flex-direction: column; }

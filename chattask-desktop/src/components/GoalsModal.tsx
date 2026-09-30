@@ -620,7 +620,7 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
     try {
       const changes = buildProjectScheduleAiImportChanges({ response, project: storedProject, generateId, now: new Date().toISOString() });
       update(changes);
-      setUndoFeedback({ text: `AI計画を反映しました（マイルストーン ${response.proposedNewMilestones.length}件・追加作業 ${response.proposedNewWorkItems.length}件）。`, error: false });
+      setUndoFeedback({ text: `AIの作成案から新規項目を作成しました（マイルストーン ${response.proposedNewMilestones.length}件・作業 ${response.proposedNewWorkItems.length}件）。既存項目は変更していません。`, error: false });
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : "AI計画をインポートできませんでした。";
