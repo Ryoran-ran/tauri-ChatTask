@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProjectScheduleAiImportChanges, buildProjectScheduleAiPrompt, parseProjectScheduleAiResponse, validateProjectScheduleAiResponse, type ProjectScheduleAiResponse } from "../services/projectScheduleAi";
+import { buildProjectScheduleAiConsultationPrompt, buildProjectScheduleAiConsultationSummaryPrompt, buildProjectScheduleAiImportChanges, buildProjectScheduleAiPrompt, parseProjectScheduleAiResponse, validateProjectScheduleAiResponse, type ProjectScheduleAiResponse } from "../services/projectScheduleAi";
 import type { Goal } from "../types";
 import { buildProjectScheduleAiPlanTree, humanizeProjectScheduleAiQuestion, parseProjectScheduleAiDialogDraft } from "../components/ProjectScheduleAiDialog";
 
@@ -11,6 +11,35 @@ const project = (id: string, title = id): Goal => ({
 });
 
 describe("プロジェクトスケジュールAIプロンプト", () => {
+  it("インポートを行わない文章相談用プロンプトを生成する", () => {
+    const current = project("p", "対象プロジェクト");
+    const prompt = buildProjectScheduleAiConsultationPrompt({
+      project: current,
+      projects: [current],
+      periods: [],
+      dailyCapacityHours: 6,
+      mode: "validate-progress",
+      constraints: "期限は変更しない\n次に着手する作業を相談したい",
+      today: "2026-09-29",
+      history: [{ question: "品質を優先したい", answer: "先に確認工程を設けるのがよいです。" }],
+    });
+    expect(prompt).toContain("今回はインポート用JSONを作らず");
+    expect(prompt).toContain("日本語のMarkdown");
+    expect(prompt).toContain("期限は変更しない");
+    expect(prompt).toContain("先に確認工程を設けるのがよいです。");
+    expect(prompt).toContain("次に着手する作業を相談したい");
+    expect(prompt).toContain("PROJECT_DATA");
+  });
+
+  it("同じAIチャットで相談結果を整理するプロンプトを生成する", () => {
+    const prompt = buildProjectScheduleAiConsultationSummaryPrompt("validate-progress");
+    expect(prompt).toContain("ここまで同じチャットで相談した内容");
+    expect(prompt).toContain("決定した方向性");
+    expect(prompt).toContain("新規作成したいマイルストーンと作業");
+    expect(prompt).toContain("未決定事項");
+    expect(prompt).toContain("JSONは出力しない");
+  });
+
   it("現在の計画・他プロジェクト負荷・制約と固定IDを出力する", () => {
     const current = project("p", "対象プロジェクト");
     const prompt = buildProjectScheduleAiPrompt({
@@ -57,6 +86,19 @@ describe("プロジェクトスケジュールAIプロンプト", () => {
     expect(prompt).toContain('"answer": "8分"');
     expect(prompt).toContain('"additionalFollowUpContext": "中間レビューは11/8に決定"');
     expect(prompt).toContain("revisionSummary");
+  });
+
+  it("方向性の相談履歴を作成用プロンプトへ含める", () => {
+    const current = project("p");
+    const prompt = buildProjectScheduleAiPrompt({
+      project: current, projects: [current], periods: [], dailyCapacityHours: 6,
+      mode: "initial-plan", today: "2026-09-29",
+      consultationHistory: [{ question: "品質を優先したい", answer: "確認工程を先に作る方針で合意した。" }],
+    });
+    expect(prompt).toContain("CONSULTATION_RESULTS");
+    expect(prompt).toContain("確認工程を先に作る方針で合意した。");
+    expect(prompt).toContain("既存作業の提案は利用者向けのアドバイス");
+    expect(prompt).toContain("実際に新規作成する内容だけ");
   });
 });
 
@@ -130,7 +172,7 @@ describe("プロジェクトスケジュールAI回答の解析と検証", () =>
     expect(result.issues.some((item) => item.message.includes("計画可能時間を超える日"))).toBe(true);
   });
 
-  it("新規マイルストーンを作成し、追加作業の一時IDを実IDへ変換する", () => {
+  it("既存作業を変更せず、新規マイルストーンと追加作業だけを作成する", () => {
     const current = project("p");
     const ai = response();
     ai.proposedNewMilestones = [{
@@ -149,7 +191,7 @@ describe("プロジェクトスケジュールAI回答の解析と検証", () =>
     const changes = buildProjectScheduleAiImportChanges({ response: ai, project: current, generateId: () => ids.shift()!, now: "2026-09-29T12:00:00.000Z" });
     expect(changes.milestones[changes.milestones.length - 1]).toMatchObject({ id: "created-milestone", title: "レビュー完了", dueDate: "2026-10-15" });
     expect(changes.workItems?.[changes.workItems.length - 1]).toMatchObject({ id: "created-work", milestoneId: "created-milestone", title: "レビュー", plannedHours: 4 });
-    expect(changes.workItems?.[0]).toMatchObject({ milestoneId: "created-milestone", title: "具体的な実装", targetWorkStartDate: "2026-10-01", targetWorkEndDate: "2026-10-02" });
+    expect(changes.workItems?.[0]).toEqual(current.workItems?.[0]);
   });
 
   it("既存・新規マイルストーンの配下へ作業案を分類する", () => {
@@ -174,6 +216,20 @@ describe("プロジェクトスケジュールAI回答の解析と検証", () =>
     expect(draft.response?.workPlans[0].workId).toBe("p-w");
     expect(draft.answers["確認期限は？"]).toBe("10/10");
     expect(draft.previousResponse?.projectId).toBe("p");
+  });
+
+  it("旧形式の二つの相談入力欄を一つに結合して下書きから復元する", () => {
+    const draft = parseProjectScheduleAiDialogDraft(JSON.stringify({
+      version: 2, tab: "consult", mode: "recovery", constraints: "期限変更不可",
+      consultationHistory: [{ question: "優先順位は？", answer: "確認作業を優先します。" }],
+      consultationQuestion: "代替案はありますか？",
+      consultationResponseText: "入力途中の回答",
+    }));
+    expect(draft).toMatchObject({
+      tab: "consult", mode: "recovery", constraints: "期限変更不可\n代替案はありますか？",
+      consultationResponseText: "入力途中の回答",
+      consultationHistory: [{ question: "優先順位は？", answer: "確認作業を優先します。" }],
+    });
   });
 
   it("追加質問内のIDを作業名とマイルストーン名へ置き換える", () => {
