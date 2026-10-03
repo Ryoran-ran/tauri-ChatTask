@@ -16,6 +16,7 @@ const reviewPoints = [
   ["readability", "可読性・保守性"],
   ["wording", "文言・コメント"],
   ["test", "テスト不足"],
+  ["horizontal", "水平検索・横断影響"],
 ] as const;
 
 const testPoints = [
@@ -160,8 +161,9 @@ const parseTestResult = (text: string): GeneratedTestResult | null => {
   }
 };
 
-const buildReviewPrompt = (task: Task, repository: GithubRepository | undefined, diff: string, base: string, target: string, selectedPoints: string[]) => {
+export const buildReviewPrompt = (task: Task, repository: GithubRepository | undefined, repositories: GithubRepository[], diff: string, base: string, target: string, selectedPoints: string[]) => {
   const ignoredDecisions = relevantIgnoredReviewDecisions(task, repository?.id || "", diff);
+  const relatedRepositories = repositories.filter((candidate) => candidate.id !== repository?.id);
   return `あなたはシニアソフトウェアエンジニアです。次のGit Diffをコードレビューし、実際に対応すべき指摘だけを抽出してください。
 
 変更された全ファイルと全差分ブロックを順番に確認してください。指摘件数に上限は設けず、互いに独立した問題は省略せず、それぞれ別のレビュー項目として漏れなく列挙してください。ただし、同じ原因による重複指摘や根拠の弱い推測は追加しないでください。
@@ -172,6 +174,9 @@ ${task.title}
 ## 対象リポジトリ
 ${repository ? `${repository.name}${repository.url ? ` (${repository.url})` : ""}` : "未設定"}
 
+## 関連リポジトリ候補
+${relatedRepositories.length ? relatedRepositories.map((candidate) => `- ${candidate.name}${candidate.url ? ` (${candidate.url})` : ""}`).join("\n") : "- 登録なし"}
+
 ## 比較
 ${base || "base"} → ${target || "target"}
 
@@ -179,6 +184,12 @@ ${base || "base"} → ${target || "target"}
 ${reviewPoints.filter(([id]) => selectedPoints.includes(id)).map(([, label]) => `- ${label}`).join("\n") || "- 総合的に確認"}
 ${selectedPoints.includes("wording") ? `
 「文言・コメント」では、誤字脱字だけでなく、実装内容と食い違うコメント、意味が古くなったコメント、不要なコメントアウト、誤解を招くUI文言・エラーメッセージも確認してください。` : ""}
+${selectedPoints.includes("horizontal") ? `
+「水平検索・横断影響」では、変更された制度・資格・免許・期限・業務ルール・定数・文言・API仕様・データ項目について、同じリポジトリ内の類似実装だけでなく、上記の関連リポジトリ候補にも同様の変更が必要ではないか確認してください。
+- Git Diffに現れた固有名詞、設定値、日付、識別子、API名、画面文言を水平検索の手掛かりにしてください。
+- 複数リポジトリで同じ業務やデータを扱う可能性があれば、対象リポジトリだけの修正で完結する根拠があるか確認してください。
+- 提供されていないリポジトリのコードを確認済みとは断定しないでください。確認が必要な場合は、変更漏れの可能性をレビュー項目として挙げ、reasonに未確認の範囲、suggestionに確認対象のリポジトリ候補と具体的な検索語を記載してください。
+- 対象リポジトリだけで完結すると判断できる根拠がある場合や、横断確認が不要な変更では指摘を追加しないでください。` : ""}
 
 ## 関連する過去の「対応しない」判断
 ${ignoredDecisionPrompt(ignoredDecisions)}
@@ -503,7 +514,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       setMessage("Git Diffを入力してください。");
       return;
     }
-    setPrompt(buildReviewPrompt(task, selectedRepository, diff.trim(), base.trim(), target.trim(), selectedPoints));
+    setPrompt(buildReviewPrompt(task, selectedRepository, repositories, diff.trim(), base.trim(), target.trim(), selectedPoints));
     setMessage("AIへ渡すレビュープロンプトを作成しました。");
   };
 
