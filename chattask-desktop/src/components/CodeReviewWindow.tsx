@@ -99,7 +99,7 @@ function BranchInput({ ariaLabel, value, candidates, onChange, placeholder }: { 
       placeholder={placeholder}
     />
     {open && visibleCandidates.length > 0 && <div className="review-branch-options" role="listbox" aria-label={`${ariaLabel}の候補`}>
-      {visibleCandidates.map((branch) => <button type="button" role="option" aria-selected={branch === value} key={branch} onClick={() => { onChange(branch); setOpen(false); }}>{branch}</button>)}
+      {visibleCandidates.map((branch) => <button type="button" role="option" aria-selected={branch === value} key={branch} onPointerDown={(event) => event.preventDefault()} onClick={() => { onChange(branch); setOpen(false); }}>{branch}</button>)}
     </div>}
   </div>;
 }
