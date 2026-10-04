@@ -10,6 +10,7 @@ import { createImagePdf } from "../services/imagePdf";
 import { xmlEscape, zipFiles } from "../services/xmlSpreadsheet";
 import { effectiveProjectWorkActualHours, projectItemActual } from "../projectEffort";
 import { ganttProjectWorkItems } from "../projectDataProtection";
+import { buildGanttScheduleConsultationPrompt } from "../services/ganttScheduleConsultation";
 
 type GanttStatusFilter = "all" | "active" | "waiting" | "done";
 type GanttDisplay = "compare" | "planned" | "actual";
@@ -188,12 +189,13 @@ const aggregateRows = (id: string, kind: GanttRow["kind"], title: string, status
   };
 };
 
-export function GanttModal({ tasks, projects = [], tags, periods, calculationPeriods, initialProjectId = "", onSelect, onClose }: {
+export function GanttModal({ tasks, projects = [], tags, periods, calculationPeriods, dailyCapacityHours = 6, initialProjectId = "", onSelect, onClose }: {
   tasks: Task[];
   projects?: Goal[];
   tags: ProjectTag[];
   periods: NonWorkingPeriod[];
   calculationPeriods?: NonWorkingPeriod[];
+  dailyCapacityHours?: number;
   initialProjectId?: string;
   onSelect: (id: string) => void;
   onClose: () => void;
@@ -230,6 +232,9 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [consultationOpen, setConsultationOpen] = useState(false);
+  const [consultationQuestion, setConsultationQuestion] = useState("");
+  const [consultationCopyStatus, setConsultationCopyStatus] = useState<"" | "copied" | "error">("");
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -547,6 +552,41 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
     return true;
   });
   const sourceRowById = new Map(sourceRows.map((row) => [row.id, row]));
+  const consultationPrompt = useMemo(() => {
+    const rowById = new Map(sourceRows.map((row) => [row.id, row]));
+    return buildGanttScheduleConsultationPrompt({
+      title: selectedProject?.title || "全Task・プロジェクト",
+      today,
+      dailyCapacityHours,
+      periods: effortPeriods,
+      question: consultationQuestion,
+      items: sourceRows.map((row) => ({
+        kind: kindLabel(row.kind),
+        title: row.title,
+        parentTitle: row.parentId ? rowById.get(row.parentId)?.title || "" : "",
+        hierarchyDepth: row.depth,
+        summary: Boolean(row.hasChildren),
+        description: row.description || "",
+        status: statusLabel(row.status),
+        priority: row.priority || "",
+        baselineRanges: row.baselineRanges,
+        plannedRanges: row.plannedRanges,
+        actualDates: row.actualDates,
+        achievedDates: row.achievedDates,
+        plannedHours: row.plannedHours,
+        actualHours: row.actualHours,
+        dueDate: row.dueDate,
+      })),
+    });
+  }, [consultationQuestion, dailyCapacityHours, effortPeriods, selectedProject?.title, sourceRows, today]);
+  const copyConsultationPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(consultationPrompt);
+      setConsultationCopyStatus("copied");
+    } catch {
+      setConsultationCopyStatus("error");
+    }
+  };
   const workloadRows = directlyMatchingRows.filter((row) => !directlyMatchingRows.some((candidate) => {
     let parentId = candidate.parentId;
     while (parentId) {
@@ -912,6 +952,7 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
           <button disabled={scale === "project"} onClick={() => navigatePeriod(1, "large")} aria-label={`${navigationUnits.large}後へ`}>{navigationUnits.large} →</button>
         </div>
         <div className="gantt-export" ref={exportMenuRef}>
+          <button type="button" className="gantt-consult-button" onClick={() => { setExportMenuOpen(false); setConsultationCopyStatus(""); setConsultationOpen(true); }}>全体をAIに相談</button>
           <button type="button" aria-haspopup="menu" aria-expanded={exportMenuOpen} onClick={() => setExportMenuOpen((open) => !open)}>ファイル出力 ▾</button>
           {exportMenuOpen && <div className="gantt-export-menu" role="menu"><button type="button" role="menuitem" onClick={exportMarkdown}><strong>Markdown</strong><small>AI確認用に予定・実績・期限を構造化して保存</small></button><button type="button" role="menuitem" onClick={exportPdf}><strong>PDF</strong><small>表示中の期間を横向きで印刷・保存</small></button><button type="button" role="menuitem" onClick={exportExcel}><strong>Excel（一覧）</strong><small>タスク・予定・工数を表形式で保存</small></button><button type="button" role="menuitem" onClick={exportGanttExcel}><strong>Excel（ガント）</strong><small>日付列へ予定・実績を色付きバーで表示</small></button><button type="button" role="menuitem" onClick={exportPng}><strong>PNG</strong><small>ガントチャートを画像として保存</small></button></div>}
         </div>
@@ -962,5 +1003,11 @@ export function GanttModal({ tasks, projects = [], tags, periods, calculationPer
       {todayLineLeft && <i className="gantt-today-overlay" style={{ left: todayLineLeft }} aria-hidden="true" />}
       </div>
     </div>
+    {consultationOpen && <Modal title="全体スケジュールをAIに相談" onClose={() => setConsultationOpen(false)} wide><div className="gantt-consultation-dialog">
+      <header><div><strong>{selectedProject?.title || "全Task・プロジェクト"}</strong><span>{sourceRows.length}件を対象に相談</span></div><p>プロンプトを同じAIチャットへ送り、AIからの質問に回答しながら内容を深掘りします。アプリ内で回答履歴の管理や予定の変更は行いません。</p></header>
+      <label className="gantt-consultation-question">相談したいこと・重視したいこと <small>任意</small><textarea rows={4} value={consultationQuestion} onChange={(event) => { setConsultationQuestion(event.target.value); setConsultationCopyStatus(""); }} placeholder={"例：今月末の期限を守れるか確認したい\n複数プロジェクトの優先順位を相談したい\n遅れている作業の現実的な進め方を知りたい"} /></label>
+      <section><header><strong>相談用プロンプト</strong><span>{consultationPrompt.length.toLocaleString("ja-JP")}文字</span></header><textarea readOnly spellCheck={false} aria-label="生成された全体スケジュール相談プロンプト" value={consultationPrompt} /></section>
+      <footer><span role="status" className={consultationCopyStatus === "error" ? "error" : ""}>{consultationCopyStatus === "copied" ? "コピーしました。同じAIチャットで質問への回答を続けてください。" : consultationCopyStatus === "error" ? "コピーできませんでした。テキスト欄からコピーしてください。" : "AIとの相談内容はアプリへ保存・自動反映されません。"}</span><button type="button" onClick={() => setConsultationOpen(false)}>閉じる</button><button type="button" className="primary" onClick={() => void copyConsultationPrompt()}>{consultationCopyStatus === "copied" ? "コピー済み" : "プロンプトをコピー"}</button></footer>
+    </div></Modal>}
   </Modal>;
 }
