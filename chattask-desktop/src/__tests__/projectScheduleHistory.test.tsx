@@ -28,6 +28,18 @@ describe("永続スケジュール取り消し履歴", () => {
     expect(() => applyScheduleCommand(reverted, undo("h1"))).toThrow("取り消し済み");
     expect(initial.goals[0].scheduleHistory).toBeUndefined();
   });
+  it("AI案の作業名・所属・工数・目標期間をまとめて戻せる", () => {
+    const initial = seed(); const command = move(initial, "ai");
+    if (command.kind !== "apply") throw Error();
+    command.changes.workItems = initial.goals[0].workItems!.map(item => item.id === "a" ? {
+      ...item, title: "AI提案名", milestoneId: "", plannedHours: 10,
+      targetWorkStartDate: "2026-10-01", targetWorkEndDate: "2026-10-03",
+    } : item);
+    const saved = applyScheduleCommand(initial, command).data;
+    expect(saved.goals[0].workItems![0]).toMatchObject({ title: "AI提案名", milestoneId: "", plannedHours: 10, targetWorkStartDate: "2026-10-01", targetWorkEndDate: "2026-10-03" });
+    const restored = applyScheduleCommand(saved, undo("ai")).data;
+    expect(restored.goals[0].workItems![0]).toMatchObject({ title: "a", milestoneId: "m", plannedHours: 3, targetWorkStartDate: "2026-09-28", targetWorkEndDate: "2026-09-30" });
+  });
   it("無関係な作業や後から編集した説明・優先度・期限を保持する", () => {
     let data = seed(); data = applyScheduleCommand(data, move(data, "a")).data; data = applyScheduleCommand(data, move(data, "b", "b")).data;
     data.goals[0].workItems![0].description = "変更済み";

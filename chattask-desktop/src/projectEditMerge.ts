@@ -5,6 +5,10 @@ export interface ProjectEditContext {
   before: Goal;
   deletedWorkIds?: string[];
   deletedMilestoneIds?: string[];
+  deletedMilestoneWorkDisposition?:
+    | { kind: "detach" }
+    | { kind: "delete" }
+    | { kind: "move"; milestoneId: string };
 }
 
 const equal = (a: unknown, b: unknown): boolean => {
@@ -49,8 +53,17 @@ export function mergeProjectEdit(current: Goal, changes: Partial<Goal>, context:
   const result = mergeFields(current, context.before, fields);
   if (workItems) result.workItems = mergeItems(current.workItems || [], context.before.workItems || [], workItems, context.deletedWorkIds);
   if (milestones) result.milestones = mergeItems(current.milestones, context.before.milestones, milestones, context.deletedMilestoneIds);
-  // 親を消す間に追加された子も、見えない孤児にせず未割当にする。
-  if (context.deletedMilestoneIds?.length) result.workItems = (result.workItems || []).map(work =>
-    context.deletedMilestoneIds!.includes(work.milestoneId) ? { ...work, milestoneId: "" } : work);
+  // 親を消す間に追加された子にも、確認画面で選んだ処置を同じように適用する。
+  if (context.deletedMilestoneIds?.length) {
+    const deletedMilestones = new Set(context.deletedMilestoneIds);
+    const disposition = context.deletedMilestoneWorkDisposition || { kind: "detach" as const };
+    if (disposition.kind === "delete") {
+      result.workItems = (result.workItems || []).filter(work => !deletedMilestones.has(work.milestoneId));
+    } else {
+      const milestoneId = disposition.kind === "move" ? disposition.milestoneId : "";
+      result.workItems = (result.workItems || []).map(work =>
+        deletedMilestones.has(work.milestoneId) ? { ...work, milestoneId } : work);
+    }
+  }
   return result;
 }

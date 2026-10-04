@@ -47,7 +47,7 @@ export function scheduleChangesForStorage(raw: Goal, beforeView: Goal, changes: 
 // インポートされた履歴にも適用する。未知バージョンや不正フィールドからの復元を拒否。
 export function validateHistory(record: ScheduleHistoryRecord) {
   if (record.version !== 1 || !record.id || !record.projectId || !record.createdAt || !record.label) throw new Error("この履歴の形式には対応していません。");
-  const allowed = new Set(["targetWorkStartDate", "targetWorkEndDate", "dueDate", "scheduleSortOrder", "plannedRanges", "plannedHours", "baselinePlannedRanges", "baselinePlannedHours", "replanReason", "replannedAt", "linkedTaskScheduleSnapshot", "linkedTaskPlannedHoursSnapshot"]);
+  const allowed = new Set(["title", "milestoneId", "targetWorkStartDate", "targetWorkEndDate", "dueDate", "scheduleSortOrder", "plannedRanges", "plannedHours", "baselinePlannedRanges", "baselinePlannedHours", "replanReason", "replannedAt", "linkedTaskScheduleSnapshot", "linkedTaskPlannedHoursSnapshot"]);
   for (const group of [record.works, record.milestones, record.tasks]) {
     if (!Array.isArray(group) || new Set(group.map(item => item.id)).size !== group.length) throw new Error("履歴の対象が不正です。");
     for (const change of group) {

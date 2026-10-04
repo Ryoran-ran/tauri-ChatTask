@@ -39,7 +39,7 @@ export const createProjectWorkEditDraft = (stored: ProjectWorkItem, displayed: P
 export const buildProjectWorkEditChanges = (initial: ProjectWorkItem, draft: ProjectWorkItem, now: string): Partial<ProjectWorkItem> => {
   if (initial.id !== draft.id) throw new Error("編集対象の作業が一致しません。");
   const changes: Partial<ProjectWorkItem> = {};
-  const editableFields = ["title", "description", "status", "priority", "dueDate", "linkedTaskId"] as const;
+  const editableFields = ["title", "description", "status", "priority", "dueDate", "milestoneId", "linkedTaskId"] as const;
   for (const key of editableFields) {
     if (initial[key] !== draft[key]) Object.assign(changes, { [key]: key === "title" ? draft.title.trim() : draft[key] });
   }

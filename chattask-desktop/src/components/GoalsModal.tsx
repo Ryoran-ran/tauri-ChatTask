@@ -22,7 +22,7 @@ import { batchRelatedTaskCandidates, effectiveRelatedTaskId, linkedWorkChanges, 
 import { mergeProjectEdit, type ProjectEditContext } from "../projectEditMerge";
 import { migrateLegacyMilestoneProject } from "../projectLegacyMigration";
 import { projectItemActual } from "../projectEffort";
-import { buildProjectScheduleAiImportChanges, type ProjectScheduleAiResponse } from "../services/projectScheduleAi";
+import { buildProjectScheduleAiImportChanges, type ProjectScheduleAiImportSelection, type ProjectScheduleAiResponse } from "../services/projectScheduleAi";
 import {
   changedProjectFields,
   effectiveProjectChanges,
@@ -49,6 +49,14 @@ type RelatedTaskBatchDialog = {
   existingTaskId: string;
   individualWorkIds: string[];
   individualTaskIds: Record<string, string>;
+};
+type MilestoneWorkDisposition =
+  | { kind: "detach" }
+  | { kind: "delete" }
+  | { kind: "move"; milestoneId: string };
+type MilestoneDeleteDialog = {
+  milestoneId: string;
+  disposition: MilestoneWorkDisposition;
 };
 
 const normalizeProject = (input: Goal): Goal => {
@@ -339,6 +347,7 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
   const [search, setSearch] = useState("");
   const [searchPanelOpen, setSearchPanelOpen] = useState(() => localStorage.getItem("chatTaskProjectSearchPanelOpen") !== "false");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [milestoneDeleteDialog, setMilestoneDeleteDialog] = useState<MilestoneDeleteDialog | null>(null);
   const [editingBoard, setEditingBoard] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [exportingMarkdown, setExportingMarkdown] = useState(false);
@@ -408,6 +417,7 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
     setSchedulePlannerOpen(false);
     setScheduleHistoryOpen(false);
     setRelatedTaskBatchDialog(null);
+    setMilestoneDeleteDialog(null);
     setProjectTreeEditorRequest(null);
     dismissScheduleNotice();
   }, [selectedId, dismissScheduleNotice]);
@@ -625,14 +635,20 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
     try { commitSchedule({}, "1日の計画可能時間の変更", [], hours); }
     catch (error) { setUndoFeedback({ text: error instanceof Error ? error.message : "変更できませんでした。", error: true }); }
   };
-  const applyAiPlan = (response: ProjectScheduleAiResponse) => {
+  const applyAiPlan = (response: ProjectScheduleAiResponse, selection: ProjectScheduleAiImportSelection) => {
     if (!project || !storedProject) return "プロジェクトが見つかりません。画面を開き直してください。";
     if (response.projectId !== project.id) return "AI回答の対象プロジェクトが一致しません。";
     if (response.projectUpdatedAt !== project.updatedAt) return "AI回答の作成後にプロジェクトが更新されています。回答を再解析してからインポートしてください。";
     try {
-      const changes = buildProjectScheduleAiImportChanges({ response, project: storedProject, generateId, now: new Date().toISOString() });
-      update(changes);
-      setUndoFeedback({ text: `AIの作成案から新規項目を作成しました（マイルストーン ${response.proposedNewMilestones.length}件・作業 ${response.proposedNewWorkItems.length}件）。既存項目は変更していません。`, error: false });
+      const changes = buildProjectScheduleAiImportChanges({ response, project: storedProject, selection, generateId, now: new Date().toISOString() });
+      const label = `AI作成案の反映（新規マイルストーン ${response.proposedNewMilestones.length}件・新規作業 ${response.proposedNewWorkItems.length}件・既存作業 ${selection.existingWorkIds.length}件）`;
+      if (response.proposedNewMilestones.length || response.proposedNewWorkItems.length) {
+        // 登録・削除はスケジュール履歴の対象外なので、新規項目と選択した変更を1回の通常更新で保存する。
+        update(changes);
+        setUndoFeedback({ text: label, error: false });
+      } else {
+        commitSchedule(changes, label);
+      }
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : "AI計画をインポートできませんでした。";
@@ -895,15 +911,45 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
     setItems(current => current.map((item) => item.id === selectedId ? { ...mergeProjectEdit(item, effectiveChanges, context), updatedAt: now } : item));
     if (selectedId) onUpdateProject(selectedId, effectiveChanges, context);
   };
-  const deleteMilestone = (id: string) => {
+  const deleteMilestone = (id: string, disposition: MilestoneWorkDisposition = { kind: "detach" }) => {
     if (!storedProject) return;
     const milestone = storedProject.milestones.find((item) => item.id === id);
-    if (milestone?.linkedTaskId) releaseProjectSchedule(milestone.linkedTaskId, "project-milestone", milestone.id, milestone.linkedTaskScheduleSnapshot);
+    if (!milestone) return;
+    if (disposition.kind === "move" && (disposition.milestoneId === id || !storedProject.milestones.some((item) => item.id === disposition.milestoneId))) {
+      setUndoFeedback({ text: "移動先のマイルストーンが見つかりません。選び直してください。", error: true });
+      return;
+    }
+    const children = (storedProject.workItems || []).filter((item) => item.milestoneId === id);
+    const releasesByTask = new Map<string, ProjectScheduleRelease[]>();
+    const addRelease = (linkedTaskId: string, release: ProjectScheduleRelease) =>
+      releasesByTask.set(linkedTaskId, [...(releasesByTask.get(linkedTaskId) || []), release]);
+    if (milestone.linkedTaskId) addRelease(milestone.linkedTaskId, {
+      sourceType: "project-milestone", sourceId: milestone.id, snapshot: milestone.linkedTaskScheduleSnapshot || [],
+    });
+    if (disposition.kind === "delete") {
+      children.forEach((work) => {
+        if (work.linkedTaskId) addRelease(work.linkedTaskId, {
+          sourceType: "project-work", sourceId: work.id, snapshot: work.linkedTaskScheduleSnapshot || [],
+        });
+      });
+    }
+    releasesByTask.forEach((releases, linkedTaskId) => releaseProjectSchedules(linkedTaskId, releases));
+    const workItems = disposition.kind === "delete"
+      ? (storedProject.workItems || []).filter((item) => item.milestoneId !== id)
+      : (storedProject.workItems || []).map((item) => item.milestoneId === id
+        ? { ...item, milestoneId: disposition.kind === "move" ? disposition.milestoneId : "" }
+        : item);
     persistProjectChanges({
       milestones: storedProject.milestones.filter((item) => item.id !== id),
-      workItems: (storedProject.workItems || []).map((item) => item.milestoneId === id ? { ...item, milestoneId: "" } : item),
-    }, { deletedMilestoneIds: [id] });
+      workItems,
+    }, { deletedMilestoneIds: [id], deletedMilestoneWorkDisposition: disposition });
+    setMilestoneDeleteDialog(null);
   };
+  const requestDeleteMilestone = (id: string) => {
+    if (!storedProject?.milestones.some((item) => item.id === id)) return;
+    setMilestoneDeleteDialog({ milestoneId: id, disposition: { kind: "detach" } });
+  };
+  const discardNewMilestone = (id: string) => deleteMilestone(id, { kind: "delete" });
   const deleteWork = (id: string) => {
     if (!storedProject) return;
     const work = (storedProject.workItems || []).find((item) => item.id === id);
@@ -991,6 +1037,15 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
   const projectPlannedHours = project
     ? (project.workItems || []).reduce((total, work) => total + (Number(work.plannedHours) || 0), 0)
     : 0;
+  const deletingMilestone = milestoneDeleteDialog && storedProject
+    ? storedProject.milestones.find((item) => item.id === milestoneDeleteDialog.milestoneId) || null
+    : null;
+  const deletingMilestoneWorks = deletingMilestone && storedProject
+    ? (storedProject.workItems || []).filter((item) => item.milestoneId === deletingMilestone.id)
+    : [];
+  const milestoneMoveDestinations = deletingMilestone && storedProject
+    ? storedProject.milestones.filter((item) => item.id !== deletingMilestone.id)
+    : [];
 
   return <Modal title="プロジェクト管理" onClose={onClose} wide><div className="goals-layout project-layout">
     <aside>
@@ -1020,10 +1075,20 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
       <div className="project-workspace-toolbar"><div><strong>マイルストーン</strong><small>目的と到達点を管理し、作業状況は関連タスクから集計します</small></div><div><ProjectWorkDateSyncButton key={project.id} project={project} onSync={syncWorkDates} showSuccessNotice={false} /><button type="button" onClick={() => setSchedulePlannerOpen(true)}>作業スケジュール</button><details className="project-workspace-more"><summary>その他</summary><div><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onOpenGantt(project.id); }}>ガントチャート</button><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); void exportProjectMarkdown(); }} disabled={exportingMarkdown}>{exportingMarkdown ? "出力中..." : "MD出力"}</button></div></details><button type="button" className="project-register-work-button" disabled={!batchRelatedTaskCandidates(project.workItems || []).length} onClick={() => openRelatedTaskBatch()}>未登録作業をTaskへ登録</button></div></div>
       <MilestonePlanOverview milestones={project.milestones} workItems={project.workItems || []} editing={editingBoard} onUpdate={updateMilestone} />
       {view === "board" && <>{!editingBoard && project.milestones.length > 1 && <section className="same-date-order-panel"><strong>マイルストーンの同一期限内順序</strong><small>期限が同じ項目だけ、↑／↓で移動できます。期限が異なる場合は期限の昇順で自動的に並びます。</small>{[...project.milestones].sort(compareMilestonesByDueDate).map((milestone) => <div key={`order-${milestone.id}`}><span>{milestone.title || "名称未設定"}<small>{milestone.dueDate || "期限未設定"}</small></span><div className="same-date-order-controls"><button type="button" title="同じ期限の中で上へ" onClick={() => moveMilestone(milestone.id, -1)}>↑</button><button type="button" title="同じ期限の中で下へ" onClick={() => moveMilestone(milestone.id, 1)}>↓</button></div></div>)}</section>}
-      <section className="goal-section"><div className="goal-section-heading"><h3>マイルストーン</h3><div className="goal-section-heading-actions">{editingBoard ? <><button type="button" className="project-edit-cancel" onClick={cancelProjectEdit}>キャンセル</button><button type="button" onClick={completeProjectEdit}>編集を完了</button><button type="button" onClick={addMilestone}>＋ マイルストーン追加</button></> : <button type="button" onClick={beginProjectEdit}>ボードを編集</button>}</div></div><div className="project-milestones">{[...project.milestones].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((milestone, milestoneIndex) => { const linkedTask = tasks.find((task) => task.id === milestone.linkedTaskId); const milestoneWorks = (project.workItems || []).filter((item) => item.milestoneId === milestone.id); const ranges = milestoneWorks.flatMap((work) => work.plannedRanges || []); return <article key={milestone.id}><div className="board-milestone-label"><span>MILESTONE {milestoneIndex + 1}</span><small>配下の作業項目 {milestoneWorks.length}件</small></div><div className={`project-item-main ${editingBoard ? "" : "is-readonly"}`}><select value={milestone.status || (milestone.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; updateMilestone(milestone.id, { status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{editingBoard ? <><input value={milestone.title} className={milestone.completed ? "plan-completed" : ""} onChange={(event) => updateMilestone(milestone.id, { title: event.target.value })} /><WorkDatePicker ariaLabel="マイルストーンの期限" value={milestone.dueDate || ""} onChange={(dueDate) => updateMilestone(milestone.id, { dueDate })} /><button onClick={() => addWorkItem(milestone.id)}>作業追加</button><button className="danger-text" onClick={() => deleteMilestone(milestone.id)}>削除</button></> : <>{milestone.linkedTaskId ? <button type="button" className="project-milestone-title-link" title="関連ChatTaskを開く" onClick={() => onSelectTask(milestone.linkedTaskId!)}>{milestone.title}</button> : <strong>{milestone.title}</strong>}<time>{milestone.dueDate || "期限未設定"}</time></>}</div>{!editingBoard && <ScheduleDate ranges={ranges} />}{editingBoard ? <><textarea rows={2} value={milestone.description || ""} onChange={(event) => updateMilestone(milestone.id, { description: event.target.value })} placeholder="マイルストーンの説明" /><LinkedTaskSelector tasks={tasks} value={milestone.linkedTaskId || ""} suggestedTaskIds={[project.originTaskId || "", ...project.taskIds]} suggestionLabel="このプロジェクトの候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => updateMilestone(milestone.id, { linkedTaskId, taskIds: linkedTaskId ? [linkedTaskId] : [] })} /></> : <><p>{milestone.description || "説明はありません"}</p><StatusSyncState task={linkedTask} status={milestone.status || (milestone.completed ? "achieved" : "not-started")} enabled={milestone.syncLinkedTaskStatus !== false} onReflect={() => reflectMilestoneStatus(milestone)} /></>}<div className="board-milestone-works">{milestoneWorks.map((work) => <WorkRow key={work.id} work={work} tasks={tasks} editing={editingBoard} suggestedTaskIds={[milestone.linkedTaskId || "", ...milestone.taskIds]} onCreateTask={onCreateTask} onUpdate={(changes) => updateWork(work.id, changes)} onSchedule={(nextRanges) => updateWorkSchedule(work.id, nextRanges)} onDelete={() => deleteWork(work.id)} onOpen={onSelectTask} onReflectStatus={() => reflectWorkStatus(work)} />)}{!milestoneWorks.length && !editingBoard && <p className="board-no-work">配下の作業項目はありません</p>}</div></article>; })}</div></section>
-      <section className="goal-section project-direct-work"><div className="goal-section-heading"><h3>プロジェクト直属の作業項目</h3>{editingBoard && <button onClick={() => addWorkItem()}>＋ 追加</button>}</div>{(project.workItems || []).filter((item) => !item.milestoneId).map((work) => <WorkRow key={work.id} work={work} tasks={tasks} editing={editingBoard} suggestedTaskIds={[project.originTaskId || "", ...project.taskIds]} onCreateTask={onCreateTask} onUpdate={(changes) => updateWork(work.id, changes)} onSchedule={(ranges) => updateWorkSchedule(work.id, ranges)} onDelete={() => deleteWork(work.id)} onOpen={onSelectTask} onReflectStatus={() => reflectWorkStatus(work)} />)}</section></>}
-      <ProjectTree storedWorkItems={storedProject?.workItems || []} project={project} tasks={tasks} editorRequest={projectTreeEditorRequest} onEditorRequestHandled={() => setProjectTreeEditorRequest(null)} onCreateTask={onCreateTask} onBatchCreateTasks={openRelatedTaskBatch} onMilestone={updateMilestone} onMilestoneSchedule={updateMilestoneSchedule} onAddMilestone={addMilestone} onWork={updateWork} onWorkSchedule={updateWorkSchedule} onAddWork={(milestoneId, discardedDraftId) => addWorkItem(milestoneId, {}, discardedDraftId)} onDeleteMilestone={deleteMilestone} onDeleteWork={deleteWork} onOpen={onSelectTask} onReflectMilestone={reflectMilestoneStatus} onReflectWork={reflectWorkStatus} />
+      <section className="goal-section"><div className="goal-section-heading"><h3>マイルストーン</h3><div className="goal-section-heading-actions">{editingBoard ? <><button type="button" className="project-edit-cancel" onClick={cancelProjectEdit}>キャンセル</button><button type="button" onClick={completeProjectEdit}>編集を完了</button><button type="button" onClick={addMilestone}>＋ マイルストーン追加</button></> : <button type="button" onClick={beginProjectEdit}>ボードを編集</button>}</div></div><div className="project-milestones">{[...project.milestones].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((milestone, milestoneIndex) => { const linkedTask = tasks.find((task) => task.id === milestone.linkedTaskId); const milestoneWorks = (project.workItems || []).filter((item) => item.milestoneId === milestone.id); const ranges = milestoneWorks.flatMap((work) => work.plannedRanges || []); return <article key={milestone.id}><div className="board-milestone-label"><span>MILESTONE {milestoneIndex + 1}</span><small>配下の作業項目 {milestoneWorks.length}件</small></div><div className={`project-item-main ${editingBoard ? "" : "is-readonly"}`}><select value={milestone.status || (milestone.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; updateMilestone(milestone.id, { status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{editingBoard ? <><input value={milestone.title} className={milestone.completed ? "plan-completed" : ""} onChange={(event) => updateMilestone(milestone.id, { title: event.target.value })} /><WorkDatePicker ariaLabel="マイルストーンの期限" value={milestone.dueDate || ""} onChange={(dueDate) => updateMilestone(milestone.id, { dueDate })} /><button onClick={() => addWorkItem(milestone.id)}>作業追加</button><button className="danger-text" onClick={() => requestDeleteMilestone(milestone.id)}>削除</button></> : <>{milestone.linkedTaskId ? <button type="button" className="project-milestone-title-link" title="関連ChatTaskを開く" onClick={() => onSelectTask(milestone.linkedTaskId!)}>{milestone.title}</button> : <strong>{milestone.title}</strong>}<time>{milestone.dueDate || "期限未設定"}</time></>}</div>{!editingBoard && <ScheduleDate ranges={ranges} />}{editingBoard ? <><textarea rows={2} value={milestone.description || ""} onChange={(event) => updateMilestone(milestone.id, { description: event.target.value })} placeholder="マイルストーンの説明" /><LinkedTaskSelector tasks={tasks} value={milestone.linkedTaskId || ""} suggestedTaskIds={[project.originTaskId || "", ...project.taskIds]} suggestionLabel="このプロジェクトの候補" onCreateTask={onCreateTask} onChange={(linkedTaskId) => updateMilestone(milestone.id, { linkedTaskId, taskIds: linkedTaskId ? [linkedTaskId] : [] })} /></> : <><p>{milestone.description || "説明はありません"}</p><StatusSyncState task={linkedTask} status={milestone.status || (milestone.completed ? "achieved" : "not-started")} enabled={milestone.syncLinkedTaskStatus !== false} onReflect={() => reflectMilestoneStatus(milestone)} /></>}<div className="board-milestone-works">{milestoneWorks.map((work) => <WorkRow key={work.id} work={work} tasks={tasks} editing={editingBoard} suggestedTaskIds={[milestone.linkedTaskId || "", ...milestone.taskIds]} onCreateTask={onCreateTask} onUpdate={(changes) => updateWork(work.id, changes)} onSchedule={(nextRanges) => updateWorkSchedule(work.id, nextRanges)} onDelete={() => deleteWork(work.id)} onOpen={onSelectTask} onReflectStatus={() => reflectWorkStatus(work)} />)}{!milestoneWorks.length && !editingBoard && <p className="board-no-work">配下の作業項目はありません</p>}</div></article>; })}</div></section>
+      <section className="goal-section project-direct-work"><div className="goal-section-heading"><h3>プロジェクト直属の作業項目</h3>{editingBoard && <button onClick={() => addWorkItem()}>＋ 追加</button>}</div>{(project.workItems || []).filter((item) => !item.milestoneId).map((work) => <WorkRow key={work.id} work={work} tasks={tasks} milestones={project.milestones} editing={editingBoard} suggestedTaskIds={[project.originTaskId || "", ...project.taskIds]} onCreateTask={onCreateTask} onUpdate={(changes) => updateWork(work.id, changes)} onSchedule={(ranges) => updateWorkSchedule(work.id, ranges)} onDelete={() => deleteWork(work.id)} onOpen={onSelectTask} onReflectStatus={() => reflectWorkStatus(work)} />)}</section></>}
+      <ProjectTree storedWorkItems={storedProject?.workItems || []} project={project} tasks={tasks} editorRequest={projectTreeEditorRequest} onEditorRequestHandled={() => setProjectTreeEditorRequest(null)} onCreateTask={onCreateTask} onBatchCreateTasks={openRelatedTaskBatch} onMilestone={updateMilestone} onMilestoneSchedule={updateMilestoneSchedule} onAddMilestone={addMilestone} onWork={updateWork} onWorkSchedule={updateWorkSchedule} onAddWork={(milestoneId, discardedDraftId) => addWorkItem(milestoneId, {}, discardedDraftId)} onDeleteMilestone={requestDeleteMilestone} onDiscardMilestone={discardNewMilestone} onDeleteWork={deleteWork} onOpen={onSelectTask} onReflectMilestone={reflectMilestoneStatus} onReflectWork={reflectWorkStatus} />
       </section>
+      {deletingMilestone && milestoneDeleteDialog && <Modal title="マイルストーンを削除" onClose={() => setMilestoneDeleteDialog(null)}><div className="milestone-delete-dialog">
+        <p><strong>「{deletingMilestone.title || "名称未設定"}」</strong>を削除します。</p>
+        {deletingMilestoneWorks.length ? <><p className="milestone-delete-count">配下の作業 {deletingMilestoneWorks.length}件の処理を選んでください。</p><fieldset>
+          <label><input type="radio" name="milestone-work-disposition" checked={milestoneDeleteDialog.disposition.kind === "detach"} onChange={() => setMilestoneDeleteDialog({ ...milestoneDeleteDialog, disposition: { kind: "detach" } })} /><span><strong>プロジェクト直属へ移動</strong><small>作業と関連ChatTaskは残します。</small></span></label>
+          <label><input type="radio" name="milestone-work-disposition" disabled={!milestoneMoveDestinations.length} checked={milestoneDeleteDialog.disposition.kind === "move"} onChange={() => setMilestoneDeleteDialog({ ...milestoneDeleteDialog, disposition: { kind: "move", milestoneId: milestoneMoveDestinations[0]?.id || "" } })} /><span><strong>別のマイルストーンへ移動</strong><small>{milestoneMoveDestinations.length ? "移動先で作業を継続します。" : "移動先のマイルストーンがありません。"}</small></span></label>
+          {milestoneDeleteDialog.disposition.kind === "move" && <select aria-label="作業の移動先" value={milestoneDeleteDialog.disposition.milestoneId} onChange={(event) => setMilestoneDeleteDialog({ ...milestoneDeleteDialog, disposition: { kind: "move", milestoneId: event.target.value } })}>{milestoneMoveDestinations.map((item) => <option key={item.id} value={item.id}>{item.title || "名称未設定"}</option>)}</select>}
+          <label className="is-destructive"><input type="radio" name="milestone-work-disposition" checked={milestoneDeleteDialog.disposition.kind === "delete"} onChange={() => setMilestoneDeleteDialog({ ...milestoneDeleteDialog, disposition: { kind: "delete" } })} /><span><strong>配下の作業も削除</strong><small>関連ChatTaskは残し、プロジェクトから反映した予定は解除します。</small></span></label>
+        </fieldset></> : <p className="milestone-delete-count">配下の作業はありません。</p>}
+        <footer><button type="button" onClick={() => setMilestoneDeleteDialog(null)}>キャンセル</button><button type="button" className="danger" disabled={milestoneDeleteDialog.disposition.kind === "move" && !milestoneDeleteDialog.disposition.milestoneId} onClick={() => deleteMilestone(deletingMilestone.id, milestoneDeleteDialog.disposition)}>削除する</button></footer>
+      </div></Modal>}
       {advancedFilterOpen && <ProjectAdvancedFilterModal filter={advancedFilter} tags={tags} onApply={setAdvancedFilter} onClose={() => setAdvancedFilterOpen(false)} />}
       {sortEditorOpen && <ProjectSortModal rules={sortRules} onChange={setSortRules} onClose={() => setSortEditorOpen(false)} />}
       {relatedTaskBatchDialog && <RelatedTaskBatchModal dialog={relatedTaskBatchDialog} workItems={storedProject?.workItems || []} milestones={storedProject?.milestones || []} projectTagId={storedProject?.projectTagId || ""} tasks={tasks} suggestedTaskIds={[storedProject?.originTaskId || "", ...(storedProject?.taskIds || [])]} onCreateTask={onCreateTask} onChange={setRelatedTaskBatchDialog} onConfirm={createRelatedTasksInBatch} onClose={() => setRelatedTaskBatchDialog(null)} />}
@@ -1036,7 +1101,7 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
   </div></Modal>;
 }
 
-function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorRequestHandled, onCreateTask, onBatchCreateTasks, onMilestone, onMilestoneSchedule, onAddMilestone, onWork, onWorkSchedule, onAddWork, onDeleteMilestone, onDeleteWork, onOpen, onReflectMilestone, onReflectWork }: { storedWorkItems: ProjectWorkItem[]; project: Goal; tasks: Task[]; editorRequest: ProjectTreeEditorRequest | null; onEditorRequestHandled: () => void; onCreateTask: CreateRelatedTask; onBatchCreateTasks: (milestoneId?: string) => void; onMilestone: (id: string, changes: Partial<GoalMilestone>) => void; onMilestoneSchedule: (id: string, ranges: PlannedRange[]) => void; onAddMilestone: (insertAt?: number) => string; onWork: (id: string, changes: Partial<ProjectWorkItem>) => void; onWorkSchedule: (id: string, ranges: PlannedRange[], plannedHours?: number) => void; onAddWork: (milestoneId: string, discardedDraftId?: string) => string; onDeleteMilestone: (id: string) => void; onDeleteWork: (id: string) => void; onOpen: (id: string) => void; onReflectMilestone: (milestone: GoalMilestone) => void; onReflectWork: (work: ProjectWorkItem) => void }) {
+function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorRequestHandled, onCreateTask, onBatchCreateTasks, onMilestone, onMilestoneSchedule, onAddMilestone, onWork, onWorkSchedule, onAddWork, onDeleteMilestone, onDiscardMilestone, onDeleteWork, onOpen, onReflectMilestone, onReflectWork }: { storedWorkItems: ProjectWorkItem[]; project: Goal; tasks: Task[]; editorRequest: ProjectTreeEditorRequest | null; onEditorRequestHandled: () => void; onCreateTask: CreateRelatedTask; onBatchCreateTasks: (milestoneId?: string) => void; onMilestone: (id: string, changes: Partial<GoalMilestone>) => void; onMilestoneSchedule: (id: string, ranges: PlannedRange[]) => void; onAddMilestone: (insertAt?: number) => string; onWork: (id: string, changes: Partial<ProjectWorkItem>) => void; onWorkSchedule: (id: string, ranges: PlannedRange[], plannedHours?: number) => void; onAddWork: (milestoneId: string, discardedDraftId?: string) => string; onDeleteMilestone: (id: string) => void; onDiscardMilestone: (id: string) => void; onDeleteWork: (id: string) => void; onOpen: (id: string) => void; onReflectMilestone: (milestone: GoalMilestone) => void; onReflectWork: (work: ProjectWorkItem) => void }) {
   const onAddMilestoneRef = useRef(onAddMilestone);
   const onAddWorkRef = useRef(onAddWork);
   const onEditorRequestHandledRef = useRef(onEditorRequestHandled);
@@ -1167,7 +1232,7 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
       onMilestone(id, milestoneEditSnapshot);
       onMilestoneSchedule(id, milestoneEditSnapshot.plannedRanges || []);
     } else {
-      onDeleteMilestone(id);
+      onDiscardMilestone(id);
     }
     completeMilestoneEdit();
   };
@@ -1271,13 +1336,7 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
   };
   const addWorkFromMilestoneDialog = () => {
     if (!milestoneDraft || !milestoneDraft.title.trim()) return;
-    // 子作業だけが先に保存された状態で新規マイルストーン画面を閉じると、
-    // マイルストーンの取消処理によって保存済み作業が「未割当」へ移ってしまう。
-    // 作業追加へ進んだ時点を親の確定操作として扱い、親子を同じ所属のまま保存する。
-    if (newMilestoneEditId === milestoneDraft.id) {
-      onMilestone(milestoneDraft.id, milestoneDraft);
-      setNewMilestoneEditId("");
-    }
+    // 親の保存までは新規作成中のまま保ち、キャンセルなら今回の親子をまとめて破棄する。
     const id = onAddWork(milestoneDraft.id);
     if (id) {
       setWorkEditSnapshot(null);
@@ -1317,12 +1376,13 @@ function ProjectTree({ storedWorkItems, project, tasks, editorRequest, onEditorR
       </div>;
     })}
     <div className={`tree-goal ${allMilestonesAchieved ? "completed" : ""}`}><span className="tree-goal-node">◎</span><small>GOAL</small><strong>{project.title}</strong><p>{project.successCriteria || "最終達成条件を入力してください"}</p>{project.dueDate && <time>期限 {project.dueDate}</time>}<b>{progress(project)}% 達成</b></div>
-    {milestoneDraft && createPortal(<div className="milestone-editor-backdrop" onPointerDown={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}><section className="milestone-editor-dialog" role="dialog" aria-modal="true" aria-label="マイルストーンを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>MILESTONE</small><h3>{newMilestoneEditId === milestoneDraft.id ? "マイルストーンを追加" : "マイルストーンを編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>×</button></header><div className="milestone-editor-fields"><label>マイルストーン名<input autoFocus value={milestoneDraft.title} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, title: event.target.value })} placeholder="到達点を入力" /></label><label>期限<WorkDatePicker ariaLabel="マイルストーンの期限" value={milestoneDraft.dueDate || ""} onChange={(dueDate) => setMilestoneDraft({ ...milestoneDraft, dueDate })} /></label><label>状態<select value={milestoneDraft.status || (milestoneDraft.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; setMilestoneDraft({ ...milestoneDraft, status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="milestone-editor-description">説明<textarea rows={5} value={milestoneDraft.description || ""} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, description: event.target.value })} placeholder="完了条件や到達状態を記載" /></label></div><div className="milestone-editor-works"><div><strong>作業項目</strong><button type="button" disabled={!milestoneDraft.title.trim()} onClick={addWorkFromMilestoneDialog}>＋ 作業を追加</button></div>{(project.workItems || []).filter((item) => item.milestoneId === milestoneDraft.id).sort((a, b) => a.sortOrder - b.sortOrder).map((work) => <button type="button" className="milestone-editor-work-row" key={work.id} onClick={() => setEditingWork(work.id)}><span><b>{work.title}</b><small>{WORK_STATUS[work.status]}・予定 {formatHours(work.plannedHours)}</small></span><span>編集 ›</span></button>)}{!(project.workItems || []).some((item) => item.milestoneId === milestoneDraft.id) && <p>作業項目はまだありません。ここから続けて追加できます。</p>}</div><p className="milestone-editor-note">予定期間と予定工数は、マイルストーン配下の作業項目で設定します。</p><footer><button type="button" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDeleteMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>キャンセル</button><button type="button" className="primary" disabled={!milestoneDraft.title.trim()} onClick={() => { onMilestone(milestoneDraft.id, milestoneDraft); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>保存</button></footer></section></div>, document.body)}
+    {milestoneDraft && createPortal(<div className="milestone-editor-backdrop" onPointerDown={() => { if (newMilestoneEditId === milestoneDraft.id) onDiscardMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}><section className="milestone-editor-dialog" role="dialog" aria-modal="true" aria-label="マイルストーンを編集" onPointerDown={(event) => event.stopPropagation()}><header><div><small>MILESTONE</small><h3>{newMilestoneEditId === milestoneDraft.id ? "マイルストーンを追加" : "マイルストーンを編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDiscardMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>×</button></header><div className="milestone-editor-fields"><label>マイルストーン名<input autoFocus value={milestoneDraft.title} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, title: event.target.value })} placeholder="到達点を入力" /></label><label>期限<WorkDatePicker ariaLabel="マイルストーンの期限" value={milestoneDraft.dueDate || ""} onChange={(dueDate) => setMilestoneDraft({ ...milestoneDraft, dueDate })} /></label><label>状態<select value={milestoneDraft.status || (milestoneDraft.completed ? "achieved" : "not-started")} onChange={(event) => { const status = event.target.value as NonNullable<GoalMilestone["status"]>; setMilestoneDraft({ ...milestoneDraft, status, completed: status === "achieved" }); }}>{Object.entries(MILESTONE_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="milestone-editor-description">説明<textarea rows={5} value={milestoneDraft.description || ""} onChange={(event) => setMilestoneDraft({ ...milestoneDraft, description: event.target.value })} placeholder="完了条件や到達状態を記載" /></label></div><div className="milestone-editor-works"><div><strong>作業項目</strong><button type="button" disabled={!milestoneDraft.title.trim()} onClick={addWorkFromMilestoneDialog}>＋ 作業を追加</button></div>{(project.workItems || []).filter((item) => item.milestoneId === milestoneDraft.id).sort((a, b) => a.sortOrder - b.sortOrder).map((work) => <button type="button" className="milestone-editor-work-row" key={work.id} onClick={() => setEditingWork(work.id)}><span><b>{work.title}</b><small>{WORK_STATUS[work.status]}・予定 {formatHours(work.plannedHours)}</small></span><span>編集 ›</span></button>)}{!(project.workItems || []).some((item) => item.milestoneId === milestoneDraft.id) && <p>作業項目はまだありません。ここから続けて追加できます。</p>}</div><p className="milestone-editor-note">予定期間と予定工数は、マイルストーン配下の作業項目で設定します。</p><footer><button type="button" onClick={() => { if (newMilestoneEditId === milestoneDraft.id) onDiscardMilestone(milestoneDraft.id); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>キャンセル</button><button type="button" className="primary" disabled={!milestoneDraft.title.trim()} onClick={() => { onMilestone(milestoneDraft.id, milestoneDraft); setMilestoneDialogId(""); setNewMilestoneEditId(""); }}>保存</button></footer></section></div>, document.body)}
     {workDraft && createPortal(<div className="milestone-editor-backdrop work-editor-layer" onPointerDown={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>
       <section className="milestone-editor-dialog work-editor-dialog" role="dialog" aria-modal="true" aria-label="作業項目を編集" onPointerDown={(event) => event.stopPropagation()}>
         <header><div><small>WORK ITEM</small><h3>{newWorkEditId === workDraft.id ? "作業項目を追加" : "作業項目を編集"}</h3></div><button type="button" aria-label="閉じる" onClick={() => { if (newWorkEditId === workDraft.id) onDeleteWork(workDraft.id); completeWorkEdit(); }}>×</button></header>
         <div className="work-editor-fields">
           <label className="work-editor-title">作業名<input autoFocus value={workDraft.title} onChange={(event) => setWorkDraft({ ...workDraft, title: event.target.value })} placeholder="実施する作業を入力" /></label>
+          <label className="work-editor-milestone">所属マイルストーン<select value={workDraft.milestoneId || ""} onChange={(event) => setWorkDraft({ ...workDraft, milestoneId: event.target.value })}><option value="">プロジェクト直属</option>{project.milestones.map((milestone) => <option key={milestone.id} value={milestone.id}>{milestone.title || "名称未設定"}</option>)}</select></label>
           <label>状態<select value={workDraft.status} onChange={(event) => setWorkDraft({ ...workDraft, status: event.target.value as ProjectWorkItem["status"] })}>{Object.entries(WORK_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label>優先度<select value={workDraft.priority} onChange={(event) => setWorkDraft({ ...workDraft, priority: event.target.value as ProjectWorkItem["priority"] })}>{["A", "B", "C", "D"].map((value) => <option key={value}>{value}</option>)}</select></label>
           <label>期限<WorkDatePicker ariaLabel="作業項目の期限" value={workDraft.dueDate || ""} onChange={(dueDate) => setWorkDraft({ ...workDraft, dueDate })} /></label>
@@ -1599,11 +1659,12 @@ function TaskChoice({ task, selected, suggested = false, onChoose }: { task: Tas
   </button>;
 }
 
-function WorkRow({ work, tasks, editing, suggestedTaskIds, onCreateTask, onUpdate, onSchedule, onDelete, onOpen }: { work: ProjectWorkItem; tasks: Task[]; editing: boolean; suggestedTaskIds: string[]; onCreateTask: CreateRelatedTask; onUpdate: (changes: Partial<ProjectWorkItem>) => void; onSchedule: (ranges: PlannedRange[]) => void; onDelete: () => void; onOpen: (id: string) => void; onReflectStatus?: () => void }) {
+function WorkRow({ work, tasks, milestones, editing, suggestedTaskIds, onCreateTask, onUpdate, onSchedule, onDelete, onOpen }: { work: ProjectWorkItem; tasks: Task[]; milestones?: GoalMilestone[]; editing: boolean; suggestedTaskIds: string[]; onCreateTask: CreateRelatedTask; onUpdate: (changes: Partial<ProjectWorkItem>) => void; onSchedule: (ranges: PlannedRange[]) => void; onDelete: () => void; onOpen: (id: string) => void; onReflectStatus?: () => void }) {
   const ranges = (work.plannedRanges || []).slice(0, 1);
   const linkedTask = tasks.find((task) => task.id === work.linkedTaskId);
   return <div className={`project-work-row ${editing ? "" : "is-readonly"}`}>
     <select value={work.status} onChange={(event) => onUpdate({ status: event.target.value as ProjectWorkItem["status"] })}>{Object.entries(WORK_STATUS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+    {editing && milestones && <label className="project-work-milestone-picker"><span>所属</span><select value={work.milestoneId || ""} onChange={(event) => onUpdate({ milestoneId: event.target.value })}><option value="">プロジェクト直属</option>{milestones.map((milestone) => <option key={milestone.id} value={milestone.id}>{milestone.title || "名称未設定"}</option>)}</select></label>}
     {editing && linkedTask ? <>
       <input value={work.title} className={work.status === "done" ? "plan-completed" : ""} onChange={(event) => onUpdate({ title: event.target.value })} />
       <div className="project-linked-work-source"><span>予定情報は関連タスクから反映中</span><strong>{linkedTask.title || "無題のタスク"}</strong><small>期限・予定・工数はタスク側、状態・作業名・説明はプロジェクト側で管理します。</small></div>

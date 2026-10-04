@@ -2706,6 +2706,21 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .project-schedule-ai-review-summary > div strong { color: #1e293b; font-size: .85rem; }
 .project-schedule-ai-review-summary > div span { color: #64748b; font-size: .6rem; }
 .project-schedule-ai-review-summary > p { margin: 0; color: #475569; font-size: .62rem; line-height: 1.6; }
+.project-schedule-ai-existing-selection { display: grid; gap: .5rem; margin-top: .75rem; border: 1px solid #bfdbfe; border-radius: 10px; padding: .65rem; background: #f8fbff; }
+.project-schedule-ai-existing-selection > header { display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
+.project-schedule-ai-existing-selection > header > div { display: grid; gap: .08rem; }
+.project-schedule-ai-existing-selection > header strong { color: #1e3a8a; font-size: .72rem; }
+.project-schedule-ai-existing-selection > header small { color: #64748b; font-size: .54rem; }
+.project-schedule-ai-existing-selection > header button { flex: none; min-height: 28px; border-color: #bfdbfe; background: white; color: #1d4ed8; font-size: .56rem; }
+.project-schedule-ai-existing-selection > div { display: grid; gap: .4rem; }
+.project-schedule-ai-existing-selection label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .5rem; border: 1px solid #dbe3ef; border-radius: 8px; padding: .55rem .6rem; background: white; cursor: pointer; }
+.project-schedule-ai-existing-selection label.selected { border-color: #60a5fa; background: #eff6ff; box-shadow: 0 0 0 2px #dbeafe; }
+.project-schedule-ai-existing-selection label > input { margin-top: .16rem; }
+.project-schedule-ai-existing-selection label > span { display: grid; min-width: 0; gap: .12rem; }
+.project-schedule-ai-existing-selection label strong { color: #334155; font-size: .66rem; }
+.project-schedule-ai-existing-selection label small { color: #64748b; font-size: .53rem; }
+.project-schedule-ai-existing-selection label b { color: #1d4ed8; font-size: .56rem; line-height: 1.45; }
+.project-schedule-ai-existing-selection label em { color: #64748b; font-size: .52rem; font-style: normal; line-height: 1.45; }
 .project-schedule-ai-issues, .project-schedule-ai-plan-list, .project-schedule-ai-questions { display: grid; gap: .45rem; margin-top: .7rem; }
 .project-schedule-ai-issues > strong, .project-schedule-ai-plan-list > strong, .project-schedule-ai-questions > header strong { color: #334155; font-size: .7rem; }
 .project-schedule-ai-issues > p { display: flex; gap: .45rem; margin: 0; border-radius: 8px; padding: .45rem .55rem; background: white; font-size: .6rem; }
@@ -3284,10 +3299,11 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .work-editor-dialog > header, .work-editor-dialog > footer { grid-column: 1 / -1; }
 .work-editor-fields { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, .85fr) minmax(150px, 1.3fr); gap: .65rem; }
 .work-editor-title { grid-column: 1 / -1; }
+.work-editor-milestone { grid-column: span 2; }
 .work-editor-fields label { display: grid; gap: .3rem; color: #475569; font-size: .68rem; font-weight: 800; }
 .work-editor-fields input, .work-editor-fields select, .work-editor-fields textarea { width: 100%; }
-.work-editor-fields label:nth-child(4) { min-width: 0; }
-.work-editor-fields label:nth-child(4) input[type="date"] { min-width: 0; padding-inline: .55rem .25rem; font-size: .72rem; letter-spacing: -.02em; }
+.work-editor-fields label:has(input[type="date"]) { min-width: 0; }
+.work-editor-fields label input[type="date"] { min-width: 0; padding-inline: .55rem .25rem; font-size: .72rem; letter-spacing: -.02em; }
 .work-editor-description { grid-column: 1 / -1; }
 .work-editor-description textarea { min-height: 82px; resize: vertical; }
 .work-editor-related, .work-editor-schedule { display: grid; gap: .55rem; border: 1px solid #dbe3ef; border-radius: 12px; padding: .8rem; }
@@ -3300,6 +3316,24 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .work-editor-delete-confirm { display: grid; min-width: 240px; flex: 1; gap: .1rem; margin-right: auto; color: #991b1b; }
 .work-editor-delete-confirm > strong { font-size: .72rem; }
 .work-editor-delete-confirm > small { color: #64748b; font-size: .61rem; font-weight: 500; }
+.milestone-delete-dialog { display: grid; gap: .8rem; min-width: min(520px, 78vw); }
+.milestone-delete-dialog > p { margin: 0; color: #334155; font-size: .76rem; line-height: 1.55; }
+.milestone-delete-dialog > .milestone-delete-count { color: #64748b; font-size: .68rem; }
+.milestone-delete-dialog fieldset { display: grid; gap: .5rem; margin: 0; border: 0; padding: 0; }
+.milestone-delete-dialog fieldset > label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .6rem; border: 1px solid #dbe3ef; border-radius: 10px; padding: .7rem .75rem; background: #fff; cursor: pointer; }
+.milestone-delete-dialog fieldset > label:has(input:checked) { border-color: #60a5fa; background: #eff6ff; box-shadow: 0 0 0 2px #dbeafe; }
+.milestone-delete-dialog fieldset > label.is-destructive:has(input:checked) { border-color: #fca5a5; background: #fff1f2; box-shadow: 0 0 0 2px #fee2e2; }
+.milestone-delete-dialog fieldset > label:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.milestone-delete-dialog fieldset input { margin-top: .18rem; }
+.milestone-delete-dialog fieldset span { display: grid; gap: .14rem; }
+.milestone-delete-dialog fieldset strong { color: #334155; font-size: .72rem; }
+.milestone-delete-dialog fieldset small { color: #64748b; font-size: .61rem; line-height: 1.45; }
+.milestone-delete-dialog fieldset > select { margin: -.1rem 0 .15rem 1.8rem; width: calc(100% - 1.8rem); }
+.milestone-delete-dialog > footer { display: flex; justify-content: flex-end; gap: .5rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; }
+.milestone-delete-dialog > footer button.danger { border-color: #dc2626; background: #dc2626; color: white; }
+.project-work-milestone-picker { display: grid; min-width: 180px; gap: .18rem; }
+.project-work-milestone-picker > span { color: #64748b; font-size: .56rem; font-weight: 750; }
+.project-work-milestone-picker > select { width: 100%; }
 .work-editor-schedule > .project-schedule-editor { margin: 0; border: 0; padding: 0; background: transparent; }
 .work-unscheduled-state { display: grid; gap: .12rem; border: 1px solid #cbd5e1; border-radius: 9px; padding: .6rem .7rem; background: white; }
 .work-unscheduled-state b { color: #475569; font-size: .72rem; }

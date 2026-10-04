@@ -97,7 +97,7 @@ describe("プロジェクトスケジュールAIプロンプト", () => {
     });
     expect(prompt).toContain("CONSULTATION_RESULTS");
     expect(prompt).toContain("確認工程を先に作る方針で合意した。");
-    expect(prompt).toContain("既存作業の提案は利用者向けのアドバイス");
+    expect(prompt).toContain("利用者が確認画面で選択した作業だけ反映する");
     expect(prompt).toContain("実際に新規作成する内容だけ");
   });
 });
@@ -192,6 +192,42 @@ describe("プロジェクトスケジュールAI回答の解析と検証", () =>
     expect(changes.milestones[changes.milestones.length - 1]).toMatchObject({ id: "created-milestone", title: "レビュー完了", dueDate: "2026-10-15" });
     expect(changes.workItems?.[changes.workItems.length - 1]).toMatchObject({ id: "created-work", milestoneId: "created-milestone", title: "レビュー", plannedHours: 4 });
     expect(changes.workItems?.[0]).toEqual(current.workItems?.[0]);
+  });
+
+  it("選択した既存作業だけに名称・工数・目標期間を反映する", () => {
+    const current = project("p");
+    const ai = response();
+    ai.workPlans[0].plannedHours = 10;
+    const changes = buildProjectScheduleAiImportChanges({
+      response: ai, project: current, selection: { existingWorkIds: ["p-w"] },
+      generateId: () => "unused", now: "2026-09-29T12:00:00.000Z",
+    });
+    expect(changes.workItems?.[0]).toMatchObject({
+      id: "p-w", title: "具体的な実装", milestoneId: "p-m", plannedHours: 10,
+      targetWorkStartDate: "2026-10-01", targetWorkEndDate: "2026-10-02",
+      dueDate: "2026-10-18", actualHours: 1, updatedAt: "2026-09-29T12:00:00.000Z",
+    });
+  });
+
+  it("選択した既存作業を同時作成するマイルストーンへ移動できる", () => {
+    const current = project("p");
+    const ai = response();
+    ai.proposedNewMilestones = [{ proposalId: "milestone-proposal-1", title: "新しい到達点", description: "", dueDate: "2026-10-20", targetWorkStartDate: "2026-10-01", targetWorkEndDate: "2026-10-20", reason: "再構成" }];
+    ai.workPlans[0].milestoneId = "milestone-proposal-1";
+    const changes = buildProjectScheduleAiImportChanges({
+      response: ai, project: current, selection: { existingWorkIds: ["p-w"] },
+      generateId: () => "created-milestone", now: "2026-09-29T12:00:00.000Z",
+    });
+    expect(changes.workItems?.[0].milestoneId).toBe("created-milestone");
+  });
+
+  it("AI回答の前提後に変更された既存作業は反映しない", () => {
+    const current = project("p");
+    current.workItems![0].title = "最新の名称";
+    expect(() => buildProjectScheduleAiImportChanges({
+      response: response(), project: current, selection: { existingWorkIds: ["p-w"] },
+      generateId: () => "unused", now: "2026-09-29T12:00:00.000Z",
+    })).toThrow("AI回答作成後に変更");
   });
 
   it("既存・新規マイルストーンの配下へ作業案を分類する", () => {

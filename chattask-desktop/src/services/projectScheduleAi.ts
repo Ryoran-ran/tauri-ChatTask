@@ -113,6 +113,10 @@ export interface ProjectScheduleAiValidation {
   canProceed: boolean;
 }
 
+export interface ProjectScheduleAiImportSelection {
+  existingWorkIds: string[];
+}
+
 export const PROJECT_SCHEDULE_AI_MODE_LABELS: Record<ProjectScheduleAiMode, string> = {
   "initial-plan": "初期スケジュール作成",
   "validate-progress": "妥当性・進捗確認",
@@ -287,7 +291,7 @@ export const buildProjectScheduleAiPrompt = ({
     "- workPlansには未完了の既存作業をすべて含め、変更不要な作業も現在値または妥当な提案値を記載する",
     "- expectedMilestoneId、expectedTitle、expectedPlannedHours、expectedStartDate、expectedEndDateには対象作業の現在値をそのまま複写する",
     "- questionsの質問文ではIDではなく作業名・マイルストーン名を使う。識別にIDが必要な場合も、名称を先に書きIDだけの質問にしない",
-    "- workPlansにある既存作業の提案は利用者向けのアドバイスであり、インポート時に自動変更されない",
+    "- workPlansにある既存作業の提案は自動変更せず、利用者が確認画面で選択した作業だけ反映する",
     "- 実際に新規作成する内容だけをproposedNewMilestonesとproposedNewWorkItemsへ入れる",
     ...(consultationHistory.length ? ["- CONSULTATION_RESULTSに整理された決定事項と方針を優先して作成案へ反映する"] : []),
     ...(previousResponse ? [
@@ -546,9 +550,17 @@ export const validateProjectScheduleAiResponse = ({ response, project, projects,
   return { issues, totals, overCapacityDates, canProceed: !issues.some((issue) => issue.severity === "error") };
 };
 
-export const buildProjectScheduleAiImportChanges = ({ response, project, generateId, now }: {
+export const projectScheduleAiWorkPlanHasChanges = (work: ProjectWorkItem, plan: ProjectScheduleAiWorkPlan) =>
+  work.title !== plan.proposedTitle.trim()
+  || work.milestoneId !== plan.milestoneId
+  || !sameNumber(work.plannedHours, plan.plannedHours)
+  || (work.targetWorkStartDate || "") !== plan.startDate
+  || (work.targetWorkEndDate || "") !== plan.endDate;
+
+export const buildProjectScheduleAiImportChanges = ({ response, project, selection = { existingWorkIds: [] }, generateId, now }: {
   response: ProjectScheduleAiResponse;
   project: Goal;
+  selection?: ProjectScheduleAiImportSelection;
   generateId: () => string;
   now: string;
 }): Pick<Goal, "milestones" | "workItems"> => {
@@ -577,8 +589,34 @@ export const buildProjectScheduleAiImportChanges = ({ response, project, generat
       syncLinkedTaskStatus: true,
     })),
   ];
-  // 既存作業への提案は相談・助言として表示するだけで、自動変更しない。
-  const existingWorks: ProjectWorkItem[] = project.workItems || [];
+  const selectedIds = new Set(selection.existingWorkIds);
+  if (selectedIds.size !== selection.existingWorkIds.length) throw new Error("反映対象の既存作業が重複しています。");
+  const planByWorkId = new Map(response.workPlans.map((plan) => [plan.workId, plan]));
+  const existingById = new Map((project.workItems || []).map((work) => [work.id, work]));
+  selectedIds.forEach((id) => {
+    if (!planByWorkId.has(id) || !existingById.has(id)) throw new Error("反映対象の既存作業が見つかりません。回答を再解析してください。");
+  });
+  const validMilestoneIds = new Set(milestones.map((milestone) => milestone.id));
+  const existingWorks: ProjectWorkItem[] = (project.workItems || []).map((work) => {
+    if (!selectedIds.has(work.id)) return work;
+    const plan = planByWorkId.get(work.id)!;
+    if (plan.expectedMilestoneId !== work.milestoneId || plan.expectedTitle !== work.title
+      || !sameNumber(plan.expectedPlannedHours, work.plannedHours)
+      || plan.expectedStartDate !== (work.targetWorkStartDate || "") || plan.expectedEndDate !== (work.targetWorkEndDate || "")) {
+      throw new Error(`作業「${work.title || work.id}」はAI回答作成後に変更されています。回答を再解析してください。`);
+    }
+    const milestoneId = milestoneIdByProposal.get(plan.milestoneId) || plan.milestoneId;
+    if (!validMilestoneIds.has(milestoneId)) throw new Error(`作業「${work.title || work.id}」の移動先マイルストーンが見つかりません。`);
+    return {
+      ...work,
+      milestoneId,
+      title: plan.proposedTitle.trim(),
+      plannedHours: plan.plannedHours,
+      targetWorkStartDate: plan.startDate,
+      targetWorkEndDate: plan.endDate,
+      updatedAt: now,
+    };
+  });
   const newWorks = response.proposedNewWorkItems.map((item, index): ProjectWorkItem => ({
     id: generateId(),
     milestoneId: milestoneIdByProposal.get(item.milestoneId) || item.milestoneId,
