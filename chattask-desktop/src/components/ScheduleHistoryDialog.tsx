@@ -3,7 +3,7 @@ import type { Goal, Task } from "../types";
 import { historyUndoProblem, validateHistory, type ScheduleHistoryRecord } from "../projectScheduleHistory";
 import { Modal } from "./Modal";
 
-const labels: Record<string, string> = { targetWorkStartDate: "目標開始日", targetWorkEndDate: "目標終了日", dueDate: "期限", scheduleSortOrder: "表示順", plannedRanges: "作業日・予定", plannedHours: "予定工数", baselinePlannedRanges: "当初予定", baselinePlannedHours: "当初工数", replanReason: "変更理由", replannedAt: "変更日時", linkedTaskScheduleSnapshot: "同期済み予定", linkedTaskPlannedHoursSnapshot: "同期済み工数" };
+const labels: Record<string, string> = { title: "作業名", milestoneId: "所属マイルストーン", targetWorkStartDate: "目標開始日", targetWorkEndDate: "目標終了日", dueDate: "期限", scheduleSortOrder: "表示順", plannedRanges: "作業日・予定", plannedHours: "予定工数", baselinePlannedRanges: "当初予定", baselinePlannedHours: "当初工数", replanReason: "変更理由", replannedAt: "変更日時", linkedTaskScheduleSnapshot: "同期済み予定", linkedTaskPlannedHoursSnapshot: "同期済み工数" };
 function formatValue(value: unknown): string {
   if (value === undefined || value === null || value === "") return "未設定";
   if (Array.isArray(value)) return value.length ? value.map(item => item && typeof item === "object" && "startDate" in item ? `${item.title ? `${item.title}：` : ""}${item.startDate || "未設定"} 〜 ${item.endDate || item.startDate || "未設定"}${item.plannedHours !== undefined ? `（${item.plannedHours}h）` : ""}${item.status ? ` [${item.status}]` : ""}` : JSON.stringify(item)).join("\n") : "なし";

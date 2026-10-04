@@ -16,7 +16,7 @@ import { ProjectWorkDateSyncButton, WorkDateSyncStatus } from "./WorkDateSyncBut
 import type { SyncWorkDates } from "../projectWorkDateSync";
 import { calculateScheduleDrag, visibleScheduleRange, type ScheduleDragMode, type ScheduleRange } from "../projectScheduleDrag";
 import { ProjectScheduleAiDialog } from "./ProjectScheduleAiDialog";
-import type { ProjectScheduleAiResponse } from "../services/projectScheduleAi";
+import type { ProjectScheduleAiImportSelection, ProjectScheduleAiResponse } from "../services/projectScheduleAi";
 
 const DAY_WIDTH = 30;
 const LABEL_WIDTH = 320;
@@ -81,7 +81,7 @@ export function ProjectSchedulePlanner({
   onSyncWorkDates: SyncWorkDates;
   showSyncSuccessNotice?: boolean;
   onMoveScheduleWorks?: MoveScheduleWorks;
-  onApplyAiPlan?: (response: ProjectScheduleAiResponse) => string | null;
+  onApplyAiPlan?: (response: ProjectScheduleAiResponse, selection: ProjectScheduleAiImportSelection) => string | null;
   onOpenHistory?: () => void;
 }) {
   const [draft, setDraft] = useState<ScheduleDraft | null>(null);

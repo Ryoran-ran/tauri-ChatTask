@@ -79,6 +79,29 @@ describe("通常編集のID単位マージ", () => {
     expect(saved.workItems).toHaveLength(3);
     expect(saved.workItems!.every(w => w.milestoneId === "")).toBe(true);
   });
+  it("マイルストーン削除時に配下作業も削除できる", () => {
+    const before = project();
+    const current = { ...before, workItems: [...before.workItems!, work("concurrent")] };
+    const saved = mergeProjectEdit(current, { milestones: [] }, {
+      before,
+      deletedMilestoneIds: ["m"],
+      deletedMilestoneWorkDisposition: { kind: "delete" },
+    });
+    expect(saved.milestones).toEqual([]);
+    expect(saved.workItems).toEqual([]);
+  });
+  it("マイルストーン削除時に配下作業を別のマイルストーンへ移動できる", () => {
+    const before = project();
+    const destination = { ...before.milestones[0], id: "destination", title: "移動先" };
+    const current = { ...before, milestones: [...before.milestones, destination], workItems: [...before.workItems!, work("concurrent")] };
+    const saved = mergeProjectEdit(current, { milestones: [destination] }, {
+      before,
+      deletedMilestoneIds: ["m"],
+      deletedMilestoneWorkDisposition: { kind: "move", milestoneId: destination.id },
+    });
+    expect(saved.milestones.map(item => item.id)).toEqual([destination.id]);
+    expect(saved.workItems!.every(item => item.milestoneId === destination.id)).toBe(true);
+  });
   it("明示した空欄・0時間は保存できる", () => {
     const before = project();
     const saved = mergeProjectEdit(before, edit(before, "a", { plannedHours: 0, plannedRanges: [], targetWorkStartDate: "", targetWorkEndDate: "" }), { before });

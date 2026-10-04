@@ -1483,7 +1483,25 @@ textarea { resize: vertical; line-height: 1.55; }
 .holiday-import .holiday-visibility { display: flex; align-items: center; gap: .35rem; min-height: 38px; border: 1px solid #cbd5e1; border-radius: 7px; padding: .35rem .55rem; background: #f8fafc; white-space: nowrap; }
 .holiday-import .holiday-visibility input { width: auto; margin: 0; }
 .holiday-hidden-notice { margin: .6rem 0 0; border-radius: 6px; padding: .4rem .55rem; background: #f1f5f9; color: #64748b; font-size: .68rem; }
-.gantt-controls { position: relative; z-index: 30; display: grid; gap: .5rem; width: 100%; min-width: 0; margin-bottom: .55rem; }.gantt-controls.project-picker-active { z-index: 80; }.gantt-filter-row { display: grid; grid-template-columns: minmax(110px, .65fr) minmax(170px, .9fr) minmax(220px, 1.6fr) minmax(130px, .8fr) minmax(130px, .8fr) minmax(150px, 1fr) auto auto; align-items: center; gap: .45rem; min-width: 0; }.gantt-controls label { display: flex; gap: .3rem; align-items: center; font-size: .7rem; white-space: nowrap; }.gantt-filter-row > :is(select, input, .gantt-project-picker) { width: 100%; min-width: 0; }.gantt-search { width: 100%; min-width: 0; }.gantt-action-row { display: grid; grid-template-columns: minmax(170px, 1fr) auto minmax(110px, 1fr); align-items: center; gap: .75rem; }.gantt-tree-actions, .gantt-navigation { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }.gantt-tree-actions button { min-height: 32px; padding: .35rem .7rem; }.gantt-period-label { border-radius: 999px; padding: .36rem .8rem; background: #eff6ff; color: #1d4ed8; font-size: .72rem; text-align: center; white-space: nowrap; }.gantt-navigation { justify-self: center; }.gantt-navigation button { min-height: 32px; padding: .35rem .55rem; font-size: .65rem; }.gantt-period-jump { width: 132px; min-height: 32px; border: 1px solid #bfdbfe; border-radius: 7px; padding: .3rem .5rem; background: #eff6ff; color: #1d4ed8; font-size: .68rem; font-weight: 750; text-align: center; }.gantt-export { position: relative; justify-self: end; }.gantt-export > button { min-height: 32px; border: 1px solid #93c5fd; border-radius: 7px; padding: .35rem .65rem; background: white; color: #1d4ed8; font-size: .68rem; font-weight: 750; }.gantt-export-menu { position: absolute; top: calc(100% + 5px); right: 0; z-index: 100; width: 240px; display: grid; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 9px; background: white; box-shadow: 0 12px 30px #0f172a2e; }.gantt-export-menu button { display: grid; gap: .1rem; border: 0; border-bottom: 1px solid #e2e8f0; border-radius: 0; padding: .65rem .75rem; background: white; text-align: left; }.gantt-export-menu button:last-child { border-bottom: 0; }.gantt-export-menu button:hover { background: #eff6ff; }.gantt-export-menu strong { color: #1e293b; font-size: .72rem; }.gantt-export-menu small { color: #64748b; font-size: .58rem; }
+.gantt-controls { position: relative; z-index: 30; display: grid; gap: .5rem; width: 100%; min-width: 0; margin-bottom: .55rem; }.gantt-controls.project-picker-active { z-index: 80; }.gantt-filter-row { display: grid; grid-template-columns: minmax(110px, .65fr) minmax(170px, .9fr) minmax(220px, 1.6fr) minmax(130px, .8fr) minmax(130px, .8fr) minmax(150px, 1fr) auto auto; align-items: center; gap: .45rem; min-width: 0; }.gantt-controls label { display: flex; gap: .3rem; align-items: center; font-size: .7rem; white-space: nowrap; }.gantt-filter-row > :is(select, input, .gantt-project-picker) { width: 100%; min-width: 0; }.gantt-search { width: 100%; min-width: 0; }.gantt-action-row { display: grid; grid-template-columns: minmax(170px, 1fr) auto minmax(110px, 1fr); align-items: center; gap: .75rem; }.gantt-tree-actions, .gantt-navigation { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }.gantt-tree-actions button { min-height: 32px; padding: .35rem .7rem; }.gantt-period-label { border-radius: 999px; padding: .36rem .8rem; background: #eff6ff; color: #1d4ed8; font-size: .72rem; text-align: center; white-space: nowrap; }.gantt-navigation { justify-self: center; }.gantt-navigation button { min-height: 32px; padding: .35rem .55rem; font-size: .65rem; }.gantt-period-jump { width: 132px; min-height: 32px; border: 1px solid #bfdbfe; border-radius: 7px; padding: .3rem .5rem; background: #eff6ff; color: #1d4ed8; font-size: .68rem; font-weight: 750; text-align: center; }.gantt-export { position: relative; display: flex; align-items: center; justify-self: end; gap: .35rem; }.gantt-export > button { min-height: 32px; border: 1px solid #93c5fd; border-radius: 7px; padding: .35rem .65rem; background: white; color: #1d4ed8; font-size: .68rem; font-weight: 750; }.gantt-export > .gantt-consult-button { border-color: #a78bfa; background: #faf5ff; color: #6d28d9; }.gantt-export > .gantt-consult-button:hover { border-color: #7c3aed; background: #f5f3ff; }.gantt-export-menu { position: absolute; top: calc(100% + 5px); right: 0; z-index: 100; width: 240px; display: grid; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 9px; background: white; box-shadow: 0 12px 30px #0f172a2e; }.gantt-export-menu button { display: grid; gap: .1rem; border: 0; border-bottom: 1px solid #e2e8f0; border-radius: 0; padding: .65rem .75rem; background: white; text-align: left; }.gantt-export-menu button:last-child { border-bottom: 0; }.gantt-export-menu button:hover { background: #eff6ff; }.gantt-export-menu strong { color: #1e293b; font-size: .72rem; }.gantt-export-menu small { color: #64748b; font-size: .58rem; }
+.modal:has(.gantt-consultation-dialog) { width: min(900px, 94vw); height: min(780px, 92vh); }
+.modal:has(.gantt-consultation-dialog) > .modal-body { display: flex; min-height: 0; overflow: hidden; }
+.gantt-consultation-dialog { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: 100%; min-height: 0; gap: .75rem; }
+.gantt-consultation-dialog > header { display: grid; gap: .3rem; border-bottom: 1px solid #e2e8f0; padding-bottom: .65rem; }
+.gantt-consultation-dialog > header > div { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.gantt-consultation-dialog > header strong { color: #1e293b; font-size: .8rem; }
+.gantt-consultation-dialog > header span, .gantt-consultation-dialog > header p { margin: 0; color: #64748b; font-size: .62rem; }
+.gantt-consultation-question { display: grid; gap: .35rem; color: #334155; font-size: .68rem; font-weight: 750; white-space: normal !important; }
+.gantt-consultation-question small { color: #94a3b8; font-size: .55rem; font-weight: 500; }
+.gantt-consultation-question textarea { width: 100%; box-sizing: border-box; resize: vertical; font-weight: 400; line-height: 1.5; }
+.gantt-consultation-dialog > section { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; gap: .35rem; }
+.gantt-consultation-dialog > section > header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.gantt-consultation-dialog > section > header strong { color: #5b21b6; font-size: .7rem; }
+.gantt-consultation-dialog > section > header span { color: #64748b; font-size: .58rem; }
+.gantt-consultation-dialog > section textarea { width: 100%; min-height: 0; box-sizing: border-box; resize: none; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .62rem; line-height: 1.55; }
+.gantt-consultation-dialog > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; border-top: 1px solid #e2e8f0; padding-top: .65rem; }
+.gantt-consultation-dialog > footer span { margin-right: auto; color: #64748b; font-size: .6rem; }
+.gantt-consultation-dialog > footer span.error { color: #dc2626; }
 .gantt-overview { position: relative; z-index: 1; display: flex; align-items: center; gap: .7rem; margin-bottom: .55rem; border-radius: 8px; padding: .42rem .6rem; background: #f8fafc; color: #64748b; font-size: .66rem; }
 .gantt-overview b { color: #1e293b; }
 .gantt-overview .is-delayed, .gantt-delay-label { color: #dc2626; }
@@ -1598,7 +1616,7 @@ textarea { resize: vertical; line-height: 1.55; }
 @media (min-width: 1180px) { .gantt-filter-row { grid-template-columns: minmax(110px, .65fr) minmax(170px, .9fr) minmax(220px, 1.6fr) minmax(130px, .8fr) minmax(130px, .8fr) minmax(150px, 1fr) auto auto; } }
 @media (max-width: 700px) { .gantt-filter-row { grid-template-columns: 1fr; }.gantt-action-row { grid-template-columns: 1fr; align-items: stretch; }.gantt-period-label { grid-row: 1; white-space: normal; }.gantt-tree-actions, .gantt-navigation { width: 100%; }.gantt-navigation { justify-self: stretch; }.gantt-tree-actions button, .gantt-navigation button { flex: 1; } }
 @media (max-width: 1250px) { .gantt-action-row { grid-template-columns: 1fr auto; }.gantt-navigation { grid-column: 1 / -1; grid-row: 1; flex-wrap: wrap; }.gantt-tree-actions { grid-column: 1; grid-row: 2; }.gantt-export { grid-column: 2; grid-row: 2; } }
-@media (max-width: 700px) { .gantt-navigation button { flex: 1 1 calc(33.333% - .4rem); }.gantt-period-jump { flex: 1 1 100%; order: -1; }.gantt-tree-actions { flex-wrap: wrap; }.gantt-export { justify-self: stretch; }.gantt-export > button { width: 100%; }.gantt-export-menu { width: min(280px, 90vw); } }
+@media (max-width: 700px) { .gantt-navigation button { flex: 1 1 calc(33.333% - .4rem); }.gantt-period-jump { flex: 1 1 100%; order: -1; }.gantt-tree-actions { flex-wrap: wrap; }.gantt-export { display: grid; grid-template-columns: 1fr 1fr; justify-self: stretch; }.gantt-export > button { width: auto; }.gantt-export-menu { width: min(280px, 90vw); }.gantt-consultation-dialog > header > div { align-items: flex-start; flex-direction: column; }.gantt-consultation-dialog > footer button { flex: 1 1 auto; } }
 .modal:has(.gantt-scroll) { width: min(96vw, 1800px); height: min(900px, 94vh); }
 .modal:has(.gantt-scroll) > .modal-body { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
 .modal:has(.gantt-scroll) .gantt-controls,
@@ -2688,6 +2706,21 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .project-schedule-ai-review-summary > div strong { color: #1e293b; font-size: .85rem; }
 .project-schedule-ai-review-summary > div span { color: #64748b; font-size: .6rem; }
 .project-schedule-ai-review-summary > p { margin: 0; color: #475569; font-size: .62rem; line-height: 1.6; }
+.project-schedule-ai-existing-selection { display: grid; gap: .5rem; margin-top: .75rem; border: 1px solid #bfdbfe; border-radius: 10px; padding: .65rem; background: #f8fbff; }
+.project-schedule-ai-existing-selection > header { display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
+.project-schedule-ai-existing-selection > header > div { display: grid; gap: .08rem; }
+.project-schedule-ai-existing-selection > header strong { color: #1e3a8a; font-size: .72rem; }
+.project-schedule-ai-existing-selection > header small { color: #64748b; font-size: .54rem; }
+.project-schedule-ai-existing-selection > header button { flex: none; min-height: 28px; border-color: #bfdbfe; background: white; color: #1d4ed8; font-size: .56rem; }
+.project-schedule-ai-existing-selection > div { display: grid; gap: .4rem; }
+.project-schedule-ai-existing-selection label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .5rem; border: 1px solid #dbe3ef; border-radius: 8px; padding: .55rem .6rem; background: white; cursor: pointer; }
+.project-schedule-ai-existing-selection label.selected { border-color: #60a5fa; background: #eff6ff; box-shadow: 0 0 0 2px #dbeafe; }
+.project-schedule-ai-existing-selection label > input { margin-top: .16rem; }
+.project-schedule-ai-existing-selection label > span { display: grid; min-width: 0; gap: .12rem; }
+.project-schedule-ai-existing-selection label strong { color: #334155; font-size: .66rem; }
+.project-schedule-ai-existing-selection label small { color: #64748b; font-size: .53rem; }
+.project-schedule-ai-existing-selection label b { color: #1d4ed8; font-size: .56rem; line-height: 1.45; }
+.project-schedule-ai-existing-selection label em { color: #64748b; font-size: .52rem; font-style: normal; line-height: 1.45; }
 .project-schedule-ai-issues, .project-schedule-ai-plan-list, .project-schedule-ai-questions { display: grid; gap: .45rem; margin-top: .7rem; }
 .project-schedule-ai-issues > strong, .project-schedule-ai-plan-list > strong, .project-schedule-ai-questions > header strong { color: #334155; font-size: .7rem; }
 .project-schedule-ai-issues > p { display: flex; gap: .45rem; margin: 0; border-radius: 8px; padding: .45rem .55rem; background: white; font-size: .6rem; }
@@ -3266,10 +3299,11 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .work-editor-dialog > header, .work-editor-dialog > footer { grid-column: 1 / -1; }
 .work-editor-fields { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, .85fr) minmax(150px, 1.3fr); gap: .65rem; }
 .work-editor-title { grid-column: 1 / -1; }
+.work-editor-milestone { grid-column: span 2; }
 .work-editor-fields label { display: grid; gap: .3rem; color: #475569; font-size: .68rem; font-weight: 800; }
 .work-editor-fields input, .work-editor-fields select, .work-editor-fields textarea { width: 100%; }
-.work-editor-fields label:nth-child(4) { min-width: 0; }
-.work-editor-fields label:nth-child(4) input[type="date"] { min-width: 0; padding-inline: .55rem .25rem; font-size: .72rem; letter-spacing: -.02em; }
+.work-editor-fields label:has(input[type="date"]) { min-width: 0; }
+.work-editor-fields label input[type="date"] { min-width: 0; padding-inline: .55rem .25rem; font-size: .72rem; letter-spacing: -.02em; }
 .work-editor-description { grid-column: 1 / -1; }
 .work-editor-description textarea { min-height: 82px; resize: vertical; }
 .work-editor-related, .work-editor-schedule { display: grid; gap: .55rem; border: 1px solid #dbe3ef; border-radius: 12px; padding: .8rem; }
@@ -3282,6 +3316,24 @@ nav.header-actions .workspace-mode-settings > button.active { border-color: #93c
 .work-editor-delete-confirm { display: grid; min-width: 240px; flex: 1; gap: .1rem; margin-right: auto; color: #991b1b; }
 .work-editor-delete-confirm > strong { font-size: .72rem; }
 .work-editor-delete-confirm > small { color: #64748b; font-size: .61rem; font-weight: 500; }
+.milestone-delete-dialog { display: grid; gap: .8rem; min-width: min(520px, 78vw); }
+.milestone-delete-dialog > p { margin: 0; color: #334155; font-size: .76rem; line-height: 1.55; }
+.milestone-delete-dialog > .milestone-delete-count { color: #64748b; font-size: .68rem; }
+.milestone-delete-dialog fieldset { display: grid; gap: .5rem; margin: 0; border: 0; padding: 0; }
+.milestone-delete-dialog fieldset > label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .6rem; border: 1px solid #dbe3ef; border-radius: 10px; padding: .7rem .75rem; background: #fff; cursor: pointer; }
+.milestone-delete-dialog fieldset > label:has(input:checked) { border-color: #60a5fa; background: #eff6ff; box-shadow: 0 0 0 2px #dbeafe; }
+.milestone-delete-dialog fieldset > label.is-destructive:has(input:checked) { border-color: #fca5a5; background: #fff1f2; box-shadow: 0 0 0 2px #fee2e2; }
+.milestone-delete-dialog fieldset > label:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.milestone-delete-dialog fieldset input { margin-top: .18rem; }
+.milestone-delete-dialog fieldset span { display: grid; gap: .14rem; }
+.milestone-delete-dialog fieldset strong { color: #334155; font-size: .72rem; }
+.milestone-delete-dialog fieldset small { color: #64748b; font-size: .61rem; line-height: 1.45; }
+.milestone-delete-dialog fieldset > select { margin: -.1rem 0 .15rem 1.8rem; width: calc(100% - 1.8rem); }
+.milestone-delete-dialog > footer { display: flex; justify-content: flex-end; gap: .5rem; border-top: 1px solid #e2e8f0; padding-top: .75rem; }
+.milestone-delete-dialog > footer button.danger { border-color: #dc2626; background: #dc2626; color: white; }
+.project-work-milestone-picker { display: grid; min-width: 180px; gap: .18rem; }
+.project-work-milestone-picker > span { color: #64748b; font-size: .56rem; font-weight: 750; }
+.project-work-milestone-picker > select { width: 100%; }
 .work-editor-schedule > .project-schedule-editor { margin: 0; border: 0; padding: 0; background: transparent; }
 .work-unscheduled-state { display: grid; gap: .12rem; border: 1px solid #cbd5e1; border-radius: 9px; padding: .6rem .7rem; background: white; }
 .work-unscheduled-state b { color: #475569; font-size: .72rem; }

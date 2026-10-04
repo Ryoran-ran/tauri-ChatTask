@@ -116,6 +116,14 @@ describe("プロジェクト作業の編集データ保全", () => {
     expect(buildProjectWorkEditChanges(initial, { ...initial, dueDate: "" }, now)).toEqual({ dueDate: "" });
   });
 
+  it("所属マイルストーンの変更と直属化を保存できる", () => {
+    const initial = stored();
+    expect(buildProjectWorkEditChanges(initial, { ...initial, milestoneId: "other-milestone" }, now))
+      .toEqual({ milestoneId: "other-milestone" });
+    expect(buildProjectWorkEditChanges(initial, { ...initial, milestoneId: "" }, now))
+      .toEqual({ milestoneId: "" });
+  });
+
   it("関連Taskがない作業でも説明以外を保存しない", () => {
     const work = { ...stored(), linkedTaskId: "" };
     const initial = createProjectWorkEditDraft(work, work);
