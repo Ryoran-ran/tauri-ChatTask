@@ -101,6 +101,16 @@ describe("プロジェクト関連情報", () => {
       "work:project-2:work-3",
     ]);
   });
+
+  it("同じプロジェクトの複数作業に紐づいてもボタンは一つだけ返す", () => {
+    const linked = { ...project(), originTaskId: "another-task", taskIds: [], milestones: [], workItems: [work("work-1", ""), work("work-2", "")] };
+    const contexts = taskProjectContexts([linked], "task-1");
+
+    expect(contexts).toHaveLength(2);
+    expect(taskProjectContextMarks(contexts).map((context) => context.id)).toEqual([
+      "work:project-1:work-1",
+    ]);
+  });
 });
 
 describe("プロジェクト作業の実績工数", () => {

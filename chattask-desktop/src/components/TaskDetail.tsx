@@ -165,6 +165,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   });
   const currentTag = tags.find((tag) => tag.id === task.projectTagId);
   const projectContexts = taskProjectContexts(projects, task.id);
+  const projectContextButtons = taskProjectContextMarks(projectContexts);
   const branchCount = task.repositoryBranches.reduce((total, group) => total + group.branchNames.length, 0);
   const incompleteReflectionTodoCount = (task.reflections || []).reduce((sum, reflection) => sum + reflection.todos.filter((todo) => !todo.completed).length, 0);
   const sharedProjects = projectContexts.reduce<Goal[]>((items, context) => {
@@ -576,7 +577,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
   return <section className="detail">
     <div className="detail-header">
       <div className="detail-header-title">
-        {taskProjectContextMarks(projectContexts).map((context) => <button key={context.id} type="button" className={`task-project-mark detail-header-project-mark ${context.kind}`} title={`${context.projectTitle}\n${context.location}\nクリックしてプロジェクトを開く`} aria-label={`${context.projectTitle}を開く`} onClick={() => onOpenProject(context.projectId)}>{context.kind === "origin" ? "P" : "↗"}</button>)}
+        {projectContextButtons.map((context) => <button key={context.projectId} type="button" className={`task-project-mark detail-header-project-mark ${context.kind}`} title={`${context.projectTitle}\n${context.location}\nクリックしてプロジェクトを開く`} aria-label={`${context.projectTitle}を開く`} onClick={() => onOpenProject(context.projectId)}>{context.kind === "origin" ? "P" : "↗"}</button>)}
         <input ref={titleInputRef} className="title-input" value={task.title} onFocus={() => { titleFocusRef.current = task.title; }} onChange={(event) => update("title", event.target.value)} onBlur={() => { if (titleFocusRef.current !== task.title) onUpdate({}, "タスク名を更新しました。"); }} />
       </div>
       <select className="detail-status-select" aria-label="ステータス" value={task.status} onChange={(event) => requestStatusChange(event.target.value as Task["status"])}>{STATUS_GROUPS.map((group) => <optgroup key={group.label} label={group.label}>{group.values.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</optgroup>)}</select>
@@ -626,7 +627,7 @@ export function TaskDetail({ task, allTasks, projects, tags, profile, detailsHid
         <button type="button" className={`quick-details-toggle quick-info-button ${detailsHidden ? "" : "active"}`} aria-label={detailsHidden ? "詳細情報を表示" : "詳細情報を閉じる"} title={detailsHidden ? "詳細情報を表示" : "詳細情報を閉じる"} aria-pressed={!detailsHidden} onClick={onToggleDetails}>ⓘ</button>
       </div>
     </div>
-    {projectContextVisible && !!projectContexts.length && <details className="task-project-contexts" open={projectContextOpen} onToggle={(event) => { const open = event.currentTarget.open; setProjectContextOpen(open); localStorage.setItem("chatTaskProjectContextOpen", String(open)); }}><summary>プロジェクト管理中 <small>{projectContexts.length}件</small></summary><div>{projectContexts.map((context) => <button type="button" key={context.id} onClick={() => onOpenProject(context.projectId)}><b>{context.kind === "origin" ? "P" : "↗"}</b><span><strong>{context.projectTitle}</strong><small>{context.location}</small></span></button>)}</div></details>}
+    {projectContextVisible && !!projectContextButtons.length && <details className="task-project-contexts" open={projectContextOpen} onToggle={(event) => { const open = event.currentTarget.open; setProjectContextOpen(open); localStorage.setItem("chatTaskProjectContextOpen", String(open)); }}><summary>プロジェクト管理中 <small>{projectContextButtons.length}件</small></summary><div>{projectContextButtons.map((context) => <button type="button" key={context.projectId} onClick={() => onOpenProject(context.projectId)}><b>{context.kind === "origin" ? "P" : "↗"}</b><span><strong>{context.projectTitle}</strong><small>{context.location}</small></span></button>)}</div></details>}
     {tagResourcesVisible && (parentTask || currentTag || sharedProjects.length > 0) && <section className="tag-common-resources">
       <header><div><strong>共有・継承資料</strong><small>親タスク、プロジェク、案件タグの資料を参照します。</small></div><button type="button" onClick={() => { setTagResourcesVisible(false); localStorage.setItem("chatTaskTagResourcesVisible", "false"); }}>閉じる</button></header>
       <div className="task-shared-resource-grid">
