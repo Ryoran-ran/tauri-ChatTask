@@ -44,6 +44,7 @@ import { deleteProjectReferences } from "./projectDataProtection";
 import { mergeProjectEdit, type ProjectEditContext } from "./projectEditMerge";
 import { reflectTaskScheduleOnWork } from "./projectWorkEditing";
 import { scheduleAppReducer, type ScheduleCommand, type ScheduleAppState } from "./projectScheduleHistory";
+import { historyWorkTitle } from "./historyEntry";
 import { useAppPersistence } from "./useAppPersistence";
 import { SavingBeforeExit } from "./components/SavingBeforeExit";
 
@@ -937,7 +938,7 @@ function App() {
         type: "comment",
         text: dailyPlanText,
         timestamp: new Date().toISOString(),
-        ...(timerWorkTitle && timerWorkTitle !== task.title.trim() ? { workTitle: timerWorkTitle } : {}),
+        ...historyWorkTitle(timerWorkTitle),
         ...(typeof workTimer.plannedMinutes === "number" && workTimer.plannedMinutes > 0 ? { workPlannedHours: workTimer.plannedMinutes / 60 } : {}),
         ...(previous + hours > 0 ? { workActualHours: previous + hours } : {}),
       }];
