@@ -8,6 +8,7 @@ import { EffortSummaryModal } from "./EffortSummaryModal";
 import { TagIcon } from "./TagIcon";
 import { HabitsPanel } from "./HabitsPanel";
 import { readExecutionGroups, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
+import { historyWorkTitle } from "../historyEntry";
 const todayExecutionLaterOpenKey = "chatTaskTodayExecutionLaterOpen";
 const todayExecutionHoldingOpenKey = "chatTaskTodayExecutionHoldingOpen";
 export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inboxItems, todayOrder, onTodayOrder, onHabitsChange, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { workspaceMode: WorkspaceMode; tasks: Task[]; habits: Habit[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onHabitsChange: (habits: Habit[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
@@ -384,7 +385,6 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   const withCommentMemo = (task: Task, changes: Partial<Task>, content: string, workTitle?: string, plannedHours?: number, actualHours?: number): Partial<Task> => {
     const text = content.trim();
     if (!text) return changes;
-    const normalizedWorkTitle = workTitle?.trim();
     return {
       ...changes,
       history: [...task.history, {
@@ -392,7 +392,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
         type: "comment",
         text,
         timestamp: new Date().toISOString(),
-        ...(normalizedWorkTitle && normalizedWorkTitle !== task.title.trim() ? { workTitle: normalizedWorkTitle } : {}),
+        ...historyWorkTitle(workTitle),
         ...(Number(plannedHours) > 0 ? { workPlannedHours: Number(plannedHours) } : {}),
         ...(Number(actualHours) > 0 ? { workActualHours: Number(actualHours) } : {}),
       }],
@@ -554,7 +554,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
           type: "comment" as const,
           text,
           timestamp: carriedAt,
-          ...(workTitle && workTitle !== task.title.trim() ? { workTitle } : {}),
+          ...historyWorkTitle(workTitle),
           ...(plannedHours > 0 ? { workPlannedHours: plannedHours } : {}),
           ...(actualHours > 0 ? { workActualHours: actualHours } : {}),
         }];
