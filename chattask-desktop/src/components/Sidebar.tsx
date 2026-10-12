@@ -185,9 +185,9 @@ export function Sidebar(props: Props) {
         </div>
         {!props.filtersHidden && <div className="filters-panel">
           <input value={props.search} onChange={(event) => props.onSearch(event.target.value)} placeholder="タスク名やメモを検索..." />
-          <button type="button" className="advanced-filter-open" onClick={() => window.dispatchEvent(new Event("chattask-open-advanced-filter"))}>＋ 条件検索（AND・OR）</button>
+          <button type="button" data-usage-id="sidebar.advanced_filter" className="advanced-filter-open" onClick={() => window.dispatchEvent(new Event("chattask-open-advanced-filter"))}>＋ 条件検索（AND・OR）</button>
           <div className="active-filter-summary"><div><small>{props.advancedFilter.mode === "or" && props.advancedFilter.conditions.length > 1 ? "いずれか" : "適用中"}</small><span>{appliedConditionLabels.join("・")}</span></div><button type="button" onClick={() => window.dispatchEvent(new Event("chattask-open-advanced-filter"))}>変更</button><button type="button" disabled={!props.advancedFilter.conditions.length && !props.search.trim()} onClick={props.onClearFilters}>解除</button></div>
-          <button type="button" className="sort-editor-open" onClick={() => setSortEditorOpen(true)}><span>↕ 並び替え</span><small>{props.sortRules.length}条件・上から優先</small></button>
+          <button type="button" data-usage-id="sidebar.sort" className="sort-editor-open" onClick={() => setSortEditorOpen(true)}><span>↕ 並び替え</span><small>{props.sortRules.length}条件・上から優先</small></button>
           {sortEditorOpen && <Modal title="タスクの並び替え" onClose={() => setSortEditorOpen(false)} wide><div className="sort-editor-dialog">
             <header><div><strong>並び替え条件</strong><p>上にある条件から順番に適用します。</p></div></header>
               <button type="button" className={props.sortRules[0]?.key === "today" && props.sortRules[0]?.direction === "desc" ? "active" : ""} onClick={prioritizeToday}>今日することを最優先</button>
@@ -214,7 +214,7 @@ export function Sidebar(props: Props) {
           </div>
           </details>
         </div>}
-        <button className="secondary full" onClick={props.onToday}>{props.workspaceMode === "personal" ? "今日の暮らし" : "今日のページ"}</button>
+        <button data-usage-id="sidebar.today" className="secondary full" onClick={props.onToday}>{props.workspaceMode === "personal" ? "今日の暮らし" : "今日のページ"}</button>
       </div>
       <div className="task-list">
         {props.groupByTag && <section className={`task-tag-group task-today-shortcut ${todayShortcutCollapsed ? "collapsed" : ""}`}>
@@ -253,6 +253,7 @@ export function Sidebar(props: Props) {
       </div>
       <button
         type="button"
+        data-usage-id="sidebar.create_task"
         className="sidebar-new-task-fab"
         aria-label="新規タスクを追加"
         title="新規タスクを追加"

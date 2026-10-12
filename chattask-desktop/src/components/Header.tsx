@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "r
 import type { WorkspaceMode } from "../types";
 import { Modal } from "./Modal";
 import { SettingsCenterModal } from "./SettingsCenterModal";
+import { recordUsageSurface } from "../usageAnalytics";
 
 interface Props {
   importRef: RefObject<HTMLInputElement | null>;
@@ -26,6 +27,7 @@ interface Props {
   onHelp: () => void;
   onProfile: () => void;
   onDataManagement: () => void;
+  onUsageAnalytics: () => void;
   onAchievements: () => void;
   onReflections: () => void;
   onTools: () => void;
@@ -55,6 +57,7 @@ export function Header(props: Props) {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, []);
+  useEffect(() => { if (settingsCenterOpen) recordUsageSurface("settings"); }, [settingsCenterOpen]);
   const openModeDialog = () => {
     setModeDraft(props.workspaceMode);
     setSettings(false);
@@ -74,21 +77,21 @@ export function Header(props: Props) {
   return <><header className="app-header">
     <div className="brand"><span className="brand-icon">◇</span><strong>ChatTask</strong>{localStorage.getItem("chatTaskActiveEnvironment") === "test" && <span className="test-environment-badge">TEST環境</span>}<span className={`workspace-mode-badge ${props.workspaceMode}`}><i aria-hidden="true" />{props.workspaceMode === "work" ? "仕事" : "日常"}</span></div>
     <nav className="header-actions">
-      <button title="全文横断検索（⌘/Ctrl + Shift + F）" onClick={props.onSearch}>全文検索</button>
-      <button className={`header-inbox-button ${props.inboxCount ? "has-items" : ""}`} onClick={props.onInbox}>Inbox{props.inboxCount > 0 && <span>{props.inboxCount > 99 ? "99+" : props.inboxCount}</span>}</button>
-      {props.workspaceMode === "work" && <button className={`header-waiting-button ${props.waitingCount ? "has-items" : ""}`} onClick={props.onWaiting}>待ち{props.waitingCount > 0 && <span>{props.waitingCount > 99 ? "99+" : props.waitingCount}</span>}</button>}
-      <button className={`header-notification-button ${props.notificationCount ? "has-notifications" : ""}`} onClick={props.onNotifications}>通知{props.notificationCount > 0 && <span>{props.notificationCount > 99 ? "99+" : props.notificationCount}</span>}</button>
-      <button onClick={props.onGoals}>プロジェクト</button>
-      <button onClick={props.onGantt}>ガントチャート</button>
-      <button onClick={props.onWeeklyLoad}>週間予定</button>
+      <button data-usage-id="header.search" title="全文横断検索（⌘/Ctrl + Shift + F）" onClick={props.onSearch}>全文検索</button>
+      <button data-usage-id="header.inbox" className={`header-inbox-button ${props.inboxCount ? "has-items" : ""}`} onClick={props.onInbox}>Inbox{props.inboxCount > 0 && <span>{props.inboxCount > 99 ? "99+" : props.inboxCount}</span>}</button>
+      {props.workspaceMode === "work" && <button data-usage-id="header.waiting" className={`header-waiting-button ${props.waitingCount ? "has-items" : ""}`} onClick={props.onWaiting}>待ち{props.waitingCount > 0 && <span>{props.waitingCount > 99 ? "99+" : props.waitingCount}</span>}</button>}
+      <button data-usage-id="header.notifications" className={`header-notification-button ${props.notificationCount ? "has-notifications" : ""}`} onClick={props.onNotifications}>通知{props.notificationCount > 0 && <span>{props.notificationCount > 99 ? "99+" : props.notificationCount}</span>}</button>
+      <button data-usage-id="header.projects" onClick={props.onGoals}>プロジェクト</button>
+      <button data-usage-id="header.gantt" onClick={props.onGantt}>ガントチャート</button>
+      <button data-usage-id="header.weekly" onClick={props.onWeeklyLoad}>週間予定</button>
       <div className="settings-menu records-menu" ref={recordsRef}>
         <button className="settings-trigger" onClick={() => { setRecords(!records); setSettings(false); }} aria-expanded={records}>記録・分析 <span>▼</span></button>
-        {records && <div className="settings-panel records-panel"><button onClick={() => { props.onAchievements(); setRecords(false); }}>頑張りの記録<small>日々の実績と変化を確認</small></button><button onClick={() => { props.onReflections(); setRecords(false); }}>振り返り記録<small>失敗・学び・対策ToDoを確認</small></button><button onClick={() => { props.onIssues(); setRecords(false); }}>課題一覧<small>気づいた課題を整理</small></button><button onClick={() => { props.onReport(); setRecords(false); }}>まとめ出力<small>記録をレポートとして出力</small></button></div>}
+        {records && <div className="settings-panel records-panel"><button data-usage-id="records.achievements" onClick={() => { props.onAchievements(); setRecords(false); }}>頑張りの記録<small>日々の実績と変化を確認</small></button><button data-usage-id="records.reflections" onClick={() => { props.onReflections(); setRecords(false); }}>振り返り記録<small>失敗・学び・対策ToDoを確認</small></button><button data-usage-id="records.issues" onClick={() => { props.onIssues(); setRecords(false); }}>課題一覧<small>気づいた課題を整理</small></button><button data-usage-id="records.report" onClick={() => { props.onReport(); setRecords(false); }}>まとめ出力<small>記録をレポートとして出力</small></button></div>}
       </div>
       <div className="settings-menu" ref={menuRef}>
         <button className="settings-trigger" onClick={() => { setSettings(!settings); setRecords(false); }} aria-expanded={settings}>設定 <span>▼</span></button>
         {settings && <div className="settings-panel">
-          <button type="button" className="settings-center-open" onClick={() => { setSettings(false); setSettingsCenterOpen(true); }}><span><b>設定を開く</b><small>すべての設定をカテゴリーから選択</small></span><em>→</em></button>
+          <button type="button" data-usage-id="settings.open" className="settings-center-open" onClick={() => { setSettings(false); setSettingsCenterOpen(true); }}><span><b>設定を開く</b><small>すべての設定をカテゴリーから選択</small></span><em>→</em></button>
           <span className="settings-group-label">よく使う設定</span>
           <div className="settings-quick-links">
             <button type="button" onClick={() => { setSettings(false); props.onTags(); }}><i aria-hidden="true">#</i><span><b>案件タグ管理</b><small>タグ・共有資料・リポジトリを管理</small></span><em>›</em></button>
@@ -106,7 +109,7 @@ export function Header(props: Props) {
       <input ref={props.importRef} hidden type="file" accept=".json,application/json" onChange={props.onImport} />
     </nav>
   </header>
-  {settingsCenterOpen && <SettingsCenterModal workspaceMode={props.workspaceMode} hideRecurring={props.hideRecurring} openTodayOnStartup={props.openTodayOnStartup} importRef={props.importRef} onHideRecurring={props.onHideRecurring} onOpenTodayOnStartup={props.onOpenTodayOnStartup} onProfile={props.onProfile} onWorkspaceMode={openModeDialog} onWeekendSettings={props.onWeekendSettings} onNonWorking={props.onNonWorking} onTags={props.onTags} onTemplates={props.onTemplates} onTools={props.onTools} onDataManagement={props.onDataManagement} onExport={props.onExport} onHelp={props.onHelp} onClose={() => setSettingsCenterOpen(false)} />}
+  {settingsCenterOpen && <SettingsCenterModal workspaceMode={props.workspaceMode} hideRecurring={props.hideRecurring} openTodayOnStartup={props.openTodayOnStartup} importRef={props.importRef} onHideRecurring={props.onHideRecurring} onOpenTodayOnStartup={props.onOpenTodayOnStartup} onProfile={props.onProfile} onWorkspaceMode={openModeDialog} onWeekendSettings={props.onWeekendSettings} onNonWorking={props.onNonWorking} onTags={props.onTags} onTemplates={props.onTemplates} onTools={props.onTools} onDataManagement={props.onDataManagement} onUsageAnalytics={props.onUsageAnalytics} onExport={props.onExport} onHelp={props.onHelp} onClose={() => setSettingsCenterOpen(false)} />}
   {modeDialogOpen && <Modal title="利用モード設定" onClose={() => setModeDialogOpen(false)}><div className="workspace-mode-dialog"><header><strong>この端末で使うモード</strong><p>利用する機能のまとまりを選択します。タスクやプロジェクトなど、登録済みのデータは削除されません。</p></header><div className="workspace-mode-dialog-options" role="radiogroup" aria-label="利用モード"><button type="button" role="radio" aria-checked={modeDraft === "work"} className={modeDraft === "work" ? "selected" : ""} onClick={() => setModeDraft("work")}><span aria-hidden="true">▣</span><div><strong>仕事用</strong><small>業務タスク、工数、休暇・祝日設定を使う</small></div><b>{modeDraft === "work" ? "✓" : ""}</b></button><button type="button" role="radio" aria-checked={modeDraft === "personal"} className={modeDraft === "personal" ? "selected personal" : "personal"} onClick={() => setModeDraft("personal")}><span aria-hidden="true">⌂</span><div><strong>日常用</strong><small>日々のタスク、習慣、休日に関係しない予定を使う</small></div><b>{modeDraft === "personal" ? "✓" : ""}</b></button></div>{modeDraft !== props.workspaceMode && <div className="workspace-mode-change-notice"><strong>{modeDraft === "work" ? "仕事用" : "日常用"}へ切り替えます</strong><small>画面を閉じずに表示内容が切り替わります。</small></div>}<footer><button type="button" onClick={() => setModeDialogOpen(false)}>キャンセル</button><button type="button" className="primary" onClick={applyWorkspaceMode} disabled={modeDraft === props.workspaceMode}>このモードに切り替える</button></footer></div></Modal>}
   {modeSetupOpen && <Modal title="利用モードを選択" onClose={() => selectInitialMode(props.workspaceMode)}><div className="workspace-mode-onboarding"><p>この端末で主に使うモードを選んでください。あとから設定で変更できます。</p><div><button type="button" onClick={() => selectInitialMode("work")}><span aria-hidden="true">▣</span><strong>仕事用</strong><small>業務タスク、工数、休暇設定を使う</small></button><button type="button" className="personal" onClick={() => selectInitialMode("personal")}><span aria-hidden="true">⌂</span><strong>日常用</strong><small>日々のタスクと習慣を記録する</small></button></div></div></Modal>}
   </>;

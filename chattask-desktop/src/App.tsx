@@ -4,6 +4,7 @@ import "./App.css";
 import { STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "./data/constants";
 import { DocumentsModal } from "./components/DocumentsModal";
 import { DataManagementModal } from "./components/DataManagementModal";
+import { UsageAnalyticsModal } from "./components/UsageAnalyticsModal";
 import { GanttModal } from "./components/GanttModal";
 import { WeeklyLoadModal } from "./components/WeeklyLoadModal";
 import { Header } from "./components/Header";
@@ -47,6 +48,7 @@ import { scheduleAppReducer, type ScheduleCommand, type ScheduleAppState } from 
 import { historyWorkTitle } from "./historyEntry";
 import { useAppPersistence } from "./useAppPersistence";
 import { SavingBeforeExit } from "./components/SavingBeforeExit";
+import { installUsageClickTracking, recordUsageSurface } from "./usageAnalytics";
 
 const PERSONAL_MODE_ACTIVE_DAYS: NonWorkingPeriod[] = [{ id: "personal-mode-active-days", startDate: "0001-01-01", endDate: "", type: "weekend", weekdays: [], note: "" }];
 const RESTORE_NOTICE_KEY = "chatTaskBackupRestoreNotice";
@@ -71,6 +73,11 @@ function App() {
     return () => window.removeEventListener("chattask-open-task", openTask);
   }, []);
   const [creatingTaskParentId, setCreatingTaskParentId] = useState<string | null>(null);
+  useEffect(() => {
+    const uninstall = installUsageClickTracking();
+    recordUsageSurface("main");
+    return uninstall;
+  }, []);
   const [templateSourceTask, setTemplateSourceTask] = useState<Task | null>(null);
   const [creatingTaskTagId, setCreatingTaskTagId] = useState<string | undefined>(undefined);
   const [filter, setFilter] = useState<TaskFilter>("all");
@@ -120,6 +127,7 @@ function App() {
   const [projectFocusId, setProjectFocusId] = useState("");
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [dataManagementOpen, setDataManagementOpen] = useState(false);
+  const [usageAnalyticsOpen, setUsageAnalyticsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [hideRecurring, setHideRecurring] = useState(() => localStorage.getItem("chatTaskRecurringTasksHidden") === "true");
   const [openTodayOnStartup, setOpenTodayOnStartup] = useState(() => localStorage.getItem("chatTaskOpenTodayOnStartup") === "true");
@@ -143,6 +151,10 @@ function App() {
   const [inboxItemId, setInboxItemId] = useState("");
   const [waitingOpen, setWaitingOpen] = useState(false);
   const [waitingTaskId, setWaitingTaskId] = useState("");
+  useEffect(() => { if (selectedId) recordUsageSurface("task_detail"); }, [selectedId]);
+  useEffect(() => { if (todayOpen) recordUsageSurface("today"); }, [todayOpen]);
+  useEffect(() => { if (goalsOpen) recordUsageSurface("projects"); }, [goalsOpen]);
+  useEffect(() => { if (usageAnalyticsOpen) recordUsageSurface("usage_analytics"); }, [usageAnalyticsOpen]);
   const [documentJump, setDocumentJump] = useState<{ scope: "task" | "project" | "tag"; ownerId: string; documentId: string; query: string } | null>(null);
   const [savedViews, setSavedViews] = useState<SavedTaskView[]>(() => {
     try { return JSON.parse(localStorage.getItem("chatTaskSavedViews") || "[]") as SavedTaskView[]; }
@@ -1005,7 +1017,7 @@ function App() {
 
   return <NonWorkingPeriodsProvider periods={data.nonWorkingPeriods} informational={data.workspaceMode === "personal"}><div className={`app-shell mode-${data.workspaceMode}`}>
     {dropNotice && <div className={`global-drop-notice ${dropNotice.error ? "error" : ""}`} role="status">{dropNotice.text}</div>}
-    <Header importRef={importRef} onImport={importData} onExport={exportData} onTags={() => setTagsOpen(true)} onTemplates={() => setTemplatesOpen(true)} onReport={() => setReportOpen(true)} onGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} onWeeklyLoad={() => setWeeklyLoadOpen(true)} onGoals={() => setGoalsOpen(true)} onIssues={() => setIssuesOpen(true)} onSearch={() => setFullSearchOpen(true)} onInbox={() => setInboxOpen(true)} inboxCount={data.inboxItems.filter((item) => item.status === "inbox").length} onWaiting={() => { setWaitingTaskId(""); setWaitingOpen(true); }} waitingCount={data.tasks.filter((task) => task.waitingFollowUp).length} onNotifications={() => setNotificationsOpen(true)} notificationCount={notificationCount} onNonWorking={() => setNonWorkingOpen(true)} onWeekendSettings={() => setWeekendSettingsOpen(true)} onHelp={() => setHelpOpen(true)} onProfile={() => setProfileOpen(true)} onDataManagement={() => setDataManagementOpen(true)} onAchievements={() => setAchievementsOpen(true)} onReflections={() => setReflectionRecordsOpen(true)} onTools={() => setToolsOpen(true)} hideRecurring={hideRecurring} openTodayOnStartup={openTodayOnStartup} onHideRecurring={setHideRecurring} onOpenTodayOnStartup={setOpenTodayOnStartup} workspaceMode={data.workspaceMode} onWorkspaceMode={(workspaceMode) => { localStorage.setItem(environment === "test" ? "chatTaskWorkspaceMode:test" : "chatTaskWorkspaceMode", workspaceMode); setData((current) => ({ ...current, workspaceMode })); }} />
+    <Header importRef={importRef} onImport={importData} onExport={exportData} onTags={() => setTagsOpen(true)} onTemplates={() => setTemplatesOpen(true)} onReport={() => setReportOpen(true)} onGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} onWeeklyLoad={() => setWeeklyLoadOpen(true)} onGoals={() => setGoalsOpen(true)} onIssues={() => setIssuesOpen(true)} onSearch={() => setFullSearchOpen(true)} onInbox={() => setInboxOpen(true)} inboxCount={data.inboxItems.filter((item) => item.status === "inbox").length} onWaiting={() => { setWaitingTaskId(""); setWaitingOpen(true); }} waitingCount={data.tasks.filter((task) => task.waitingFollowUp).length} onNotifications={() => setNotificationsOpen(true)} notificationCount={notificationCount} onNonWorking={() => setNonWorkingOpen(true)} onWeekendSettings={() => setWeekendSettingsOpen(true)} onHelp={() => setHelpOpen(true)} onProfile={() => setProfileOpen(true)} onDataManagement={() => setDataManagementOpen(true)} onUsageAnalytics={() => setUsageAnalyticsOpen(true)} onAchievements={() => setAchievementsOpen(true)} onReflections={() => setReflectionRecordsOpen(true)} onTools={() => setToolsOpen(true)} hideRecurring={hideRecurring} openTodayOnStartup={openTodayOnStartup} onHideRecurring={setHideRecurring} onOpenTodayOnStartup={setOpenTodayOnStartup} workspaceMode={data.workspaceMode} onWorkspaceMode={(workspaceMode) => { localStorage.setItem(environment === "test" ? "chatTaskWorkspaceMode:test" : "chatTaskWorkspaceMode", workspaceMode); setData((current) => ({ ...current, workspaceMode })); }} />
     <main className="workspace">
       <Sidebar tasks={visibleTasks} tags={data.projectTags} projects={data.goals} periods={effectiveNonWorkingPeriods} selectedId={selectedId} search={search} advancedFilter={advancedFilter} savedViews={savedViews} sortRules={sortRules} filtersHidden={filtersHidden} collapsedIds={collapsedIds} onSearch={setSearch} onClearFilters={() => { setSearch(""); setAdvancedFilter({ mode: "and", conditions: [] }); setFilter("all"); setTagFilter("all"); setPriorityFilter("all"); }} onSaveView={saveCurrentView} onApplyView={applySavedView} onDeleteView={(id) => setSavedViews((current) => current.filter((view) => view.id !== id))} onSortRules={setSortRules} onToggleFilters={() => setFiltersHidden((value) => !value)} onSelect={setSelectedId} onToggleCollapse={(id) => setCollapsedIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onCreate={(projectTagId) => { setCreatingTaskTagId(projectTagId); setCreatingTaskParentId(""); }} onToday={() => setTodayOpen(true)} narrow={narrow} density={density} groupByTag={groupTasksByTag} onToggleGroupByTag={() => setGroupTasksByTag((value) => !value)} onToggleWidth={() => setNarrow((value) => !value)} onToggleDensity={() => setDensity((value) => value === "standard" ? "compact" : value === "compact" ? "minimal" : "standard")} onQuick={quickAction} onOpenProject={openProjects} onSaveTemplate={setTemplateSourceTask} workspaceMode={data.workspaceMode} />
       <TaskDetail task={selectedTask} allTasks={data.tasks} projects={data.goals} tags={data.projectTags} profile={data.userProfile} detailsHidden={detailsHidden} onToggleDetails={() => setDetailsHidden((value) => !value)} onUpdate={(changes, text) => selectedId && updateTaskById(selectedId, changes, text)} onDelete={deleteSelectedTask} onCreateChild={() => selectedId && setCreatingTaskParentId(selectedId)} onCreateSibling={() => { if (!selectedTask) return; setCreatingTaskTagId(selectedTask.projectTagId || undefined); setCreatingTaskParentId(selectedTask.parentTaskId || ""); }} onDocuments={() => { setDocumentJump(null); setDocumentsOpen("task"); }} onCodeReview={() => selectedTask && setCodeReviewTaskId(selectedTask.id)} onSharedDocuments={(projectId, documentId = "") => { const project = data.goals.find((item) => item.id === projectId); if (project) { setDocumentJump({ scope: "project", ownerId: project.id, documentId, query: "" }); setDocumentsOpen("project"); } }} onTagDocuments={() => { if (selectedTag) { setDocumentJump(null); setDocumentsOpen("tag"); } }} onOpenTagSettings={() => setTagsOpen(true)} onUpdateTagRepositories={(tagId, githubRepositories) => setData((current) => ({ ...current, projectTags: current.projectTags.map((tag) => tag.id === tagId ? { ...tag, githubRepositories } : tag) }))} onPromote={() => selectedTask && promoteTaskToProject(selectedTask)} onSaveTemplate={() => selectedTask && setTemplateSourceTask(selectedTask)} onOpenProject={openProjects} onCreateReflectionTask={(reflectionId, todoId) => selectedTask && createReflectionActionTask(selectedTask.id, reflectionId, todoId)} onOpenGantt={() => { setGanttProjectId(""); setGanttReturnProjectId(""); setGanttOpen(true); }} promoted={Boolean(selectedTask && data.goals.some((item) => item.originTaskId === selectedTask.id))} projectManaged={Boolean(selectedTask && isTaskScheduleManagedByProject(data.goals, selectedTask.id))} onDeleteDailyPlan={(date) => selectedId && deleteDailyPlanById(selectedId, date)} onDeleteMemo={(id) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.filter((item) => item.id !== id) })} onEditMemo={(id, text) => selectedTask && updateTaskById(selectedTask.id, { history: selectedTask.history.map((item) => item.id === id ? { ...item, text, editedAt: new Date().toISOString() } : item) })} />
@@ -1041,6 +1053,7 @@ function App() {
     {ganttOpen && <GanttModal tasks={data.tasks} projects={data.goals} tags={data.projectTags} periods={data.nonWorkingPeriods} calculationPeriods={effectiveNonWorkingPeriods} dailyCapacityHours={data.projectDailyCapacityHours || 6} initialProjectId={ganttProjectId} onSelect={(id) => { setSelectedId(id); setGoalsOpen(false); setProjectFocusId(""); setGanttOpen(false); setGanttProjectId(""); setGanttReturnProjectId(""); }} onClose={() => { setGanttOpen(false); setGanttProjectId(""); if (ganttReturnProjectId) { setProjectFocusId(ganttReturnProjectId); setGoalsOpen(true); } setGanttReturnProjectId(""); }} />}
     {weeklyLoadOpen && <WeeklyLoadModal tasks={data.tasks} tags={data.projectTags} periods={effectiveNonWorkingPeriods} onSelect={(id) => { setSelectedId(id); setWeeklyLoadOpen(false); }} onClose={() => setWeeklyLoadOpen(false)} />}
     {issuesOpen && <IssuesModal issues={data.issues} onSave={(issues) => setData((current) => ({ ...current, issues }))} onClose={() => setIssuesOpen(false)} />}
+    {usageAnalyticsOpen && <UsageAnalyticsModal onClose={() => setUsageAnalyticsOpen(false)} />}
     {dataManagementOpen && <DataManagementModal data={data} backend={storageBackend} environment={environment}
       onSwitchEnvironment={(next) => {
         if (next === environment) return Promise.resolve();
