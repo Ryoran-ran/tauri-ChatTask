@@ -53,6 +53,10 @@ export interface UsageAnalysisExport {
 export const USAGE_RETENTION_DAYS = 90;
 const MAX_RAW_EVENTS = 20_000;
 const STORE_KEY = "chatTaskUiUsageV1";
+const SAVE_DELAY_MS = 250;
+const cachedStores = new Map<string, UsageStore>();
+const pendingStores = new Map<string, UsageStore>();
+let saveTimer: number | null = null;
 
 export const USAGE_ACTIONS: UsageActionDefinition[] = [
   { id: "header.search", label: "全文検索", surface: "main", category: "ヘッダー" },
@@ -92,7 +96,7 @@ export const USAGE_ACTIONS: UsageActionDefinition[] = [
 const emptyStore = (): UsageStore => ({ version: 1, events: [], daily: {} });
 const environmentSuffix = () => localStorage.getItem("chatTaskActiveEnvironment") === "test" ? ":test" : "";
 const storageKey = () => `${STORE_KEY}${environmentSuffix()}`;
-const datePart = (timestamp: string) => {
+export const usageLocalDatePart = (timestamp: string) => {
   const date = new Date(timestamp);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -119,37 +123,58 @@ const validEvent = (value: unknown): value is UiUsageEvent => {
 };
 
 export const loadUsageStore = (): UsageStore => {
+  const key = storageKey();
+  const cached = cachedStores.get(key);
+  if (cached) return cached;
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey()) || "null") as Partial<UsageStore> | null;
-    if (!parsed || parsed.version !== 1) return emptyStore();
-    return {
+    const parsed = JSON.parse(localStorage.getItem(key) || "null") as Partial<UsageStore> | null;
+    const store: UsageStore = !parsed || parsed.version !== 1 ? emptyStore() : {
       version: 1,
       events: pruneUsageEvents(Array.isArray(parsed.events) ? parsed.events.filter(validEvent) : []),
       daily: parsed.daily && typeof parsed.daily === "object" ? parsed.daily : {},
     };
+    cachedStores.set(key, store);
+    return store;
   } catch {
-    return emptyStore();
+    const store = emptyStore();
+    cachedStores.set(key, store);
+    return store;
+  }
+};
+
+const flushUsageStores = () => {
+  if (saveTimer !== null) window.clearTimeout(saveTimer);
+  saveTimer = null;
+  for (const [key, store] of pendingStores) {
+    try {
+      localStorage.setItem(key, JSON.stringify(store));
+    } catch (error) {
+      console.warn("利用状況を保存できませんでした。", error);
+    }
+  }
+  if (pendingStores.size) {
+    pendingStores.clear();
+    window.dispatchEvent(new Event("chattask-usage-updated"));
   }
 };
 
 const saveUsageStore = (store: UsageStore) => {
-  try {
-    localStorage.setItem(storageKey(), JSON.stringify(store));
-    window.dispatchEvent(new Event("chattask-usage-updated"));
-  } catch (error) {
-    console.warn("利用状況を保存できませんでした。", error);
-  }
+  const key = storageKey();
+  cachedStores.set(key, store);
+  pendingStores.set(key, store);
+  if (saveTimer === null) saveTimer = window.setTimeout(flushUsageStores, SAVE_DELAY_MS);
 };
 
 const record = (kind: UsageEventKind, actionId: string, surface: string, interaction: UsageInteraction = "click") => {
   const occurredAt = new Date().toISOString();
   const store = loadUsageStore();
   const event: UiUsageEvent = { id: eventId(), kind, actionId, surface, interaction, sessionId, occurredAt };
-  const date = datePart(occurredAt);
+  const date = usageLocalDatePart(occurredAt);
   const daily = store.daily[date] || { actions: {}, surfaces: {} };
-  const counts = kind === "action" ? daily.actions : daily.surfaces;
+  const nextDaily = { actions: { ...daily.actions }, surfaces: { ...daily.surfaces } };
+  const counts = kind === "action" ? nextDaily.actions : nextDaily.surfaces;
   counts[actionId] = (counts[actionId] || 0) + 1;
-  saveUsageStore({ ...store, events: pruneUsageEvents([...store.events, event]), daily: { ...store.daily, [date]: daily } });
+  saveUsageStore({ ...store, events: pruneUsageEvents([...store.events, event]), daily: { ...store.daily, [date]: nextDaily } });
 };
 
 export const recordUsageAction = (actionId: string, interaction: UsageInteraction = "click") => {
@@ -172,11 +197,19 @@ export const installUsageClickTracking = () => {
     recordUsageAction(actionId, event.detail === 0 ? "keyboard" : "click");
   };
   document.addEventListener("click", listener, true);
-  return () => document.removeEventListener("click", listener, true);
+  window.addEventListener("pagehide", flushUsageStores);
+  return () => {
+    document.removeEventListener("click", listener, true);
+    window.removeEventListener("pagehide", flushUsageStores);
+    flushUsageStores();
+  };
 };
 
 export const clearUsageData = () => {
-  localStorage.removeItem(storageKey());
+  const key = storageKey();
+  pendingStores.delete(key);
+  cachedStores.set(key, emptyStore());
+  localStorage.removeItem(key);
   window.dispatchEvent(new Event("chattask-usage-updated"));
 };
 
@@ -192,7 +225,7 @@ export const summarizeUsage = (
     const actionEvents = period.filter((event) => event.kind === "action" && event.actionId === definition.id);
     const actionSessions = new Set(actionEvents.map((event) => event.sessionId));
     const eligibleSessions = new Set(period.filter((event) => event.kind === "surface" && event.surface === definition.surface).map((event) => event.sessionId));
-    const activeDays = new Set(actionEvents.map((event) => datePart(event.occurredAt))).size;
+    const activeDays = new Set(actionEvents.map((event) => usageLocalDatePart(event.occurredAt))).size;
     const sessionRate = eligibleSessions.size ? actionSessions.size / eligibleSessions.size : null;
     let classification: UsageActionSummary["classification"] = "occasional";
     if (definition.occasionalByDesign && actionEvents.length <= 2) classification = "protected";
@@ -219,8 +252,8 @@ export const buildUsageAnalysisExport = (
   now = new Date(),
 ): UsageAnalysisExport => {
   const start = usageRetentionStart(now, days);
-  const startDate = datePart(start);
-  const endDate = datePart(now.toISOString());
+  const startDate = usageLocalDatePart(start);
+  const endDate = usageLocalDatePart(now.toISOString());
   return {
     schemaVersion: 1,
     generatedAt: now.toISOString(),

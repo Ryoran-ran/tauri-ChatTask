@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildUsageAnalysisExport, clearUsageData, loadUsageStore, summarizeUsage, usageAnalysisCsv, USAGE_ACTIONS, USAGE_RETENTION_DAYS, type UsageActionSummary, type UsageStore } from "../usageAnalytics";
+import { buildUsageAnalysisExport, clearUsageData, loadUsageStore, summarizeUsage, usageAnalysisCsv, usageLocalDatePart, USAGE_ACTIONS, USAGE_RETENTION_DAYS, type UsageActionSummary, type UsageStore } from "../usageAnalytics";
 import { Modal } from "./Modal";
 
 const CLASS_LABELS: Record<UsageActionSummary["classification"], string> = {
@@ -30,7 +30,7 @@ export function UsageAnalyticsModal({ onClose }: { onClose: () => void }) {
   const periodStart = new Date();
   periodStart.setDate(periodStart.getDate() - days);
   const periodEvents = store.events.filter((event) => event.occurredAt >= periodStart.toISOString());
-  const activeDays = new Set(periodEvents.map((event) => event.occurredAt.slice(0, 10))).size;
+  const activeDays = new Set(periodEvents.map((event) => usageLocalDatePart(event.occurredAt))).size;
   const actionCount = periodEvents.filter((event) => event.kind === "action").length;
   const lifetimeActions = Object.values(store.daily).reduce((total, day) => total + Object.values(day.actions || {}).reduce((sum, count) => sum + count, 0), 0);
   const clear = () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildUsageAnalysisExport, pruneUsageEvents, summarizeUsage, usageAnalysisCsv, type UiUsageEvent, type UsageActionDefinition, type UsageStore } from "../usageAnalytics";
 
 const event = (changes: Partial<UiUsageEvent> = {}): UiUsageEvent => ({
@@ -33,6 +33,25 @@ describe("利用状況の集計", () => {
     expect(summary[0]).toMatchObject({ uses: 3, activeDays: 3, sessions: 2, eligibleSessions: 3, sessionRate: 2 / 3, classification: "frequent" });
     expect(summary[1]).toMatchObject({ uses: 0, eligibleSessions: 3, classification: "unused" });
     expect(summary[2].classification).toBe("protected");
+  });
+
+  it("利用日数をUTCではなく端末のローカル日付で集計する", () => {
+    const year = vi.spyOn(Date.prototype, "getFullYear").mockReturnValue(2026);
+    const month = vi.spyOn(Date.prototype, "getMonth").mockReturnValue(9);
+    const date = vi.spyOn(Date.prototype, "getDate").mockReturnValue(10);
+    try {
+      const events = [
+        event({ id: "late-night", occurredAt: "2026-10-09T15:30:00.000Z" }),
+        event({ id: "daytime", occurredAt: "2026-10-10T10:00:00.000Z" }),
+      ];
+
+      const summary = summarizeUsage(events, definitions, 30, new Date("2026-10-11T00:00:00.000Z"));
+      expect(summary[0].activeDays).toBe(1);
+    } finally {
+      year.mockRestore();
+      month.mockRestore();
+      date.mockRestore();
+    }
   });
 
   it("90日より古い生イベントを削除する", () => {
