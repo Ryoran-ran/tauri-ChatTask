@@ -1049,13 +1049,12 @@ export function ProjectsModal({ projects, tasks, tags, nonWorkingPeriods, dailyC
 
   return <Modal title="プロジェクト管理" onClose={onClose} wide><div className="goals-layout project-layout">
     <aside>
-      <button className="primary" onClick={add}>＋ プロジェクト追加</button>
+      <button className="primary project-add-button" onClick={add}>＋ プロジェクト追加</button>
       <button type="button" className="project-search-toggle" aria-expanded={searchPanelOpen} onClick={() => { const next = !searchPanelOpen; setSearchPanelOpen(next); localStorage.setItem("chatTaskProjectSearchPanelOpen", String(next)); }}><small>{searchPanelOpen ? "▼" : "▶"}</small><span>検索・絞り込み</span></button>
       {searchPanelOpen && <div className="project-search-panel">
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="プロジェクトを検索" />
         <select value={filter} onChange={(event) => { setFilter(event.target.value); localStorage.setItem("chatTaskProjectFilter", event.target.value); }}><option value="active">進行中のみ</option><option value="all">達成・アーカイブを含む</option></select>
-        <button type="button" className={`project-advanced-filter-open ${advancedFilter.conditions.length ? "active" : ""}`} onClick={() => setAdvancedFilterOpen(true)}>＋ 条件検索（AND・OR）{advancedFilter.conditions.length ? ` ${advancedFilter.conditions.length}件` : ""}</button>
-        <button type="button" className="sort-editor-open" onClick={() => setSortEditorOpen(true)}><span>↕ 並び替え</span><small>{sortRules.length}条件・上から優先</small></button>
+        <div className="project-search-actions"><button type="button" className={`project-advanced-filter-open ${advancedFilter.conditions.length ? "active" : ""}`} onClick={() => setAdvancedFilterOpen(true)}><span>条件</span><small>{advancedFilter.conditions.length ? `${advancedFilter.conditions.length}件` : "追加"}</small></button><button type="button" className="sort-editor-open" onClick={() => setSortEditorOpen(true)}><span>並び替え</span><small>{sortRules.length}件</small></button></div>
       </div>}
       {visible.map((item) => <button key={item.id} className={`project-list-item ${item.id === selectedId ? "active" : ""}`} onClick={() => setSelectedId(item.id)}><span className="project-list-title"><i className={`priority priority-${item.priority}`}>{item.priority}</i><span>{item.title}</span></span><small>{STATUS_LABELS[item.status]}・{progress(item)}%{item.dueDate ? `・期限 ${item.dueDate}` : ""}</small></button>)}
     </aside>
