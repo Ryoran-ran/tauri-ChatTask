@@ -67,6 +67,7 @@ export const USAGE_ACTIONS: UsageActionDefinition[] = [
   { id: "header.gantt", label: "ガントチャート", surface: "main", category: "ヘッダー" },
   { id: "header.weekly", label: "週間予定", surface: "main", category: "ヘッダー" },
   { id: "records.achievements", label: "頑張りの記録", surface: "main", category: "記録・分析" },
+  { id: "records.effort_review", label: "工数振り返り", surface: "main", category: "記録・分析" },
   { id: "records.reflections", label: "振り返り記録", surface: "main", category: "記録・分析" },
   { id: "records.issues", label: "課題一覧", surface: "main", category: "記録・分析" },
   { id: "records.report", label: "まとめ出力", surface: "main", category: "記録・分析", occasionalByDesign: true },
