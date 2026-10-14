@@ -1,6 +1,6 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { releaseTag, requireUnusedVersion } = require("./release-metadata.cjs");
+const { releaseTag, checkReleaseVersion } = require("./release-metadata.cjs");
 
 function fixture({ release, ref } = {}) {
   const absent = async () => { throw Object.assign(new Error("Not Found"), { status: 404 }); };
@@ -13,7 +13,7 @@ function fixture({ release, ref } = {}) {
       git: { getRef: async args => { calls.push(args); return (ref || absent)(); } },
     } },
     context: { repo: { owner: "owner", repo: "chattask" } },
-    core: { setOutput: (key, value) => { outputs[key] = value; } },
+    core: { setOutput: (key, value) => { outputs[key] = value; }, info: () => {} },
   };
 }
 
@@ -27,8 +27,8 @@ test("正式版の番号から更新確認と同じ形式のタグを作る", ()
 
 test("リリース・タグが未使用の時だけ作成を許可する", async () => {
   const deps = fixture();
-  await requireUnusedVersion(deps, "0.1.0");
-  assert.deepEqual(deps.outputs, { version: "0.1.0", tag: "v0.1.0" });
+  await checkReleaseVersion(deps, "0.1.0");
+  assert.deepEqual(deps.outputs, { version: "0.1.0", tag: "v0.1.0", should_create: "true" });
   assert.deepEqual(deps.calls, [
     { owner: "owner", repo: "chattask", per_page: 100 },
     { owner: "owner", repo: "chattask", ref: "tags/v0.1.0" },
@@ -36,29 +36,48 @@ test("リリース・タグが未使用の時だけ作成を許可する", async
 });
 
 for (const draft of [true, false]) {
-  test(`既存の${draft ? "下書き" : "公開リリース"}を上書きしない`, async () => {
+  test(`既存の${draft ? "下書き" : "公開リリース"}はエラーにせずスキップする`, async () => {
     const deps = fixture({ release: async () => [{ tag_name: "v0.1.0", draft }] });
-    await assert.rejects(requireUnusedVersion(deps, "0.1.0"), /既に存在/);
-    assert.deepEqual(deps.outputs, {});
+    await checkReleaseVersion(deps, "0.1.0");
+    assert.deepEqual(deps.outputs, { version: "0.1.0", tag: "v0.1.0", should_create: "false" });
+    assert.equal(deps.calls.length, 1);
   });
 }
 
 test("別バージョンのリリースがあっても新しい版を作成できる", async () => {
   const deps = fixture({ release: async () => [{ tag_name: "v0.0.1" }] });
-  await requireUnusedVersion(deps, "0.1.0");
+  await checkReleaseVersion(deps, "0.1.0");
   assert.equal(deps.outputs.tag, "v0.1.0");
+  assert.equal(deps.outputs.should_create, "true");
+});
+
+test("ビルド後の再確認で同じ版が追加されていたら作成をスキップする", async () => {
+  const releases = [];
+  const deps = fixture({ release: async () => releases });
+  await checkReleaseVersion(deps, "0.1.0");
+  assert.equal(deps.outputs.should_create, "true");
+  releases.push({ tag_name: "v0.1.0", draft: true });
+  await checkReleaseVersion(deps, "0.1.0");
+  assert.equal(deps.outputs.should_create, "false");
+});
+
+test("不正なバージョンではAPIにアクセスせず失敗する", async () => {
+  const deps = fixture();
+  await assert.rejects(checkReleaseVersion(deps, "not-a-version"), /正式版/);
+  assert.deepEqual(deps.calls, []);
+  assert.deepEqual(deps.outputs, {});
 });
 
 test("リリース一覧の404は取得成功として扱わない", async () => {
   const deps = fixture({ release: async () => { throw Object.assign(new Error("repo unavailable"), { status: 404 }); } });
-  await assert.rejects(requireUnusedVersion(deps, "0.1.0"), /repo unavailable/);
+  await assert.rejects(checkReleaseVersion(deps, "0.1.0"), /repo unavailable/);
   assert.deepEqual(deps.outputs, {});
 });
 
-test("リリースがなくても既存タグを使い回さない", async () => {
+test("リリースがなくても既存タグはエラーにせずスキップする", async () => {
   const deps = fixture({ ref: async () => ({ data: { object: { sha: "another-commit" } } }) });
-  await assert.rejects(requireUnusedVersion(deps, "0.1.0"), /タグが既に存在/);
-  assert.deepEqual(deps.outputs, {});
+  await checkReleaseVersion(deps, "0.1.0");
+  assert.deepEqual(deps.outputs, { version: "0.1.0", tag: "v0.1.0", should_create: "false" });
 });
 
 for (const endpoint of ["release", "ref"]) {
@@ -66,7 +85,7 @@ for (const endpoint of ["release", "ref"]) {
     test(`${endpoint} の ${status || "通信"} エラーを未公開と誤認しない`, async () => {
       const failure = Object.assign(new Error("API failed"), { status });
       const deps = fixture({ [endpoint]: async () => { throw failure; } });
-      await assert.rejects(requireUnusedVersion(deps, "0.1.0"), error => error === failure);
+      await assert.rejects(checkReleaseVersion(deps, "0.1.0"), error => error === failure);
       assert.deepEqual(deps.outputs, {});
     });
   }

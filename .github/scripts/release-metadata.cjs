@@ -8,14 +8,20 @@ function releaseTag(version) {
   return `v${version}`;
 }
 
-async function requireUnusedVersion({ github, context, core }, version) {
+async function checkReleaseVersion({ github, context, core }, version) {
   const tag = releaseTag(version);
   const repo = context.repo;
+  const result = (shouldCreate, message) => {
+    core.setOutput("version", version);
+    core.setOutput("tag", tag);
+    core.setOutput("should_create", String(shouldCreate));
+    core.info(message);
+  };
   // List all pages so draft releases without a published tag are checked too.
   // The final check runs with contents:write, which can see repository drafts.
   const releases = await github.paginate(github.rest.repos.listReleases, { ...repo, per_page: 100 });
   if (releases.some(release => release.tag_name === tag)) {
-    throw new Error(`${tag} のリリース（下書きを含む）が既に存在します。既存ファイルは上書きしません。新しいバージョン番号を使用してください。`);
+    return result(false, `${tag} のリリース（下書きを含む）が既に存在するため、作成をスキップします。`);
   }
   let tagExists = true;
   try {
@@ -26,15 +32,14 @@ async function requireUnusedVersion({ github, context, core }, version) {
     tagExists = false;
   }
   if (tagExists) {
-    throw new Error(`${tag} のタグが既に存在します。既存ファイルは上書きしません。新しいバージョン番号を使用してください。`);
+    return result(false, `${tag} のタグが既に存在するため、作成をスキップします。`);
   }
-  core.setOutput("version", version);
-  core.setOutput("tag", tag);
+  result(true, `${tag} は未使用です。リリースの下書きを作成します。`);
 }
 
 module.exports = async function releaseMetadata(dependencies) {
   const config = JSON.parse(readFileSync(resolve(__dirname, "../../chattask-desktop/src-tauri/tauri.conf.json"), "utf8"));
-  await requireUnusedVersion(dependencies, config.version);
+  await checkReleaseVersion(dependencies, config.version);
 };
 module.exports.releaseTag = releaseTag;
-module.exports.requireUnusedVersion = requireUnusedVersion;
+module.exports.checkReleaseVersion = checkReleaseVersion;
