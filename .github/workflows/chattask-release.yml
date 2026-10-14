@@ -1,0 +1,129 @@
+name: ChatTask release draft
+
+# Publishing remains a manual action on the Releases page.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chattask-release-draft
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Test and build macOS DMG
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chattask-desktop/package-lock.json
+      - name: Test release checks
+        run: node --test .github/scripts/release-metadata.test.cjs
+      - name: Check release version is unused
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const check = require('./.github/scripts/release-metadata.cjs');
+            await check({ github, context, core });
+      - name: Install dependencies
+        working-directory: chattask-desktop
+        run: npm ci
+      - name: Test and build frontend
+        working-directory: chattask-desktop
+        run: npm run check
+      - name: Set up Rust for Apple Silicon and Intel
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chattask-desktop/src-tauri
+      - name: Test native backup and storage code
+        working-directory: chattask-desktop/src-tauri
+        run: cargo test --locked
+      - name: Build universal macOS DMG
+        working-directory: chattask-desktop
+        env:
+          # Ad-hoc signing only. Developer ID signing/notarization is not configured.
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run tauri build -- --ci --target universal-apple-darwin --bundles dmg -- --locked
+      - name: Verify app signature and architectures
+        run: |
+          codesign --verify --deep --strict chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app
+          lipo -verify_arch arm64 x86_64 chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app/Contents/MacOS/chattask-desktop
+      - name: Create download checksums
+        working-directory: chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg
+        run: shasum -a 256 ./*.dmg > SHA256SUMS.txt
+      - name: Save release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: chattask-macos-release
+          path: |
+            chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    name: Create release draft
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Build/dependency-install steps do not receive this write permission.
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout built commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Download tested release files
+        uses: actions/download-artifact@v4
+        with:
+          name: chattask-macos-release
+          path: release-files
+      - name: Verify download checksums
+        working-directory: release-files
+        run: sha256sum --check SHA256SUMS.txt
+      - name: Recheck release version before creating draft
+        id: metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const check = require('./.github/scripts/release-metadata.cjs');
+            await check({ github, context, core });
+      - name: Create draft with DMG and generated release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          gh release create "$RELEASE_TAG" release-files/*.dmg release-files/SHA256SUMS.txt \
+            --draft \
+            --target "$RELEASE_COMMIT" \
+            --title "ChatTask v$RELEASE_VERSION" \
+            --notes-file .github/release-notes.md \
+            --generate-notes
+          {
+            echo "### ChatTask v$RELEASE_VERSION の下書きを作成しました"
+            echo ""
+            echo "[Releasesを開く](https://github.com/$GH_REPO/releases)"
+            echo ""
+            echo "DMGの動作と変更内容・データ互換性を確認し、下書きの公開前チェックを更新してから公開してください。"
+            echo "ビルド元コミット: $RELEASE_COMMIT"
+          } >> "$GITHUB_STEP_SUMMARY"
