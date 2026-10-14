@@ -1,6 +1,7 @@
 import { useState, type RefObject } from "react";
 import type { WorkspaceMode } from "../types";
 import { Modal } from "./Modal";
+import { AppUpdatePanel } from "./AppUpdatePanel";
 
 type Category = "general" | "calendar" | "tasks" | "display" | "tools" | "data" | "support";
 
@@ -32,7 +33,7 @@ const CATEGORIES: { id: Category; icon: string; label: string; description: stri
   { id: "display", icon: "◫", label: "表示", description: "一覧・起動時の表示" },
   { id: "tools", icon: "◇", label: "連携・ツール", description: "ローカルツール" },
   { id: "data", icon: "▤", label: "データ管理", description: "バックアップ・入出力" },
-  { id: "support", icon: "?", label: "サポート", description: "使い方を確認" },
+  { id: "support", icon: "?", label: "サポート", description: "使い方・アップデート" },
 ];
 
 export function SettingsCenterModal(props: Props) {
@@ -54,7 +55,7 @@ export function SettingsCenterModal(props: Props) {
         {category === "display" && <><header><small>DISPLAY</small><h3>表示設定</h3><p>一覧と起動時の表示を調整します。</p></header><div className="settings-center-toggles"><label><span><b>定期タスクを一覧で非表示</b><small>必要な日には「今日」の画面へ表示されます</small></span><input type="checkbox" checked={props.hideRecurring} onChange={(event) => props.onHideRecurring(event.target.checked)} /></label><label><span><b>起動時に「今日」を開く</b><small>アプリを開いたとき、今日の予定を最初に表示します</small></span><input type="checkbox" checked={props.openTodayOnStartup} onChange={(event) => props.onOpenTodayOnStartup(event.target.checked)} /></label></div></>}
         {category === "tools" && <><header><small>TOOLS</small><h3>連携・ツール</h3><p>作業で利用するローカルツールを管理します。</p></header><div className="settings-center-list"><button type="button" onClick={() => openChild(props.onTools)}><i>◇</i><span><b>ツール</b><small>コマンドや保存場所などのツール設定を開きます</small></span><em>開く</em></button></div></>}
         {category === "data" && <><header><small>DATA</small><h3>データ管理</h3><p>利用状況、バックアップ、移行操作をまとめています。</p></header><div className="settings-center-list"><button type="button" data-usage-id="settings.usage" onClick={() => openChild(props.onUsageAnalytics)}><i>析</i><span><b>利用状況</b><small>よく使う機能と、あまり使わない機能を確認します</small></span><em>開く</em></button><button type="button" data-usage-id="settings.data" onClick={() => openChild(props.onDataManagement)}><i>保</i><span><b>データ管理・バックアップ</b><small>保存状況の確認とバックアップの管理を行います</small></span><em>開く</em></button><button type="button" data-usage-id="settings.export" onClick={() => openChild(props.onExport)}><i>出</i><span><b>データをエクスポート</b><small>現在のデータをJSONファイルに書き出します</small></span><em>実行</em></button><button type="button" data-usage-id="settings.import" onClick={importData}><i>入</i><span><b>データをインポート</b><small>JSONファイルからデータを読み込みます</small></span><em>選択</em></button></div><div className="settings-center-warning"><strong>データを読み込む前に</strong><span>現在のデータをエクスポートしておくことをおすすめします。</span></div></>}
-        {category === "support" && <><header><small>SUPPORT</small><h3>サポート</h3><p>操作方法や各機能の考え方を確認できます。</p></header><div className="settings-center-list"><button type="button" onClick={() => openChild(props.onHelp)}><i>?</i><span><b>ヘルプ</b><small>ChatTaskの使い方を確認します</small></span><em>開く</em></button></div></>}
+        {category === "support" && <><header><small>SUPPORT</small><h3>サポート</h3><p>操作方法やアプリのアップデートを確認できます。</p></header><AppUpdatePanel onBackup={props.onDataManagement} /><div className="settings-center-list"><button type="button" onClick={() => openChild(props.onHelp)}><i>?</i><span><b>ヘルプ</b><small>ChatTaskの使い方を確認します</small></span><em>開く</em></button></div></>}
       </section>
     </div>
   </Modal>;

@@ -1,5 +1,19 @@
 :root { font-family: Inter, "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1e293b; background: #f1f5f9; font-synthesis: none; }
 * { box-sizing: border-box; }
+.app-update-panel { margin-top: .8rem; padding: .9rem; border: 1px solid #dbe3ee; border-radius: 10px; background: #fff; font-size: .72rem; }
+.app-update-panel > header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.app-update-panel h4 { margin: 0; font-size: .82rem; color: #1e293b; }
+.app-update-panel p { margin: .4rem 0; color: #64748b; line-height: 1.6; }
+.app-update-badge { padding: .3rem .5rem; border-radius: 6px; background: #eff6ff; color: #2563eb; font-weight: 700; }
+.app-update-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+.app-update-actions button, .app-update-panel .settings-center-note button { font-size: .68rem; }
+.app-update-panel .settings-center-note button { justify-self: start; margin-top: .5rem; }
+.app-update-panel .app-update-error { padding: .65rem; border-radius: 6px; background: #fff7ed; color: #9a3412; }
+.app-update-result { margin: .8rem 0; padding: .8rem; border: 1px solid #bfdbfe; border-radius: 8px; background: #f8fbff; overflow-wrap: anywhere; }
+.app-update-result > strong { color: #1d4ed8; }
+.app-update-result h5 { margin: .8rem 0 .4rem; font-size: .7rem; }
+.app-update-notes { max-height: 240px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: inherit; line-height: 1.7; color: #334155; }
+.app-update-panel small { color: #64748b; }
 .app-error-screen { min-height: 100vh; display: grid; place-items: center; padding: 2rem; background: #f8fafc; color: #1e293b; }
 .app-error-screen section { width: min(760px, 100%); border: 1px solid #fecaca; border-radius: 12px; padding: 1.25rem; background: white; box-shadow: 0 12px 35px #0f172a1a; }
 .app-error-screen h1 { margin-top: 0; color: #b91c1c; font-size: 1.2rem; }
