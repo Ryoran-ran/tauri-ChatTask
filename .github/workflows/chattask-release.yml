@@ -2,6 +2,8 @@ name: ChatTask release draft
 
 # Publishing remains a manual action on the Releases page.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -12,8 +14,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Check whether a release is needed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Drafts may have no tag yet; repository write access lets this check see them.
+    permissions:
+      contents: write
+    outputs:
+      should_create: ${{ steps.metadata.outputs.should_create }}
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Test release checks
+        run: node --test .github/scripts/release-metadata.test.cjs
+      - name: Check release version
+        id: metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const check = require('./.github/scripts/release-metadata.cjs');
+            await check({ github, context, core });
+      - name: Report skipped release
+        if: steps.metadata.outputs.should_create == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await core.summary
+              .addHeading('リリース作成をスキップしました')
+              .addRaw('同じバージョンのリリース（下書きを含む）またはタグが既に存在します。新しい版を配布する場合は tauri.conf.json の version を更新してください。')
+              .write();
+
   build:
     name: Test and build macOS DMG
+    needs: prepare
+    if: needs.prepare.outputs.should_create == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -28,14 +66,6 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: chattask-desktop/package-lock.json
-      - name: Test release checks
-        run: node --test .github/scripts/release-metadata.test.cjs
-      - name: Check release version is unused
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const check = require('./.github/scripts/release-metadata.cjs');
-            await check({ github, context, core });
       - name: Install dependencies
         working-directory: chattask-desktop
         run: npm ci
@@ -64,7 +94,8 @@ jobs:
       - name: Verify app signature and architectures
         run: |
           codesign --verify --deep --strict chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app
-          lipo -verify_arch arm64 x86_64 chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app/Contents/MacOS/chattask-desktop
+          lipo chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app/Contents/MacOS/chattask-desktop -verify_arch arm64
+          lipo chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app/Contents/MacOS/chattask-desktop -verify_arch x86_64
       - name: Create download checksums
         working-directory: chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg
         run: shasum -a 256 ./*.dmg > SHA256SUMS.txt
@@ -108,6 +139,7 @@ jobs:
             const check = require('./.github/scripts/release-metadata.cjs');
             await check({ github, context, core });
       - name: Create draft with DMG and generated release notes
+        if: steps.metadata.outputs.should_create == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
