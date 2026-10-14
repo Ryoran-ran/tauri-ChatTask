@@ -58,7 +58,9 @@ jobs:
         env:
           # Ad-hoc signing only. Developer ID signing/notarization is not configured.
           APPLE_SIGNING_IDENTITY: "-"
-        run: npm run tauri build -- --ci --target universal-apple-darwin --bundles dmg -- --locked
+        # Keep the .app for the signature/architecture checks below.
+        # With only "dmg", Tauri removes the intermediate .app after packaging.
+        run: npm run tauri build -- --ci --target universal-apple-darwin --bundles app,dmg -- --locked
       - name: Verify app signature and architectures
         run: |
           codesign --verify --deep --strict chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app
