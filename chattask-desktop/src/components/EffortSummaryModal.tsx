@@ -82,6 +82,17 @@ export function EffortSummaryModal({ tasks, completedTasks = [], projects, tags,
       const bTag = tags.find((tag) => tag.id === b.projectTagId)?.name || "タグなし";
       return aTag.localeCompare(bTag, "ja") || a.title.localeCompare(b.title, "ja");
     }), [completedTasks, tagId, tags]);
+  const completedTaskGroups = useMemo(() => {
+    const groups = new Map<string, { tag?: ProjectTag; tasks: Task[] }>();
+    visibleCompletedTasks.forEach((task) => {
+      const tag = tags.find((item) => item.id === task.projectTagId);
+      const key = tag?.id || "untagged";
+      const group = groups.get(key) || { tag, tasks: [] };
+      group.tasks.push(task);
+      groups.set(key, group);
+    });
+    return [...groups.entries()].map(([key, group]) => ({ key, ...group }));
+  }, [tags, visibleCompletedTasks]);
   const completedTaskHours = (task: Task) => Object.entries(task.dailyActualHours || {})
     .filter(([key]) => key === date || key.startsWith(`${date}::`))
     .reduce((sum, [, hours]) => sum + (Number(hours) || 0), 0);
@@ -124,11 +135,13 @@ export function EffortSummaryModal({ tasks, completedTasks = [], projects, tags,
       </div>
       <section className="effort-summary-completed">
         <header><div><strong>完了したタスク</strong><small>この日に完了したタスク（実績工数がないものを含む）</small></div><b>{visibleCompletedTasks.length}件</b></header>
-        {visibleCompletedTasks.length ? <div className="effort-summary-completed-list">{visibleCompletedTasks.map((task) => {
-          const tag = tags.find((item) => item.id === task.projectTagId);
-          const hours = completedTaskHours(task);
-          return <div key={task.id}><span className="effort-summary-completed-tag">{tag ? <><TagIcon tag={tag} /><small>{tag.name}</small></> : <><i /><small>タグなし</small></>}</span><strong>{task.title}</strong><em>完了</em><b>{formatHours(hours)}h</b></div>;
-        })}</div> : <p>この日に完了したタスクはありません。</p>}
+        {completedTaskGroups.length ? <div className="effort-summary-completed-groups">{completedTaskGroups.map((group) => <section className="effort-summary-completed-group" key={group.key}>
+          <header>{group.tag ? <TagIcon tag={group.tag} /> : <i />}<strong>{group.tag?.name || "タグなし"}</strong><small>{group.tasks.length}件</small></header>
+          <div>{group.tasks.map((task) => {
+            const hours = completedTaskHours(task);
+            return <article key={task.id}><strong>{task.title}</strong><em>完了</em><b>{formatHours(hours)}h</b></article>;
+          })}</div>
+        </section>)}</div> : <p>この日に完了したタスクはありません。</p>}
       </section>
     </div>
   </Modal>;
