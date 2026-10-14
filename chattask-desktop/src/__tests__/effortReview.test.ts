@@ -18,6 +18,42 @@ describe("工数振り返り", () => {
     expect(result).toMatchObject({ plannedHours: 2, actualHours: 3, missingPlannedCount: 0, missingActualCount: 0 });
   });
 
+  it("今日のページで対応済みにした作業を予定未完了でも集計する", () => {
+    const task = createTask();
+    task.title = "日別作業のタスク";
+    task.plannedRanges = [
+      { id: "daily", title: "今日の作業", startDate: "2026-10-14", endDate: "2026-10-14", plannedHours: 5, status: "in-progress" },
+    ];
+    task.dailyPlanCompleted = { "2026-10-14::daily": true };
+    task.dailyActualHours = { "2026-10-14::daily": 5 };
+
+    const result = buildEffortReview([task], [], 30, "2026-10-14");
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      kind: "daily-work",
+      scheduleTitle: "今日の作業",
+      plannedHours: 5,
+      actualHours: 5,
+      accuracyPercent: 100,
+    });
+    expect(result.taskEntries[0].schedules).toEqual(result.entries);
+  });
+
+  it("予定全体が完了済みなら日別作業を二重計上しない", () => {
+    const task = createTask();
+    task.plannedRanges = [
+      { id: "completed", title: "完了予定", startDate: "2026-10-14", endDate: "2026-10-14", plannedHours: 2, status: "completed", completedAt: "2026-10-14T12:00:00+09:00" },
+    ];
+    task.dailyPlanCompleted = { "2026-10-14::completed": true };
+    task.dailyActualHours = { "2026-10-14::completed": 2 };
+
+    const result = buildEffortReview([task], [], 30, "2026-10-14");
+
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0].kind).toBe("completed-schedule");
+  });
+
   it("同じ日の別予定の実績を混ぜない", () => {
     const task = createTask();
     task.plannedRanges = [
@@ -30,6 +66,29 @@ describe("工数振り返り", () => {
 
     expect(result.entries.find((entry) => entry.id.endsWith(":first"))?.actualHours).toBe(1);
     expect(result.entries.find((entry) => entry.id.endsWith(":second"))?.actualHours).toBe(5);
+  });
+
+  it("複数の完了予定をタスク単位へまとめて作業精度を算出する", () => {
+    const task = createTask();
+    task.title = "まとめるタスク";
+    task.plannedRanges = [
+      { id: "over", title: "前半", startDate: "2026-10-10", endDate: "2026-10-10", plannedHours: 2, status: "completed" },
+      { id: "under", title: "後半", startDate: "2026-10-11", endDate: "2026-10-11", plannedHours: 2, status: "completed" },
+    ];
+    task.dailyActualHours = { "2026-10-10::over": 3, "2026-10-11::under": 1 };
+
+    const result = buildEffortReview([task], [], 30, "2026-10-14");
+
+    expect(result.taskEntries).toHaveLength(1);
+    expect(result.taskEntries[0]).toMatchObject({
+      taskTitle: "まとめるタスク",
+      scheduleCount: 2,
+      measuredScheduleCount: 2,
+      plannedHours: 4,
+      actualHours: 4,
+      varianceHours: 0,
+      accuracyPercent: 50,
+    });
   });
 
   it("未入力を精度から除外して件数を分ける", () => {
