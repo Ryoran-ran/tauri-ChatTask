@@ -35,6 +35,12 @@ const createButtonAttributes = (html: string) => {
 };
 
 describe("今日のグループ分けの再利用", () => {
+  it("対応する作業があればAI相談を開けるが、確定済みの日は開けない", () => {
+    const button = (html: string) => html.match(/<button\b([^>]*)>AIに着手順を相談<\/button>/)![1];
+    expect(button(renderToday(2, []))).not.toContain("disabled");
+    expect(button(renderToday(0, []))).toContain("disabled");
+    expect(button(renderToday(2, [], `${date}T18:00:00`))).toContain("disabled");
+  });
   it("全作業を一度まとめても作成ボタンを有効なままにする", () => {
     const html = renderToday(4, [{ id: "first", name: "最初のグループ", itemKeys: [0, 1, 2, 3].map(index => `task${index}:range${index}`) }]);
     expect(html).toContain("最初のグループ");

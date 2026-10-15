@@ -9,6 +9,8 @@ import { TagIcon } from "./TagIcon";
 import { HabitsPanel } from "./HabitsPanel";
 import { readExecutionGroups, regroupExecutionItems, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
 import { historyWorkTitle } from "../historyEntry";
+import { TodayOrderAiDialog } from "./TodayOrderAiDialog";
+import { buildTodayOrderAiApplication, collectTodayOrderAiTaskContexts, type TodayOrderAiSnapshot } from "../services/todayOrderAi";
 const todayExecutionLaterOpenKey = "chatTaskTodayExecutionLaterOpen";
 const todayExecutionHoldingOpenKey = "chatTaskTodayExecutionHoldingOpen";
 export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inboxItems, todayOrder, onTodayOrder, onHabitsChange, onOpenInbox, onReviewInbox, activity, periods, date, note, finalizedAt, activeTimerTaskId, onDate, onNote, onFinalize, onUnfinalize, onUpdateTask, onCancelCompletion, onStartTimer, onSelect, onOpenDocuments, onClose }: { workspaceMode: WorkspaceMode; tasks: Task[]; habits: Habit[]; projects: Goal[]; tags: ProjectTag[]; inboxItems: InboxItem[]; todayOrder: string[]; onTodayOrder: (order: string[]) => void; onHabitsChange: (habits: Habit[]) => void; onOpenInbox: (itemId?: string) => void; onReviewInbox: (id: string) => void; activity: ActivityEvent[]; periods: NonWorkingPeriod[]; date: string; note: string; finalizedAt: string; activeTimerTaskId?: string; onDate: (date: string) => void; onNote: (note: string) => void; onFinalize: () => void; onUnfinalize: () => void; onUpdateTask: (id: string, changes: Partial<Task>, history?: string) => void; onCancelCompletion: (taskId: string, completionEventId: string) => void; onStartTimer: (task: Task, planKey: string, minutes: number, hasPlannedHours: boolean) => boolean; onSelect: (id: string) => void; onOpenDocuments: (id: string) => void; onClose: () => void }) {
@@ -26,6 +28,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   const [todayView, setTodayView] = useState<"board" | "order">(() => localStorage.getItem("chatTaskTodayView") === "order" ? "order" : "board");
   const [executionGroupsState, setExecutionGroupsState] = useState(() => ({ date, groups: readExecutionGroups(date) }));
   const [executionGroupDialogOpen, setExecutionGroupDialogOpen] = useState(false);
+  const [todayOrderAiOpen, setTodayOrderAiOpen] = useState(false);
   const [executionGroupName, setExecutionGroupName] = useState("");
   const [selectedExecutionGroupKeys, setSelectedExecutionGroupKeys] = useState<Set<string>>(() => new Set());
   const [expandedExecutionGroupIds, setExpandedExecutionGroupIds] = useState<Set<string>>(() => new Set());
@@ -321,6 +324,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     setExpandedTaskKeys(new Set());
     setExecutionGroupsState({ date, groups: readExecutionGroups(date) });
     setExecutionGroupDialogOpen(false);
+    setTodayOrderAiOpen(false);
     setExecutionGroupName("");
     setSelectedExecutionGroupKeys(new Set());
     setExpandedExecutionGroupIds(new Set());
@@ -857,6 +861,34 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     executionUnits.push({ key: `group:${group.id}`, group, items: group.itemKeys.map((key) => executionItemMap.get(key)).filter((candidate): candidate is ExecutionItem => Boolean(candidate)) });
   });
   const groupableExecutionItems = executionUnits.flatMap((unit) => unit.items);
+  const todayOrderAiUnits: TodayOrderAiSnapshot["units"] = executionUnits.map(unit => ({
+      id: unit.key,
+      title: unit.group?.name || (unit.items[0].kind === "scheduled" ? scheduleTitle(unit.items[0].scheduled.task, unit.items[0].scheduled.range) : unit.items[0].occurrence.task.title),
+      grouped: Boolean(unit.group),
+      items: unit.items.map(item => {
+        const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task;
+        const range = item.kind === "scheduled" ? item.scheduled.range : null;
+        const plannedHours = range ? plannedRangeHoursForDate(range, date, periods, workingDateOverrides) : Number(task.plannedHours) || 0;
+        return {
+          id: executionItemKey(item), taskId: task.id,
+          title: item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title,
+          taskTitle: task.title, kind: item.kind,
+          status: STATUS_LABELS[item.kind === "scheduled" ? itemStatus(item.scheduled) : task.status],
+          priority: task.priority, tag: tags.find(tag => tag.id === task.projectTagId)?.name || "タグなし",
+          dueDate: task.dueDate, startDate: range?.startDate || date, endDate: range?.endDate || date,
+          plannedHours: plannedHours > 0 ? plannedHours : null,
+          actualHours: item.kind === "scheduled" ? itemActualHours(item.scheduled) : Number(task.dailyActualHours?.[date]) || 0,
+          nextAction: task.nextAction, description: range?.description || range?.note || "",
+          memo: item.kind === "scheduled" ? task.dailyPlans[item.scheduled.planKey] || "" : task.recurrenceRecords.find(record => record.date === item.occurrence.occurrenceDate)?.memo || task.recurrenceMemoTemplate,
+          waitingFor: task.waitingFollowUp ? [task.waitingFollowUp.party, task.waitingFollowUp.memo, task.waitingFollowUp.reviewDate].filter(Boolean).join(" / ") : "",
+          relatedTasks: task.relatedTasks.map(link => ({ taskId: link.taskId, relation: link.relation })),
+        };
+      }),
+    }));
+  const todayOrderAiSnapshot: TodayOrderAiSnapshot = {
+    date, units: todayOrderAiUnits,
+    tasks: collectTodayOrderAiTaskContexts(todayOrderAiUnits, tasks, tags),
+  };
   const saveExecutionGroups = (groups: ExecutionGroup[]) => {
     setExecutionGroupsState({ date, groups });
     persistExecutionGroups(date, groups);
@@ -1165,8 +1197,25 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
         <button type="button" className={todayView === "order" ? "active" : ""} onClick={() => { setTodayView("order"); localStorage.setItem("chatTaskTodayView", "order"); }}>対応順</button>
       </div>
       {todayView === "board" && <label className="today-group-toggle"><input type="checkbox" checked={groupByTag} onChange={(event) => changeGroupByTag(event.target.checked)} />案件タグ別</label>}
+      <button type="button" className="today-order-ai-trigger" disabled={finalized || Boolean(nonWorking) || !executionUnits.length} onClick={() => setTodayOrderAiOpen(true)}>AIに着手順を相談</button>
       <span>「記録」で対応内容を入力</span>
     </div>
+    {todayOrderAiOpen && <TodayOrderAiDialog key={date} snapshot={todayOrderAiSnapshot} disabled={finalized || Boolean(nonWorking)} onClose={() => setTodayOrderAiOpen(false)} onApply={(plan, request) => {
+      if (finalized || nonWorking) return "確定済みの日や非稼働日には対応順を反映できません。";
+      try {
+        const result = buildTodayOrderAiApplication(plan, request, todayOrderAiSnapshot, executionGroups, generateId);
+        const items = new Map(executionQueue.map(item => [executionItemKey(item), item]));
+        // Persist grouping before updating React state, so a failed local write
+        // cannot leave only the order half of a grouping proposal applied.
+        if (plan.groups?.length) persistExecutionGroups(date, result.groups);
+        persistExecutionOrder(result.queueKeys.map(key => items.get(key)!));
+        if (plan.groups?.length) setExecutionGroupsState({ date, groups: result.groups });
+        setTodayView("order");
+        try { localStorage.setItem("chatTaskTodayView", "order"); } catch { /* View preference is optional. */ }
+        setTodayOrderAiOpen(false);
+        return null;
+      } catch (cause) { return cause instanceof Error ? cause.message : "対応順を反映できませんでした。"; }
+    }} />}
     <div className="today-sections">
       {todayView === "order" && !nonWorking ? executionOrderSection() : scheduledSectionCard(nonWorking ? "休暇日の予定" : "この日にやること", planned, "予定されたタスクはありません。", !nonWorking)}
       {waitingReviewSection()}
