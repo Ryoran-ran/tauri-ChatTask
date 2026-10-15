@@ -7,7 +7,7 @@ import { WorkDatePicker } from "./WorkDatePicker";
 import { EffortSummaryModal } from "./EffortSummaryModal";
 import { TagIcon } from "./TagIcon";
 import { HabitsPanel } from "./HabitsPanel";
-import { readExecutionGroups, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
+import { readExecutionGroups, regroupExecutionItems, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
 import { historyWorkTitle } from "../historyEntry";
 const todayExecutionLaterOpenKey = "chatTaskTodayExecutionLaterOpen";
 const todayExecutionHoldingOpenKey = "chatTaskTodayExecutionHoldingOpen";
@@ -856,8 +856,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     addedExecutionGroupIds.add(group.id);
     executionUnits.push({ key: `group:${group.id}`, group, items: group.itemKeys.map((key) => executionItemMap.get(key)).filter((candidate): candidate is ExecutionItem => Boolean(candidate)) });
   });
-  const groupedExecutionItemKeys = new Set(activeExecutionGroups.flatMap((group) => group.itemKeys));
-  const groupableExecutionItems = executionQueue.filter((item) => !groupedExecutionItemKeys.has(executionItemKey(item)));
+  const groupableExecutionItems = executionUnits.flatMap((unit) => unit.items);
   const saveExecutionGroups = (groups: ExecutionGroup[]) => {
     setExecutionGroupsState({ date, groups });
     persistExecutionGroups(date, groups);
@@ -913,16 +912,15 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   };
   const createExecutionGroup = () => {
     if (finalized || selectedExecutionGroupKeys.size < 2) return;
-    const selectedItems = executionQueue.filter((item) => selectedExecutionGroupKeys.has(executionItemKey(item)));
-    if (selectedItems.length < 2) return;
-    const firstSelectedIndex = executionQueue.findIndex((item) => selectedExecutionGroupKeys.has(executionItemKey(item)));
-    const unselectedItems = executionQueue.filter((item) => !selectedExecutionGroupKeys.has(executionItemKey(item)));
-    const insertionIndex = executionQueue.slice(0, firstSelectedIndex).filter((item) => !selectedExecutionGroupKeys.has(executionItemKey(item))).length;
-    const nextQueue = [...unselectedItems.slice(0, insertionIndex), ...selectedItems, ...unselectedItems.slice(insertionIndex)];
-    const group: ExecutionGroup = { id: generateId(), name: executionGroupName.trim() || "作業グループ", itemKeys: selectedItems.map(executionItemKey) };
+    const result = regroupExecutionItems(groupableExecutionItems.map(executionItemKey), activeExecutionGroups, {
+      id: generateId(), name: executionGroupName.trim() || "作業グループ", itemKeys: [...selectedExecutionGroupKeys],
+    });
+    if (!result) return;
+    const nextQueue = result.queueKeys.map((key) => executionItemMap.get(key)).filter((item): item is ExecutionItem => Boolean(item));
     persistExecutionOrder(nextQueue);
-    saveExecutionGroups([...activeExecutionGroups, group]);
+    saveExecutionGroups(result.groups);
     setExecutionGroupDialogOpen(false);
+    setSelectedExecutionGroupKeys(new Set());
   };
   const dissolveExecutionGroup = (groupId: string) => {
     if (finalized) return;
@@ -1007,7 +1005,30 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
       {executionHolding.length > 0 && <section className="execution-holding-group"><button type="button" className="execution-holding-toggle" aria-expanded={executionHoldingOpen} onClick={() => updateExecutionHoldingOpen(!executionHoldingOpen)}><span><strong>一時待ち</strong><small>{executionHolding.length}件</small></span><b>{executionHoldingOpen ? "折りたたむ ▲" : "一覧を表示 ▼"}</b></button>{executionHoldingOpen && <ol className="execution-unit-list">{executionHolding.map((held) => executionOrderRow(held.item, "待", "holding", { key: `holding:${executionItemKey(held.item)}`, items: [held.item] }, -1, undefined, held))}</ol>}</section>}
     </div> : <p className="muted">順番を設定できる作業はありません。</p>}
     {executionUnset.length > 0 && <div className="execution-order-unset"><h4>順番未設定 <small>{executionUnset.length}件</small></h4>{executionUnset.map((item) => { const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task; const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title; return <button type="button" key={executionItemKey(item)} disabled={finalized} onClick={() => addToExecutionOrder(item)}><span>＋</span><strong>{title}</strong><small>順番の最後へ追加</small></button>; })}</div>}
-    {executionGroupDialogOpen && <div className="move-dialog-backdrop" onPointerDown={() => setExecutionGroupDialogOpen(false)}><section className="move-panel execution-group-dialog" role="dialog" aria-modal="true" aria-label="作業グループを作成" onPointerDown={(event) => event.stopPropagation()}><header><div><small>並行して対応するタスクをまとめる</small><h3>作業グループを作成</h3></div><button type="button" aria-label="閉じる" onClick={() => setExecutionGroupDialogOpen(false)}>×</button></header><label>グループ名<input autoFocus value={executionGroupName} onChange={(event) => setExecutionGroupName(event.target.value)} placeholder="例：マージ依頼まとめ" /></label><div className="execution-group-candidates">{groupableExecutionItems.map((item) => { const key = executionItemKey(item); const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task; const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title; return <label className={selectedExecutionGroupKeys.has(key) ? "selected" : ""} key={key}><input type="checkbox" checked={selectedExecutionGroupKeys.has(key)} onChange={(event) => setSelectedExecutionGroupKeys((current) => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next; })} /><span><strong>{title}</strong><small className="execution-group-related-task">関連Task：{task.title}</small><small className="execution-group-candidate-tag">案件タグ：{tags.find((tag) => tag.id === task.projectTagId)?.name || "タグなし"}</small></span></label>; })}</div><footer><span>2件以上選択してください</span><button type="button" onClick={() => setExecutionGroupDialogOpen(false)}>キャンセル</button><button type="button" className="primary" disabled={selectedExecutionGroupKeys.size < 2} onClick={createExecutionGroup}>グループを作成（{selectedExecutionGroupKeys.size}件）</button></footer></section></div>}
+    {executionGroupDialogOpen && <div className="move-dialog-backdrop" onPointerDown={() => setExecutionGroupDialogOpen(false)}>
+      <section className="move-panel execution-group-dialog" role="dialog" aria-modal="true" aria-label="作業グループを作成" onPointerDown={(event) => event.stopPropagation()}>
+        <header><div><small>グループ内の作業も選べます。選んだ作業は新しいグループへ移動します。</small><h3>作業グループを作成</h3></div><button type="button" aria-label="閉じる" onClick={() => setExecutionGroupDialogOpen(false)}>×</button></header>
+        <label>グループ名<input autoFocus value={executionGroupName} onChange={(event) => setExecutionGroupName(event.target.value)} placeholder="例：マージ依頼まとめ" /></label>
+        <div className="execution-group-candidates">{groupableExecutionItems.map((item) => {
+          const key = executionItemKey(item);
+          const task = item.kind === "scheduled" ? item.scheduled.task : item.occurrence.task;
+          const title = item.kind === "scheduled" ? scheduleTitle(task, item.scheduled.range) : task.title;
+          const currentGroup = executionGroupByItemKey.get(key);
+          return <label className={`${currentGroup ? "is-grouped" : ""} ${selectedExecutionGroupKeys.has(key) ? "selected" : ""}`} key={key}>
+            <input type="checkbox" checked={selectedExecutionGroupKeys.has(key)} onChange={(event) => setSelectedExecutionGroupKeys((current) => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next; })} />
+            <span>
+              <strong>{title}</strong>
+              <small className={`execution-group-membership ${currentGroup ? "is-grouped" : "is-ungrouped"}`}>
+                {currentGroup ? <><i aria-hidden="true">▣</i>所属：{currentGroup.name}</> : "グループ未所属"}
+              </small>
+              <small className="execution-group-related-task">関連Task：{task.title}</small>
+              <small className="execution-group-candidate-tag">案件タグ：{tags.find((tag) => tag.id === task.projectTagId)?.name || "タグなし"}</small>
+            </span>
+          </label>;
+        })}</div>
+        <footer><span>2件以上選択してください</span><button type="button" onClick={() => setExecutionGroupDialogOpen(false)}>キャンセル</button><button type="button" className="primary" disabled={finalized || selectedExecutionGroupKeys.size < 2} onClick={createExecutionGroup}>グループを作成（{selectedExecutionGroupKeys.size}件）</button></footer>
+      </section>
+    </div>}
   </section>;
   const grouped = <T,>(list: T[], taskFor: (item: T) => Task) => {
     const result = new Map<string, { tag?: ProjectTag; items: T[] }>();
