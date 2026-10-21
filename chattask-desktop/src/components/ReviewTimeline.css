@@ -1,0 +1,10 @@
+.review-timeline .verification-timeline-list > article .verification-timeline-entry { width: min(100%, 760px); }
+.review-timeline .verification-timeline-entry-title > button { cursor: pointer; }
+.review-timeline .verification-timeline-entry-actions > button.review-timeline-undo { color: #2563eb; }
+.review-timeline .verification-timeline-entry-actions > button.review-timeline-undo:hover { background: #eff6ff; }
+.review-timeline .verification-timeline-body > p { font-weight: 500; }
+.review-timeline .verification-timeline-editor > textarea { min-height: 90px; }
+.review-timeline .verification-timeline-form select,
+.review-timeline .verification-timeline-form textarea { width: 100%; min-width: 0; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
+.review-timeline .verification-timeline-form select { min-height: 38px; padding: 0.4rem 0.65rem; }
+.review-timeline .verification-timeline-form textarea { min-height: 180px; padding: 0.65rem; resize: vertical; }

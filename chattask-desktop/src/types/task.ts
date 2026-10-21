@@ -1,6 +1,7 @@
 import type {
   TaskChecklistItem,
   TaskCodeReviewRun,
+  TaskCodeReviewTimelineEntry,
   TaskTestRun,
   TaskVerificationTimelineEntry,
 } from "./review";
@@ -250,6 +251,8 @@ export interface Task {
   reviewChecklist?: TaskChecklistItem[];
   /** リポジトリ単位で実施したコードレビューの履歴。 */
   codeReviewRuns?: TaskCodeReviewRun[];
+  /** コードレビュー指摘の状態変更とメモの履歴。 */
+  codeReviewTimeline?: TaskCodeReviewTimelineEntry[];
   /** Diffから作成したテスト内容と実施状況の記録。 */
   testRuns?: TaskTestRun[];
   /** 動作確認中の状態変更、不具合メモ、画像などの時系列記録。 */
