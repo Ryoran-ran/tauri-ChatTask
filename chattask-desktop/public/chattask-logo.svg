@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ChatTask">
+  <defs>
+    <linearGradient id="background" x1="60" y1="46" x2="452" y2="466" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#317cf4"/>
+      <stop offset="1" stop-color="#1751ba"/>
+    </linearGradient>
+  </defs>
+  <rect x="28" y="28" width="456" height="456" rx="116" fill="url(#background)"/>
+  <path d="M160 124h192c34 0 62 28 62 62v127c0 34-28 62-62 62H246l-83 52 17-55c-46-8-82-48-82-96v-90c0-34 28-62 62-62Z" fill="#fff"/>
+  <path d="m174 250 59 58 108-111" fill="none" stroke="#1b60d0" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

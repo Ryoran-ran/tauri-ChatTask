@@ -5,6 +5,8 @@ import { addAttachment, listAttachments, removeAttachment, type Attachment } fro
 import { AttachmentCards } from "./AttachmentCards";
 import { Modal } from "./Modal";
 import { parseReviewChecklist, TaskReviewChecklist } from "./TaskReviewChecklist";
+import { ReviewTimeline } from "./ReviewTimeline";
+import { canUndoReviewStatus, reviewStatusChanges, undoReviewStatus } from "../reviewTimeline";
 import { defaultReviewBaseBranch, gitDiffClipboardCommand, reviewBaseBranchCandidates } from "../reviewBranches";
 import { ignoredDecisionPrompt, relevantIgnoredReviewDecisions } from "../reviewIgnoreDecisions";
 import "./CodeReviewActivityBar.css";
@@ -282,7 +284,7 @@ ${testPoints.filter(([id]) => selectedPoints.includes(id)).map(([, label]) => `-
 ${sources.map(({ repository, base, target, diff }) => `### ${repository.name}（${base || "main"} → ${target || "HEAD"}）\n${diff}`).join("\n\n")}`;
 
 export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task; repositories: GithubRepository[]; onUpdate: (changes: Partial<Task>, historyText?: string) => void }) {
-  type ReviewView = "review-prompt" | "checklist" | "closed" | "history" | "test-prompt" | "tests" | "timeline" | "tests-closed" | "tests-history";
+  type ReviewView = "review-prompt" | "checklist" | "review-timeline" | "closed" | "history" | "test-prompt" | "tests" | "timeline" | "tests-closed" | "tests-history";
   const taskId = task.id;
   const viewStorageKey = `chatTaskCodeReviewView:${taskId}`;
   const repositoryStorageKey = `chatTaskCodeReviewRepository:${taskId}`;
@@ -292,7 +294,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const [activeView, setActiveView] = useState<ReviewView>(() => {
     const saved = localStorage.getItem(viewStorageKey);
     if (saved === "prompt") return localStorage.getItem(`chatTaskCodeReviewPromptMode:${taskId}`) === "test" ? "test-prompt" : "review-prompt";
-    return saved === "checklist" || saved === "closed" || saved === "history" || saved === "test-prompt" || saved === "tests" || saved === "timeline" || saved === "tests-closed" || saved === "tests-history" ? saved : "review-prompt";
+    return saved === "checklist" || saved === "review-timeline" || saved === "closed" || saved === "history" || saved === "test-prompt" || saved === "tests" || saved === "timeline" || saved === "tests-closed" || saved === "tests-history" ? saved : "review-prompt";
   });
   const [lastReviewView, setLastReviewView] = useState<ReviewView>(() => ["test-prompt", "tests", "timeline", "tests-closed", "tests-history"].includes(activeView) ? "review-prompt" : activeView);
   const [lastTestView, setLastTestView] = useState<ReviewView>(() => ["test-prompt", "tests", "timeline", "tests-closed", "tests-history"].includes(activeView) ? activeView : "test-prompt");
@@ -345,6 +347,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const [selectedPoints, setSelectedPoints] = useState<string[]>(reviewPoints.map(([id]) => id));
   const [selectedTestPoints, setSelectedTestPoints] = useState<string[]>(testPoints.map(([id]) => id));
   const [timelineText, setTimelineText] = useState("");
+  const [reviewTimelineFilterItemId, setReviewTimelineFilterItemId] = useState("");
   const [timelineKind, setTimelineKind] = useState<"note" | "issue" | "retest">("note");
   const [timelineCheckIds, setTimelineCheckIds] = useState<string[]>([]);
   const [timelineFilterCheckId, setTimelineFilterCheckId] = useState("");
@@ -371,6 +374,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const timelineListRef = useRef<HTMLDivElement>(null);
 
   const checklist = task.reviewChecklist || [];
+  const reviewTimeline = task.codeReviewTimeline || [];
   const verificationTimeline = task.verificationTimeline || [];
   const selectedRepository = repositories.find((repository) => repository.id === selectedRepositoryId);
   const baseBranchCandidates = reviewBaseBranchCandidates(task, selectedRepository);
@@ -489,7 +493,21 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   };
 
   const updateChecklist = (items: TaskChecklistItem[], historyText?: string) => {
-    onUpdate({ reviewChecklist: items }, historyText);
+    const changes = reviewStatusChanges(checklist, items);
+    onUpdate({ reviewChecklist: items, ...(changes.length ? { codeReviewTimeline: [...reviewTimeline, ...changes] } : {}) }, historyText);
+  };
+  const openReviewTimeline = (itemId = "") => {
+    setReviewTimelineFilterItemId(itemId);
+    selectView("review-timeline");
+  };
+  const undoReviewTimelineEntry = (entry: NonNullable<Task["codeReviewTimeline"]>[number]) => {
+    const item = checklist.find((candidate) => candidate.id === entry.itemId);
+    if (!item || !canUndoReviewStatus(entry, item, reviewTimeline)) return;
+    const { restored, reversal } = undoReviewStatus(entry, item);
+    onUpdate({
+      reviewChecklist: checklist.map((candidate) => candidate.id === item.id ? restored : candidate),
+      codeReviewTimeline: [...reviewTimeline, reversal],
+    }, `コードレビュー指摘「${item.title}」の状態変更を元に戻しました。`);
   };
   const updateReviewData = (items: TaskChecklistItem[], runs: NonNullable<Task["codeReviewRuns"]>, historyText?: string) => {
     onUpdate({ reviewChecklist: items, codeReviewRuns: runs }, historyText);
@@ -658,8 +676,10 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       runItemIds.push(nextItem.id);
       addedCount += 1;
     });
+    const changes = reviewStatusChanges(checklist, nextChecklist, createdAt);
     onUpdate({
       reviewChecklist: nextChecklist,
+      ...(changes.length ? { codeReviewTimeline: [...reviewTimeline, ...changes] } : {}),
       codeReviewRuns: [...(task.codeReviewRuns || []), {
         id: runId,
         repositoryId,
@@ -1138,6 +1158,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         <p>コードレビュー</p>
         <button type="button" className={activeView === "review-prompt" ? "active" : ""} aria-pressed={activeView === "review-prompt"} onClick={() => selectView("review-prompt")}><span>⌘</span><div><strong>プロンプト生成</strong><small>リポジトリごとにレビュー</small></div></button>
         <button type="button" className={activeView === "checklist" ? "active" : ""} aria-pressed={activeView === "checklist"} onClick={() => selectView("checklist")}><span>✓</span><div><strong>チェックリスト</strong><small>{checklist.length ? `${inProgress ? `${inProgress}件対応中・` : ""}未対応${checklist.length - reviewed - inProgress}件` : "レビュー結果の対応を管理"}</small></div></button>
+        <button type="button" className={activeView === "review-timeline" ? "active" : ""} aria-pressed={activeView === "review-timeline"} onClick={() => openReviewTimeline()}><span>◷</span><div><strong>タイムライン</strong><small>{reviewTimeline.length ? `${reviewTimeline.length}件の記録` : "対応の経緯を記録"}</small></div></button>
         <button type="button" className={activeView === "closed" ? "active" : ""} aria-pressed={activeView === "closed"} onClick={() => selectView("closed")}><span>○</span><div><strong>完了・対象外</strong><small>{reviewed ? `${reviewed}件` : "完了した指摘を確認"}</small></div></button>
         <button type="button" className={activeView === "history" ? "active" : ""} aria-pressed={activeView === "history"} onClick={() => selectView("history")}><span>↶</span><div><strong>過去のレビュー</strong><small>{task.codeReviewRuns?.length ? `${task.codeReviewRuns.length}回` : "レビュー履歴を確認"}</small></div></button>
       </div>}
@@ -1252,7 +1273,8 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
 
     {previewVerificationEntry && <Modal title="動作確認カード" wide onClose={() => setPreviewVerificationCheckId("")}><div className="code-review-checklist-view verification-checklist-view verification-card-preview"><div className="task-review-checklist-items current-review-items">{renderVerificationEntry(previewVerificationEntry)}</div></div></Modal>}
 
-    {["checklist", "closed", "history"].includes(activeView) && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} onChangeReviewData={updateReviewData} allowImport={false} section={activeView === "checklist" ? "active" : activeView === "closed" ? "closed" : "history"} /></div>}
+    {["checklist", "closed", "history"].includes(activeView) && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} onChangeReviewData={updateReviewData} onOpenTimeline={openReviewTimeline} timelineCounts={Object.fromEntries(checklist.map((item) => [item.id, reviewTimeline.filter((entry) => entry.itemId === item.id).length]))} allowImport={false} section={activeView === "checklist" ? "active" : activeView === "closed" ? "closed" : "history"} /></div>}
+    {activeView === "review-timeline" && <div className="code-review-checklist-view verification-timeline-view"><ReviewTimeline items={checklist} entries={reviewTimeline} filterItemId={reviewTimelineFilterItemId} onFilter={setReviewTimelineFilterItemId} onBack={() => selectView("checklist")} onChange={(entries, historyText) => onUpdate({ codeReviewTimeline: entries }, historyText)} onUndo={undoReviewTimelineEntry} /></div>}
     {["tests", "tests-closed", "tests-history"].includes(activeView) && <div className={`code-review-checklist-view verification-checklist-view section-${activeView}`}><section className="task-review-checklist">
       <header><div><strong>{activeView === "tests-closed" ? "完了・対象外" : activeView === "tests-history" ? "過去の動作確認" : "現在の動作確認"}</strong><small>{activeView === "tests-closed" ? `${closedVerificationEntries.length}件` : activeView === "tests-history" ? `${scopedVerificationRuns.length}回` : activeVerificationEntries.length ? `${inProgressVerificationCount ? `確認中${inProgressVerificationCount}件・` : ""}${failedVerificationCount ? `問題あり${failedVerificationCount}件・` : ""}未実施${pendingVerificationCount}件` : "確認が必要な項目はありません"}</small></div>{activeView !== "tests-history" && <div className="review-checklist-header-actions"><button type="button" onClick={() => setVerificationSortOpen(true)}>↕ 並び替え <small>{verificationSortRules.length}条件</small></button></div>}</header>
       {activeView === "tests" && !!activeVerificationEntries.length && <div className="task-review-checklist-items current-review-items">{sortedActiveVerificationEntries.map(renderVerificationEntry)}</div>}

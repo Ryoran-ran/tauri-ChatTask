@@ -52,6 +52,23 @@ export interface TaskCodeReviewRun {
   createdAt: string;
 }
 
+export interface TaskCodeReviewTimelineEntry {
+  id: string;
+  itemId: string;
+  itemTitle: string;
+  kind: "status" | "note";
+  text: string;
+  fromStatus?: NonNullable<TaskChecklistItem["reviewStatus"]>;
+  toStatus?: NonNullable<TaskChecklistItem["reviewStatus"]>;
+  fromCompletedAt?: string;
+  fromIgnoredReasonCategory?: ReviewIgnoredReasonCategory;
+  fromIgnoredReasonNote?: string;
+  fromIgnoredAt?: string;
+  /** 取り消した状態変更を指す。履歴は消さずに残す。 */
+  revertsEntryId?: string;
+  createdAt: string;
+}
+
 export interface TaskTestRun {
   id: string;
   repositoryId: string;
