@@ -1,0 +1,32 @@
+{
+  "kind": "chattask-today-order",
+  "schemaVersion": 2,
+  "date": "2026-10-16",
+  "requestId": "today-order-6b91fcf10ff887ab",
+  "summary": "CUテスト：既存G3とBを統合してDを先頭へ",
+  "groups": [
+    {
+      "proposalId": "proposal:cu1",
+      "name": "CU-AI統合",
+      "unitIds": [
+        "group:97dcb363-97a9-41df-9948-eb2ade879192",
+        "item:228ec79d-aee9-401b-b75f-824432036cc3:31a9af6f-7ae7-418c-abc9-2a732a05b0b4"
+      ],
+      "reason": "集中作業と確認連絡をまとめる"
+    }
+  ],
+  "order": [
+    {
+      "unitId": "item:f9b56f43-583c-4ac9-9938-42a8686657bb:f09440f0-c1e6-49e4-90de-78c3a11fae28",
+      "reason": "先に結果の枠を確認",
+      "firstStep": "チェック表を開く"
+    },
+    {
+      "unitId": "proposal:cu1",
+      "reason": "まとめて対応",
+      "firstStep": "試作の準備"
+    }
+  ],
+  "later": [],
+  "unresolvedQuestions": []
+}

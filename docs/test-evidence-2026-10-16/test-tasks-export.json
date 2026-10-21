@@ -1,0 +1,323 @@
+{
+  "version": 18,
+  "workspaceMode": "work",
+  "organizationSeed": 248305803,
+  "tasks": [
+    {
+      "id": "abf4cf80-8aad-4861-88b6-942a62ac9164",
+      "title": "CU-A 資料確認",
+      "description": "",
+      "priority": "B",
+      "status": "todo",
+      "progressStatus": "not-started",
+      "waitingReason": "none",
+      "taskKind": "normal",
+      "projectTagId": "",
+      "parentTaskId": "",
+      "repositoryBranches": [],
+      "links": [],
+      "relatedTasks": [],
+      "nextAction": "",
+      "reminderDate": "",
+      "dueDate": "",
+      "isToday": true,
+      "plannedRanges": [
+        {
+          "id": "52b4716e-0cf7-4686-9b66-716341e61f69",
+          "startDate": "2026-10-16",
+          "endDate": "2026-10-16",
+          "title": "A1 資料を読む",
+          "description": "",
+          "plannedHours": 0.5,
+          "status": "not-started"
+        }
+      ],
+      "recurrence": null,
+      "recurrenceMemoTemplate": "",
+      "recurrenceRecords": [],
+      "dailyPlans": {},
+      "dailyPlanCompleted": {},
+      "plannedHours": 0.5,
+      "actualHours": 0,
+      "dailyActualHours": {},
+      "documents": [],
+      "createdAt": "2026-10-15T22:49:46.149Z",
+      "updatedAt": "2026-10-15T22:49:46.149Z",
+      "completedAt": null,
+      "history": [
+        {
+          "id": "738a5501-6a0d-4343-ae59-f8864a19b735",
+          "type": "system",
+          "text": "タスクを作成しました。",
+          "timestamp": "2026-10-15T22:49:46.149Z"
+        }
+      ],
+      "reflections": [],
+      "unscheduledPlans": [],
+      "waitingHistory": [],
+      "reviewChecklist": [],
+      "codeReviewRuns": [],
+      "testRuns": [],
+      "verificationTimeline": [],
+      "dailyPlanStatuses": {}
+    },
+    {
+      "id": "228ec79d-aee9-401b-b75f-824432036cc3",
+      "title": "CU-B 連絡",
+      "description": "",
+      "priority": "B",
+      "status": "todo",
+      "progressStatus": "not-started",
+      "waitingReason": "none",
+      "taskKind": "normal",
+      "projectTagId": "",
+      "parentTaskId": "",
+      "repositoryBranches": [],
+      "links": [],
+      "relatedTasks": [],
+      "nextAction": "",
+      "reminderDate": "",
+      "dueDate": "",
+      "isToday": true,
+      "plannedRanges": [
+        {
+          "id": "31a9af6f-7ae7-418c-abc9-2a732a05b0b4",
+          "startDate": "2026-10-16",
+          "endDate": "2026-10-16",
+          "title": "B1 確認メール",
+          "description": "",
+          "plannedHours": 0.25,
+          "status": "not-started"
+        }
+      ],
+      "recurrence": null,
+      "recurrenceMemoTemplate": "",
+      "recurrenceRecords": [],
+      "dailyPlans": {},
+      "dailyPlanCompleted": {},
+      "plannedHours": 0.25,
+      "actualHours": 0,
+      "dailyActualHours": {},
+      "documents": [],
+      "createdAt": "2026-10-15T22:49:57.406Z",
+      "updatedAt": "2026-10-15T22:49:57.406Z",
+      "completedAt": null,
+      "history": [
+        {
+          "id": "23229e7c-d1e8-4bea-a16a-e69dad1e8de5",
+          "type": "system",
+          "text": "タスクを作成しました。",
+          "timestamp": "2026-10-15T22:49:57.406Z"
+        }
+      ],
+      "reflections": [],
+      "unscheduledPlans": [],
+      "waitingHistory": [],
+      "reviewChecklist": [],
+      "codeReviewRuns": [],
+      "testRuns": [],
+      "verificationTimeline": [],
+      "dailyPlanStatuses": {}
+    },
+    {
+      "id": "d3822d69-fd90-46a8-87e9-d503d2d2e6ab",
+      "title": "CU-C 実装",
+      "description": "",
+      "priority": "B",
+      "status": "todo",
+      "progressStatus": "not-started",
+      "waitingReason": "none",
+      "taskKind": "normal",
+      "projectTagId": "",
+      "parentTaskId": "",
+      "repositoryBranches": [],
+      "links": [],
+      "relatedTasks": [],
+      "nextAction": "",
+      "reminderDate": "",
+      "dueDate": "",
+      "isToday": true,
+      "plannedRanges": [
+        {
+          "id": "878540e6-bb5e-480d-a36f-7ddd312a7c55",
+          "startDate": "2026-10-16",
+          "endDate": "2026-10-16",
+          "title": "C1 試作する",
+          "description": "",
+          "plannedHours": 1,
+          "status": "not-started"
+        }
+      ],
+      "recurrence": null,
+      "recurrenceMemoTemplate": "",
+      "recurrenceRecords": [],
+      "dailyPlans": {},
+      "dailyPlanCompleted": {},
+      "plannedHours": 1,
+      "actualHours": 0,
+      "dailyActualHours": {},
+      "documents": [],
+      "createdAt": "2026-10-15T22:50:05.306Z",
+      "updatedAt": "2026-10-15T22:50:05.306Z",
+      "completedAt": null,
+      "history": [
+        {
+          "id": "2ac46b77-4e15-44a4-9e1e-52bd64acafa9",
+          "type": "system",
+          "text": "タスクを作成しました。",
+          "timestamp": "2026-10-15T22:50:05.306Z"
+        }
+      ],
+      "reflections": [],
+      "unscheduledPlans": [],
+      "waitingHistory": [],
+      "reviewChecklist": [],
+      "codeReviewRuns": [],
+      "testRuns": [],
+      "verificationTimeline": [],
+      "dailyPlanStatuses": {}
+    },
+    {
+      "id": "f9b56f43-583c-4ac9-9938-42a8686657bb",
+      "title": "CU-D 検証",
+      "description": "",
+      "priority": "B",
+      "status": "todo",
+      "progressStatus": "not-started",
+      "waitingReason": "none",
+      "taskKind": "normal",
+      "projectTagId": "",
+      "parentTaskId": "",
+      "repositoryBranches": [],
+      "links": [],
+      "relatedTasks": [],
+      "nextAction": "",
+      "reminderDate": "",
+      "dueDate": "",
+      "isToday": true,
+      "plannedRanges": [
+        {
+          "id": "f09440f0-c1e6-49e4-90de-78c3a11fae28",
+          "startDate": "2026-10-16",
+          "endDate": "2026-10-16",
+          "title": "D1 結果確認",
+          "description": "",
+          "plannedHours": 0.5,
+          "status": "not-started"
+        }
+      ],
+      "recurrence": null,
+      "recurrenceMemoTemplate": "",
+      "recurrenceRecords": [],
+      "dailyPlans": {},
+      "dailyPlanCompleted": {},
+      "plannedHours": 0.5,
+      "actualHours": 0,
+      "dailyActualHours": {},
+      "documents": [],
+      "createdAt": "2026-10-15T22:50:14.240Z",
+      "updatedAt": "2026-10-15T22:50:14.240Z",
+      "completedAt": null,
+      "history": [
+        {
+          "id": "3aa070e6-947f-4ab8-beb4-989b87d83331",
+          "type": "system",
+          "text": "タスクを作成しました。",
+          "timestamp": "2026-10-15T22:50:14.240Z"
+        }
+      ],
+      "reflections": [],
+      "unscheduledPlans": [],
+      "waitingHistory": [],
+      "reviewChecklist": [],
+      "codeReviewRuns": [],
+      "testRuns": [],
+      "verificationTimeline": [],
+      "dailyPlanStatuses": {}
+    }
+  ],
+  "projectTags": [
+    {
+      "id": "project",
+      "name": "案件",
+      "visible": true,
+      "githubRepositories": [],
+      "quickLinkRules": [],
+      "color": "#ef4444",
+      "iconType": "color",
+      "sharedLinks": [],
+      "sharedDocuments": []
+    },
+    {
+      "id": "admin",
+      "name": "事務作業",
+      "visible": true,
+      "githubRepositories": [],
+      "quickLinkRules": [],
+      "color": "#ec4899",
+      "iconType": "color",
+      "sharedLinks": [],
+      "sharedDocuments": []
+    }
+  ],
+  "activityLog": [
+    {
+      "id": "510095e4-8bd3-47f0-96bc-78e1266cb6b2",
+      "taskId": "abf4cf80-8aad-4861-88b6-942a62ac9164",
+      "taskTitle": "CU-A 資料確認",
+      "projectTagId": "",
+      "type": "task-created",
+      "summary": "タスクを作成",
+      "timestamp": "2026-10-15T22:49:46.149Z"
+    },
+    {
+      "id": "149b949e-13a8-4350-997d-8e041ea89c32",
+      "taskId": "228ec79d-aee9-401b-b75f-824432036cc3",
+      "taskTitle": "CU-B 連絡",
+      "projectTagId": "",
+      "type": "task-created",
+      "summary": "タスクを作成",
+      "timestamp": "2026-10-15T22:49:57.406Z"
+    },
+    {
+      "id": "f8e4f770-41f2-40f5-9fa0-c1ee274ebcc1",
+      "taskId": "d3822d69-fd90-46a8-87e9-d503d2d2e6ab",
+      "taskTitle": "CU-C 実装",
+      "projectTagId": "",
+      "type": "task-created",
+      "summary": "タスクを作成",
+      "timestamp": "2026-10-15T22:50:05.306Z"
+    },
+    {
+      "id": "dca53ed9-32d1-4445-8b5c-f0cecdc9a9da",
+      "taskId": "f9b56f43-583c-4ac9-9938-42a8686657bb",
+      "taskTitle": "CU-D 検証",
+      "projectTagId": "",
+      "type": "task-created",
+      "summary": "タスクを作成",
+      "timestamp": "2026-10-15T22:50:14.240Z"
+    }
+  ],
+  "dailyNotes": {},
+  "dailyFinalizedAt": {},
+  "nonWorkingPeriods": [],
+  "userProfile": {
+    "displayName": "あなた",
+    "avatarUpdatedAt": ""
+  },
+  "projectDailyCapacityHours": 6,
+  "goals": [],
+  "issues": [],
+  "inboxItems": [],
+  "todayTaskOrders": {
+    "2026-10-16": [
+      "f9b56f43-583c-4ac9-9938-42a8686657bb:f09440f0-c1e6-49e4-90de-78c3a11fae28",
+      "d3822d69-fd90-46a8-87e9-d503d2d2e6ab:878540e6-bb5e-480d-a36f-7ddd312a7c55",
+      "abf4cf80-8aad-4861-88b6-942a62ac9164:52b4716e-0cf7-4686-9b66-716341e61f69",
+      "228ec79d-aee9-401b-b75f-824432036cc3:31a9af6f-7ae7-418c-abc9-2a732a05b0b4"
+    ]
+  },
+  "localTools": [],
+  "localToolsStoragePath": "",
+  "habits": []
+}
