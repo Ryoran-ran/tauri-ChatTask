@@ -76,7 +76,7 @@ export function Header(props: Props) {
   };
 
   return <><header className="app-header">
-    <div className="brand"><span className="brand-icon">◇</span><strong>ChatTask</strong>{localStorage.getItem("chatTaskActiveEnvironment") === "test" && <span className="test-environment-badge">TEST環境</span>}<span className={`workspace-mode-badge ${props.workspaceMode}`}><i aria-hidden="true" />{props.workspaceMode === "work" ? "仕事" : "日常"}</span></div>
+    <div className="brand"><img className="brand-icon" src="/chattask-logo.svg" alt="" /><strong>ChatTask</strong>{localStorage.getItem("chatTaskActiveEnvironment") === "test" && <span className="test-environment-badge">TEST環境</span>}<span className={`workspace-mode-badge ${props.workspaceMode}`}><i aria-hidden="true" />{props.workspaceMode === "work" ? "仕事" : "日常"}</span></div>
     <nav className="header-actions">
       <button data-usage-id="header.search" title="全文横断検索（⌘/Ctrl + Shift + F）" onClick={props.onSearch}>全文検索</button>
       <button data-usage-id="header.inbox" className={`header-inbox-button ${props.inboxCount ? "has-items" : ""}`} onClick={props.onInbox}>Inbox{props.inboxCount > 0 && <span>{props.inboxCount > 99 ? "99+" : props.inboxCount}</span>}</button>

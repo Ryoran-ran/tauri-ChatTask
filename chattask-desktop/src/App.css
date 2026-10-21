@@ -33,12 +33,11 @@ textarea { resize: vertical; line-height: 1.55; }
 .app-shell { height: 100vh; display: flex; flex-direction: column; }
 .app-header { height: 58px; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 1rem; background: #172033; color: white; box-shadow: 0 2px 8px #0f172a30; position: relative; z-index: 10; }
 .brand { display: flex; align-items: center; gap: .65rem; font-size: 1.25rem; }
-.brand-icon { color: #60a5fa; font-size: 1.6rem; }
+.brand-icon { display: block; width: 30px; height: 30px; flex: none; }
 .workspace-mode-badge { display: inline-flex; align-items: center; gap: .32rem; margin-left: .15rem; border: 1px solid #ffffff24; border-radius: 999px; padding: .22rem .5rem; background: #0f172a45; color: #cbd5e1; font-size: .62rem; font-weight: 750; }
 .workspace-mode-badge i { width: 6px; height: 6px; border-radius: 50%; background: #60a5fa; box-shadow: 0 0 0 3px rgb(96 165 250 / 14%); }
 .workspace-mode-badge.personal { color: #ddd6fe; }.workspace-mode-badge.personal i { background: #a78bfa; box-shadow: 0 0 0 3px rgb(167 139 250 / 15%); }
 .mode-personal .app-header { background: #312e4f; }
-.mode-personal .brand-icon { color: #c4b5fd; }
 .header-actions { display: flex; gap: .45rem; }
 .header-actions button { border: 1px solid #ffffff24; background: #26334a; color: white; border-radius: 6px; padding: .45rem .7rem; }
 .header-actions button:hover { background: #34445f; }
@@ -1911,7 +1910,7 @@ textarea { resize: vertical; line-height: 1.55; }
 
 /* Web版と同じヘッダー・設定メニュー */
 .app-header { min-height: 56px; height: 56px; padding: .7rem 1rem; overflow: visible; background: #1e293b; }
-.brand { font-size: 1.25rem; }.brand-icon { color: #60a5fa; }
+.brand { font-size: 1.25rem; }
 .header-actions { align-items: center; flex-wrap: nowrap; }
 .header-actions > button, .settings-trigger { min-height: 34px; border: 0; border-radius: 6px; padding: .45rem .75rem; background: #334155; color: white; box-shadow: none; font-size: .875rem; font-weight: 500; white-space: nowrap; }
 .header-actions > button:first-child { background: #4f46e5; }.header-actions > button:nth-child(2) { background: #2563eb; }

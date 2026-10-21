@@ -112,6 +112,27 @@ Windows・Linux版の生成、アプリ側の自動インストール・自動�
 
 参考：[TauriのGitHub Actions配布ガイド](https://v2.tauri.app/distribute/pipelines/github/)、[macOS署名・公証](https://v2.tauri.app/distribute/sign/macos/)。
 
+### macOSでダウンロードしたChatTaskを開けない場合
+
+現在の配布版はAppleの公証を受けていないため、DMGから`ChatTask.app`を「アプリケーション」フォルダへコピーした後、「開発元を確認できない」などの警告で起動が止まる場合があります。まず、ダウンロードしたアプリを一度開き、macOSの「システム設定」→「プライバシーとセキュリティ」→「このまま開く」で許可してください。[Appleの案内](https://support.apple.com/ja-jp/102445)
+
+ターミナルで対処する場合は、**このリポジトリのGitHub Releasesから取得したDMGであることを確認**してください。同じリリースのDMGと`SHA256SUMS.txt`を両方「ダウンロード」フォルダに置き、まず配布ファイルのチェックサムを照合します。
+
+```bash
+cd "$HOME/Downloads"
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+`OK`が表示された場合に限り、DMGからコピーしたアプリに対して次を実行します。`codesign`が失敗した場合は後続のコマンドを実行しません。アドホック署名では開発元の本人確認はできません。
+
+```bash
+codesign --verify --deep --strict "/Applications/ChatTask.app" &&
+xattr -dr com.apple.quarantine "/Applications/ChatTask.app" &&
+open "/Applications/ChatTask.app"
+```
+
+`xattr`は**指定したChatTask.appだけ**のダウンロード時の隔離属性を取り除きます。その版に対するmacOSの初回確認を省く操作なので、入手元やチェックサムを確認できない場合は実行しないでください。「コンピュータが破損する」「アプリが破損している」などの警告には使用せず、配布ファイルを確認してください。新しい版へ置き換えた後は再度必要になることがあります。恒久的に警告をなくすには、配布版のDeveloper ID署名とAppleの公証が必要です。Mac全体のGatekeeperは無効化しません。
+
 ## 更新版アプリをビルド
 
 アプリの「設定」→「設定を開く」→「サポート」で、現在のバージョンと「更新を確認」を利用できます。
