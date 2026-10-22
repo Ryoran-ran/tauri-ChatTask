@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GithubRepository, ReviewIgnoredReasonCategory, TaskChecklistItem, TaskCodeReviewRun } from "../types";
 import { reviewIgnoredReasonLabels, reviewIgnoredReasonOptions } from "../reviewIgnoreDecisions";
+import { setReviewItemStatus } from "../reviewTimeline";
 import { generateId } from "../utils";
 import { Modal } from "./Modal";
 
@@ -289,24 +290,15 @@ export function TaskReviewChecklist({ taskId = "default", items, runs = [], repo
       openIgnoreDialog(item);
       return;
     }
-    const isCompleted = reviewStatus === "completed";
-    onChange(items.map((current) => current.id === item.id
-      ? { ...current, reviewStatus, completed: isCompleted, completedAt: isCompleted ? new Date().toISOString() : undefined, ignoredReasonCategory: undefined, ignoredReasonNote: undefined, ignoredAt: undefined }
-      : current));
+    onChange(items.map((current) => current.id === item.id ? setReviewItemStatus(current, reviewStatus) : current));
   };
 
   const saveIgnoreDecision = () => {
     if (!ignoreDraft?.category || (ignoreDraft.category === "other" && !ignoreDraft.note.trim())) return;
-    const now = new Date().toISOString();
-    onChange(items.map((item) => item.id === ignoreDraft.itemId ? {
-      ...item,
-      reviewStatus: "ignored",
-      completed: false,
-      completedAt: undefined,
-      ignoredReasonCategory: ignoreDraft.category || undefined,
-      ignoredReasonNote: ignoreDraft.note.trim() || undefined,
-      ignoredAt: now,
-    } : item), "コードレビュー指摘を「対応しない」に変更しました。");
+    onChange(items.map((item) => item.id === ignoreDraft.itemId ? setReviewItemStatus(item, "ignored", {
+      category: ignoreDraft.category as ReviewIgnoredReasonCategory,
+      note: ignoreDraft.note,
+    }) : item), "コードレビュー指摘を「対応しない」に変更しました。");
     setIgnoreDraft(null);
   };
 

@@ -1,5 +1,9 @@
 .review-timeline .verification-timeline-list > article .verification-timeline-entry { width: min(100%, 760px); }
 .review-timeline .verification-timeline-entry-title > button { cursor: pointer; }
+.review-timeline-current-status { display: flex; align-items: center; gap: .4rem; margin-top: .25rem; }
+.review-timeline-current-status > label { color: #475569; font-size: .6rem; font-weight: 750; }
+.review-timeline-current-status > select { min-height: 30px; border: 1px solid #93c5fd; border-radius: 7px; padding: .25rem .55rem; background: #fff; color: #1d4ed8; font-size: .62rem; font-weight: 750; cursor: pointer; }
+.review-timeline-current-status > button { border: 0; background: transparent; color: #2563eb; font-size: .58rem; font-weight: 750; cursor: pointer; }
 .review-timeline .verification-timeline-entry-actions > button.review-timeline-undo { color: #2563eb; }
 .review-timeline .verification-timeline-entry-actions > button.review-timeline-undo:hover { background: #eff6ff; }
 .review-timeline .verification-timeline-body > p { font-weight: 500; }
@@ -8,3 +12,15 @@
 .review-timeline .verification-timeline-form textarea { width: 100%; min-width: 0; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
 .review-timeline .verification-timeline-form select { min-height: 38px; padding: 0.4rem 0.65rem; }
 .review-timeline .verification-timeline-form textarea { min-height: 180px; padding: 0.65rem; resize: vertical; }
+.review-timeline-preview { display: grid; gap: .75rem; }
+.review-timeline-preview > strong { font-size: 1.1rem; }
+.review-timeline-preview > p { margin: 0; white-space: pre-wrap; }
+.review-timeline-preview > p:nth-of-type(1) { color: #64748b; font-size: .85rem; }
+.review-timeline-preview > footer { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .5rem; }
+.code-review-window { position: relative; }
+.review-timeline-cleanup-alert {
+  position: absolute; z-index: 20; top: .75rem; right: 1rem; display: flex; align-items: center; gap: .75rem;
+  max-width: min(540px, calc(100% - 2rem)); border: 1px solid #fca5a5; border-radius: 8px;
+  padding: .65rem .8rem; background: #fff7f7; color: #991b1b; box-shadow: 0 8px 24px #1f293733;
+}
+.review-timeline-cleanup-alert button { flex: none; border: 0; background: transparent; color: inherit; text-decoration: underline; }

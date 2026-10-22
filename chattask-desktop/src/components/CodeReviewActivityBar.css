@@ -707,6 +707,42 @@
   font-weight: 750;
 }
 
+.verification-thread-screen > header > button.verification-thread-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 36px;
+  border: 1px solid #bfdbfe;
+  border-radius: 9px;
+  padding: 0.4rem 0.7rem;
+  background: #eff6ff;
+  box-shadow: none;
+  color: #1d4ed8;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.verification-thread-back-button svg,
+.verification-reply-attachment-button svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.verification-thread-screen > header > button.verification-thread-back-button:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #dbeafe;
+  box-shadow: none;
+  color: #1e40af;
+}
+
+.verification-thread-screen > header > button.verification-thread-back-button:focus-visible,
+.verification-reply-composer > footer > button.verification-reply-attachment-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .verification-thread-list {
   display: grid;
   min-height: 0;
@@ -881,6 +917,36 @@
   border-radius: 7px;
   padding: 0.35rem 0.6rem;
   font-size: 0.58rem;
+}
+
+.verification-reply-composer > footer > button.verification-reply-attachment-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 0.4rem 0.7rem;
+  background: #fff;
+  box-shadow: none;
+  color: #334155;
+  font-weight: 750;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.verification-reply-composer > footer > button.verification-reply-attachment-button:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: none;
+  color: #1d4ed8;
+}
+
+.verification-thread-screen > header > button.verification-thread-back-button:disabled,
+.verification-reply-composer > footer > button.verification-reply-attachment-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .verification-thread-screen .memo-attachment-card.image-card:not(.editing) {

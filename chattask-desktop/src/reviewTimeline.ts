@@ -1,4 +1,4 @@
-import type { TaskChecklistItem, TaskCodeReviewTimelineEntry } from "./types";
+import type { ReviewIgnoredReasonCategory, TaskChecklistItem, TaskCodeReviewTimelineEntry } from "./types";
 import { generateId } from "./utils";
 
 export const reviewStatusLabel = {
@@ -10,6 +10,27 @@ export const reviewStatusLabel = {
 
 export const reviewItemStatus = (item: TaskChecklistItem) => item.reviewStatus || (item.completed ? "completed" : "pending");
 
+export function setReviewItemStatus(
+  item: TaskChecklistItem,
+  status: NonNullable<TaskChecklistItem["reviewStatus"]>,
+  ignoredReason?: { category: ReviewIgnoredReasonCategory; note: string },
+  now = new Date().toISOString(),
+): TaskChecklistItem {
+  if (status === "ignored" && !ignoredReason) throw new Error("対応しない理由が必要です。");
+  return {
+    ...item,
+    reviewStatus: status,
+    completed: status === "completed",
+    completedAt: status === "completed" ? now : undefined,
+    ignoredReasonCategory: status === "ignored" ? ignoredReason?.category : undefined,
+    ignoredReasonNote: status === "ignored" ? ignoredReason?.note.trim() || undefined : undefined,
+    ignoredAt: status === "ignored" ? now : undefined,
+  };
+}
+
+export const reviewEntryItemIds = (entry: TaskCodeReviewTimelineEntry) => entry.itemIds?.length ? entry.itemIds : entry.itemId ? [entry.itemId] : [];
+export const reviewEntryItemTitles = (entry: TaskCodeReviewTimelineEntry) => entry.itemTitles?.length ? entry.itemTitles : entry.itemTitle ? [entry.itemTitle] : [];
+
 export function reviewStatusChanges(before: TaskChecklistItem[], after: TaskChecklistItem[], now = new Date().toISOString()): TaskCodeReviewTimelineEntry[] {
   const previous = new Map(before.map((item) => [item.id, item]));
   return after.flatMap((item) => {
@@ -19,7 +40,7 @@ export function reviewStatusChanges(before: TaskChecklistItem[], after: TaskChec
     const toStatus = reviewItemStatus(item);
     if (fromStatus === toStatus) return [];
     return [{
-      id: generateId(), itemId: item.id, itemTitle: item.title, kind: "status" as const,
+      id: generateId(), itemId: item.id, itemTitle: item.title, itemIds: [item.id], itemTitles: [item.title], kind: "status" as const,
       text: "", fromStatus, toStatus,
       fromCompletedAt: old.completedAt,
       fromIgnoredReasonCategory: old.ignoredReasonCategory,

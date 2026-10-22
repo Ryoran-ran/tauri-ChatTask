@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent } from "react";
-import type { GithubRepository, Task, TaskChecklistItem } from "../types";
+import type { GithubRepository, ReviewIgnoredReasonCategory, Task, TaskChecklistItem } from "../types";
 import { generateId } from "../utils";
 import { addAttachment, listAttachments, removeAttachment, type Attachment } from "../services/attachments";
 import { AttachmentCards } from "./AttachmentCards";
 import { Modal } from "./Modal";
 import { parseReviewChecklist, TaskReviewChecklist } from "./TaskReviewChecklist";
 import { ReviewTimeline } from "./ReviewTimeline";
-import { canUndoReviewStatus, reviewStatusChanges, undoReviewStatus } from "../reviewTimeline";
+import { TimelineItemPicker } from "./TimelineItemPicker";
+import { canUndoReviewStatus, reviewEntryItemIds, reviewItemStatus, reviewStatusChanges, reviewStatusLabel, setReviewItemStatus, undoReviewStatus } from "../reviewTimeline";
 import { defaultReviewBaseBranch, gitDiffClipboardCommand, reviewBaseBranchCandidates } from "../reviewBranches";
 import { ignoredDecisionPrompt, relevantIgnoredReviewDecisions } from "../reviewIgnoreDecisions";
 import "./CodeReviewActivityBar.css";
@@ -32,7 +33,6 @@ const testPoints = [
 const verificationStatusLabels = { pending: "未実施", "in-progress": "確認中", passed: "確認済み", failed: "問題あり", ignored: "対象外" } as const;
 const timelineKindLabels = { note: "メモ", issue: "不具合", retest: "再確認", status: "状態変更", system: "システム", reply: "返信" } as const;
 
-type VerificationCheckOption = { id: string; label: string; detail: string };
 const timelineEntryCheckIds = (entry: NonNullable<Task["verificationTimeline"]>[number]) => entry.checkIds?.length ? entry.checkIds : entry.checkId ? [entry.checkId] : [];
 const timelineEntryCheckTitles = (entry: NonNullable<Task["verificationTimeline"]>[number]) => entry.checkTitles?.length ? entry.checkTitles : entry.checkTitle ? [entry.checkTitle] : [];
 const timelineDateKey = (value: string) => {
@@ -48,35 +48,6 @@ const timelineDateLabel = (value: string) => {
   if (timelineDateKey(value) === timelineDateKey(yesterday.toISOString())) return `昨日・${shortDate}`;
   return date.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
 };
-
-function VerificationCheckPicker({ options, selectedIds, lockedIds = [], onChange }: { options: VerificationCheckOption[]; selectedIds: string[]; lockedIds?: string[]; onChange: (ids: string[]) => void }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
-  const normalizedQuery = query.trim().toLocaleLowerCase("ja");
-  const visibleOptions = options.filter((option) => !normalizedQuery || `${option.label} ${option.detail}`.toLocaleLowerCase("ja").includes(normalizedQuery));
-  const selectedOptions = selectedIds.flatMap((id) => {
-    const option = options.find((candidate) => candidate.id === id);
-    return option ? [option] : [{ id, label: "削除済みの確認項目", detail: "" }];
-  });
-  const toggle = (id: string) => {
-    if (lockedIds.includes(id)) return;
-    setDraftIds((current) => current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id]);
-  };
-  const removeSelected = (id: string) => {
-    if (!lockedIds.includes(id)) onChange(selectedIds.filter((selectedId) => selectedId !== id));
-  };
-  const close = () => { setOpen(false); setQuery(""); };
-  return <div className="verification-check-picker-summary">
-    <div className="verification-check-picker-selected">{selectedOptions.length ? selectedOptions.map((option) => <span key={option.id}>{option.label}<button type="button" aria-label={`${option.label}の選択を解除`} disabled={lockedIds.includes(option.id)} onClick={() => removeSelected(option.id)}>×</button></span>) : <small>確認項目は選択されていません</small>}</div>
-    <button type="button" className="verification-check-picker-open" onClick={() => { setDraftIds(selectedIds); setQuery(""); setOpen(true); }}>⌕ 確認項目を選択</button>
-    {open && <Modal title="関連する確認項目を選択" wide onClose={close}><div className="verification-check-picker-dialog">
-      <div className="verification-check-picker-search"><span aria-hidden="true">⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="タイトル・画面名・リポジトリ名で検索" /><small>{draftIds.length}件選択</small></div>
-      <div className="verification-check-picker-options">{visibleOptions.length ? visibleOptions.map((option) => <label key={option.id}><input type="checkbox" checked={draftIds.includes(option.id)} disabled={lockedIds.includes(option.id)} onChange={() => toggle(option.id)} /><span><strong>{option.label}</strong>{option.detail && <small>{option.detail}</small>}</span></label>) : <p>一致する確認項目はありません。</p>}</div>
-      <footer><span>{draftIds.length}件を関連付けます</span><button type="button" onClick={close}>キャンセル</button><button type="button" className="primary" onClick={() => { onChange(draftIds); close(); }}>選択を反映</button></footer>
-    </div></Modal>}
-  </div>;
-}
 
 type VerificationSortKey = "status" | "category" | "createdAt" | "title";
 type VerificationSortRule = { id: string; key: VerificationSortKey; direction: "asc" | "desc" };
@@ -327,6 +298,11 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const [result, setResult] = useState("");
   const [testResult, setTestResult] = useState("");
   const [message, setMessage] = useState("");
+  const [reviewAttachmentCleanupError, setReviewAttachmentCleanupError] = useState("");
+  const reportReviewAttachmentCleanupError = (message: string) => {
+    setReviewAttachmentCleanupError(message);
+    window.dispatchEvent(new CustomEvent("chattask-drop-notice", { detail: { text: message, error: true } }));
+  };
   const [deletingTestRunId, setDeletingTestRunId] = useState("");
   const [copiedVerificationKey, setCopiedVerificationKey] = useState("");
   const [verificationSortOpen, setVerificationSortOpen] = useState(false);
@@ -434,6 +410,10 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     void listAttachments(taskId).then((attachments) => { if (active) setTimelineAttachments(attachments); }).catch(() => { if (active) setTimelineAttachments([]); });
     return () => { active = false; };
   }, [taskId]);
+  const refreshTimelineAttachments = () => {
+    void listAttachments(taskId).then(setTimelineAttachments).catch(() => {});
+    window.dispatchEvent(new CustomEvent("chattask-attachments-changed", { detail: { taskId } }));
+  };
 
   useEffect(() => {
     if (activeView !== "timeline") return;
@@ -495,6 +475,16 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
   const updateChecklist = (items: TaskChecklistItem[], historyText?: string) => {
     const changes = reviewStatusChanges(checklist, items);
     onUpdate({ reviewChecklist: items, ...(changes.length ? { codeReviewTimeline: [...reviewTimeline, ...changes] } : {}) }, historyText);
+  };
+  const changeReviewTimelineStatus = (itemId: string, status: NonNullable<TaskChecklistItem["reviewStatus"]>, ignoredReason?: { category: ReviewIgnoredReasonCategory; note: string }) => {
+    const item = checklist.find((candidate) => candidate.id === itemId);
+    if (!item || (status === "ignored" && !ignoredReason)) return;
+    if (reviewItemStatus(item) === status && (status !== "ignored" || (
+      item.ignoredReasonCategory === ignoredReason?.category &&
+      (item.ignoredReasonNote || "") === (ignoredReason?.note.trim() || "")
+    ))) return;
+    const next = setReviewItemStatus(item, status, ignoredReason);
+    updateChecklist(checklist.map((candidate) => candidate.id === itemId ? next : candidate), `コードレビュー指摘「${item.title}」を「${reviewStatusLabel[status]}」に変更しました。`);
   };
   const openReviewTimeline = (itemId = "") => {
     setReviewTimelineFilterItemId(itemId);
@@ -677,9 +667,13 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       addedCount += 1;
     });
     const changes = reviewStatusChanges(checklist, nextChecklist, createdAt);
+    const importMessage = (selectedRepository?.name || "リポジトリ未設定") + "のコードレビューを取り込みました（" +
+      (noFindings ? "指摘なし" : "新規" + addedCount + "件" + (repeatedCount ? "・再指摘" + repeatedCount + "件" : "")) + "）。";
     onUpdate({
       reviewChecklist: nextChecklist,
-      ...(changes.length ? { codeReviewTimeline: [...reviewTimeline, ...changes] } : {}),
+      codeReviewTimeline: [...reviewTimeline, ...changes, {
+        id: generateId(), kind: "system", itemId: "", itemTitle: "", text: importMessage, createdAt,
+      }],
       codeReviewRuns: [...(task.codeReviewRuns || []), {
         id: runId,
         repositoryId,
@@ -987,7 +981,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
     setTimelineAttachmentError("");
     const deletedEntries = verificationTimeline.filter((entry) => entry.id === entryId || entry.parentEntryId === entryId);
     const remainingEntries = verificationTimeline.filter((entry) => entry.id !== entryId && entry.parentEntryId !== entryId);
-    const remainingAttachmentIds = new Set(remainingEntries.flatMap((entry) => entry.attachmentIds || []));
+    const remainingAttachmentIds = new Set([...remainingEntries.flatMap((entry) => entry.attachmentIds || []), ...reviewTimeline.flatMap((entry) => entry.attachmentIds || [])]);
     const deletedAttachmentIds = [...new Set(deletedEntries.flatMap((entry) => entry.attachmentIds || []))]
       .filter((attachmentId) => !remainingAttachmentIds.has(attachmentId));
     onUpdate({ verificationTimeline: remainingEntries }, "動作確認タイムラインの記録を削除しました。");
@@ -1172,6 +1166,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
       </div>}
       </nav>
     </aside>
+    {reviewAttachmentCleanupError && <div className="review-timeline-cleanup-alert" role="alert"><span>{reviewAttachmentCleanupError}</span><button type="button" onClick={() => setReviewAttachmentCleanupError("")}>閉じる</button></div>}
 
     {activeView === "review-prompt" && <div className="code-review-workspace">
       <section className="code-review-input-panel">
@@ -1235,11 +1230,11 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
           const relatedIds = timelineEntryCheckIds(entry);
           const replyCount = verificationTimeline.filter((candidate) => candidate.parentEntryId === entry.id).length;
           const showDate = entryIndex === 0 || timelineDateKey(visibleVerificationTimeline[entryIndex - 1].createdAt) !== timelineDateKey(entry.createdAt);
-          return <Fragment key={entry.id}>{showDate && <><div className="verification-timeline-date-anchor" aria-hidden="true" /><div className="verification-timeline-date"><span>{timelineDateLabel(entry.createdAt)}</span></div></>}<article className={`timeline-kind-${entry.kind}`}><div className="verification-timeline-marker" aria-hidden="true" /><div className="verification-timeline-entry"><header><div className="verification-timeline-entry-title">{relatedTitles.length ? (relatedIds[0] && verificationEntries.some(({ check }) => check.id === relatedIds[0]) ? <button type="button" onClick={() => setPreviewVerificationCheckId(relatedIds[0])}>{relatedTitles[0]}<span aria-hidden="true">›</span></button> : <strong>{relatedTitles[0]}</strong>) : <strong>関連する確認項目なし</strong>}{relatedTitles.length > 1 && <small>ほか{relatedTitles.length - 1}件</small>}</div><div className="verification-timeline-entry-meta"><span>{timelineKindLabels[entry.kind]}</span><time>{new Date(entry.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}</time></div><div className="verification-timeline-entry-actions">{deleting ? <><small>削除しますか？</small><button type="button" onClick={() => setDeletingTimelineEntryId("")}>戻る</button><button type="button" className="danger-text" onClick={() => void deleteTimelineEntry(entry.id)}>削除する</button></> : <><button type="button" className="reply" onClick={() => { setTimelineThreadEntryId(entry.id); setEditingTimelineEntryId(""); setDeletingTimelineEntryId(""); }}>返信{replyCount ? ` ${replyCount}` : ""}</button><button type="button" onClick={() => startEditingTimelineEntry(entry)}>編集</button><button type="button" className="danger-text" onClick={() => { setDeletingTimelineEntryId(entry.id); setEditingTimelineEntryId(""); }}>削除</button></>}</div></header>{editing ? <div className="verification-timeline-editor"><div>{!["status", "system"].includes(entry.kind) && <label>種類<select value={editingTimelineKind} onChange={(event) => setEditingTimelineKind(event.target.value as typeof editingTimelineKind)}><option value="note">メモ</option><option value="issue">不具合</option><option value="retest">再確認</option></select></label>}</div><section className="verification-timeline-edit-checks"><strong>関連する確認項目</strong><VerificationCheckPicker options={verificationCheckOptions} selectedIds={editingTimelineCheckIds} lockedIds={timelineFilterCheckId ? [timelineFilterCheckId] : []} onChange={setEditingTimelineCheckIds} /></section><textarea value={editingTimelineText} onChange={(event) => setEditingTimelineText(event.target.value)} /><footer><button type="button" onClick={() => setEditingTimelineEntryId("")}>キャンセル</button><button type="button" className="primary" onClick={saveTimelineEntryEdit}>変更を保存</button></footer></div> : <>{entry.kind === "status" && entry.fromStatus && entry.toStatus && <div className="verification-status-change"><small>状態変更</small><span>{verificationStatusLabels[entry.fromStatus]}</span><b>→</b><span>{verificationStatusLabels[entry.toStatus]}</span></div>}{entry.text && entry.kind !== "status" && <div className="verification-timeline-body"><p>{entry.text}</p></div>}<AttachmentCards attachments={attachments} /></>}</div></article></Fragment>;
+          return <Fragment key={entry.id}>{showDate && <><div className="verification-timeline-date-anchor" aria-hidden="true" /><div className="verification-timeline-date"><span>{timelineDateLabel(entry.createdAt)}</span></div></>}<article className={`timeline-kind-${entry.kind}`}><div className="verification-timeline-marker" aria-hidden="true" /><div className="verification-timeline-entry"><header><div className="verification-timeline-entry-title">{relatedTitles.length ? (relatedIds[0] && verificationEntries.some(({ check }) => check.id === relatedIds[0]) ? <button type="button" onClick={() => setPreviewVerificationCheckId(relatedIds[0])}>{relatedTitles[0]}<span aria-hidden="true">›</span></button> : <strong>{relatedTitles[0]}</strong>) : <strong>関連する確認項目なし</strong>}{relatedTitles.length > 1 && <small>ほか{relatedTitles.length - 1}件</small>}</div><div className="verification-timeline-entry-meta"><span>{timelineKindLabels[entry.kind]}</span><time>{new Date(entry.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}</time></div><div className="verification-timeline-entry-actions">{deleting ? <><small>削除しますか？</small><button type="button" onClick={() => setDeletingTimelineEntryId("")}>戻る</button><button type="button" className="danger-text" onClick={() => void deleteTimelineEntry(entry.id)}>削除する</button></> : <><button type="button" className="reply" onClick={() => { setTimelineThreadEntryId(entry.id); setEditingTimelineEntryId(""); setDeletingTimelineEntryId(""); }}>返信{replyCount ? ` ${replyCount}` : ""}</button><button type="button" onClick={() => startEditingTimelineEntry(entry)}>編集</button><button type="button" className="danger-text" onClick={() => { setDeletingTimelineEntryId(entry.id); setEditingTimelineEntryId(""); }}>削除</button></>}</div></header>{editing ? <div className="verification-timeline-editor"><div>{!["status", "system"].includes(entry.kind) && <label>種類<select value={editingTimelineKind} onChange={(event) => setEditingTimelineKind(event.target.value as typeof editingTimelineKind)}><option value="note">メモ</option><option value="issue">不具合</option><option value="retest">再確認</option></select></label>}</div><section className="verification-timeline-edit-checks"><strong>関連する確認項目</strong><TimelineItemPicker options={verificationCheckOptions} selectedIds={editingTimelineCheckIds} lockedIds={timelineFilterCheckId ? [timelineFilterCheckId] : []} onChange={setEditingTimelineCheckIds} /></section><textarea value={editingTimelineText} onChange={(event) => setEditingTimelineText(event.target.value)} /><footer><button type="button" onClick={() => setEditingTimelineEntryId("")}>キャンセル</button><button type="button" className="primary" onClick={saveTimelineEntryEdit}>変更を保存</button></footer></div> : <>{entry.kind === "status" && entry.fromStatus && entry.toStatus && <div className="verification-status-change"><small>状態変更</small><span>{verificationStatusLabels[entry.fromStatus]}</span><b>→</b><span>{verificationStatusLabels[entry.toStatus]}</span></div>}{entry.text && entry.kind !== "status" && <div className="verification-timeline-body"><p>{entry.text}</p></div>}<AttachmentCards attachments={attachments} /></>}</div></article></Fragment>;
         })}
       </div>
       {timelineThreadEntry && <div className="verification-thread-screen">
-        <header><div><small>動作確認 › タイムライン › 返信</small><strong>記録への返信</strong><p>{timelineThreadReplies.length}件の返信</p></div><button type="button" onClick={() => void closeTimelineThread()}>タイムラインへ戻る</button></header>
+        <header><div><small>動作確認 › タイムライン › 返信</small><strong>記録への返信</strong><p>{timelineThreadReplies.length}件の返信</p></div><button type="button" className="verification-thread-back-button" onClick={() => void closeTimelineThread()}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>タイムラインへ戻る</button></header>
         <div className="verification-thread-list">
           <article className="verification-thread-parent"><header><span>{timelineKindLabels[timelineThreadEntry.kind]}</span><time>{new Date(timelineThreadEntry.createdAt).toLocaleString("ja-JP")}</time><strong>親の記録</strong></header>{timelineThreadEntry.text && <p>{timelineThreadEntry.text}</p>}<AttachmentCards attachments={timelineAttachments.filter((attachment) => timelineThreadEntry.attachmentIds?.includes(attachment.id))} /></article>
           <section className="verification-thread-replies"><header><strong>返信</strong><span>{timelineThreadReplies.length}件</span></header>{timelineThreadReplies.length ? timelineThreadReplies.map((reply) => {
@@ -1252,7 +1247,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
           <textarea value={replyText} onChange={(event) => setReplyText(event.target.value)} onPaste={pasteReplyImages} placeholder="返信を入力…（画像の貼り付け、ファイルのドロップ可）" />
           <AttachmentCards attachments={replyAttachments} onRemove={(attachment) => void removeReplyAttachment(attachment)} />
           {replyAttachmentError && <p className="attachment-error">{replyAttachmentError}</p>}
-          <footer><small>親の添付ファイルは返信へ引き継がれません。</small><button type="button" onClick={() => replyFileInputRef.current?.click()} disabled={replyAttachmentBusy}>{replyAttachmentBusy ? "保存中…" : "ファイルを追加"}</button><input ref={replyFileInputRef} hidden type="file" multiple onChange={selectReplyFiles} /><button type="button" className="primary" disabled={replyAttachmentBusy || (!replyText.trim() && !replyAttachments.length)} onClick={addTimelineReply}>返信する</button></footer>
+          <footer><small>親の添付ファイルは返信へ引き継がれません。</small><button type="button" className="verification-reply-attachment-button" onClick={() => replyFileInputRef.current?.click()} disabled={replyAttachmentBusy}><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.5 11.5-8.7 8.7a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7L9.9 17.5a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>{replyAttachmentBusy ? "保存中…" : "ファイルを追加"}</button><input ref={replyFileInputRef} hidden type="file" multiple onChange={selectReplyFiles} /><button type="button" className="primary" disabled={replyAttachmentBusy || (!replyText.trim() && !replyAttachments.length)} onClick={addTimelineReply}>返信する</button></footer>
           {replyDragging && <div className="verification-timeline-drop">ここにファイルをドロップ</div>}
         </div>
       </div>}
@@ -1260,7 +1255,7 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
         <header><div><small>動作確認 › タイムライン › 新しい記録</small><strong>新しい記録を追加</strong><p>確認結果や不具合の状況を、対象の確認項目へ記録します。</p></div><button type="button" aria-label="投稿画面を閉じる" onClick={() => void cancelTimelineComposer()}>×</button></header>
         <div className="verification-timeline-form">
           <label><span>種類</span><select value={timelineKind} onChange={(event) => setTimelineKind(event.target.value as typeof timelineKind)}><option value="note">メモ</option><option value="issue">不具合</option><option value="retest">再確認</option></select></label>
-          <div className="verification-timeline-check-field"><span>関連する確認項目</span><div><VerificationCheckPicker options={verificationCheckOptions} selectedIds={timelineCheckIds} lockedIds={timelineFilterCheckId ? [timelineFilterCheckId] : []} onChange={setTimelineCheckIds} />{timelineFilterEntry && <small className="verification-auto-linked">現在開いている確認項目を自動で関連付けています。</small>}</div></div>
+          <div className="verification-timeline-check-field"><span>関連する確認項目</span><div><TimelineItemPicker options={verificationCheckOptions} selectedIds={timelineCheckIds} lockedIds={timelineFilterCheckId ? [timelineFilterCheckId] : []} onChange={setTimelineCheckIds} />{timelineFilterEntry && <small className="verification-auto-linked">現在開いている確認項目を自動で関連付けています。</small>}</div></div>
           <label className="verification-timeline-description"><span>内容</span><textarea autoFocus value={timelineText} onChange={(event) => setTimelineText(event.target.value)} onPaste={pasteTimelineImages} placeholder="確認した内容、不具合の再現手順、補足などを入力してください。画像は貼り付け・ドロップできます。" /></label>
           <div className="verification-timeline-attachment-row"><span>添付ファイル</span><div><button type="button" onClick={() => timelineFileInputRef.current?.click()} disabled={timelineAttachmentBusy}>{timelineAttachmentBusy ? "ファイルを保存中…" : "ファイルを選択"}</button><small>画像・PDF・テキスト・ログなどを添付できます。画像は貼り付けにも対応しています。</small><input ref={timelineFileInputRef} hidden type="file" multiple onChange={selectTimelineImages} /></div></div>
           <AttachmentCards attachments={pendingTimelineAttachments} onRemove={(attachment) => void removePendingTimelineAttachment(attachment)} />
@@ -1273,8 +1268,8 @@ export function CodeReviewWindow({ task, repositories, onUpdate }: { task: Task;
 
     {previewVerificationEntry && <Modal title="動作確認カード" wide onClose={() => setPreviewVerificationCheckId("")}><div className="code-review-checklist-view verification-checklist-view verification-card-preview"><div className="task-review-checklist-items current-review-items">{renderVerificationEntry(previewVerificationEntry)}</div></div></Modal>}
 
-    {["checklist", "closed", "history"].includes(activeView) && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} onChangeReviewData={updateReviewData} onOpenTimeline={openReviewTimeline} timelineCounts={Object.fromEntries(checklist.map((item) => [item.id, reviewTimeline.filter((entry) => entry.itemId === item.id).length]))} allowImport={false} section={activeView === "checklist" ? "active" : activeView === "closed" ? "closed" : "history"} /></div>}
-    {activeView === "review-timeline" && <div className="code-review-checklist-view verification-timeline-view"><ReviewTimeline items={checklist} entries={reviewTimeline} filterItemId={reviewTimelineFilterItemId} onFilter={setReviewTimelineFilterItemId} onBack={() => selectView("checklist")} onChange={(entries, historyText) => onUpdate({ codeReviewTimeline: entries }, historyText)} onUndo={undoReviewTimelineEntry} /></div>}
+    {["checklist", "closed", "history"].includes(activeView) && <div className={`code-review-checklist-view section-${activeView}`}><TaskReviewChecklist taskId={task.id} items={checklist} runs={task.codeReviewRuns || []} repositories={repositories} selectedRepositoryId={selectedRepositoryId} onSelectRepository={selectRepository} onChange={updateChecklist} onChangeReviewData={updateReviewData} onOpenTimeline={openReviewTimeline} timelineCounts={Object.fromEntries(checklist.map((item) => [item.id, reviewTimeline.filter((entry) => reviewEntryItemIds(entry).includes(item.id)).length]))} allowImport={false} section={activeView === "checklist" ? "active" : activeView === "closed" ? "closed" : "history"} /></div>}
+    {activeView === "review-timeline" && <div className="code-review-checklist-view verification-timeline-view"><ReviewTimeline taskId={taskId} items={checklist} entries={reviewTimeline} attachments={timelineAttachments} protectedAttachmentIds={verificationTimeline.flatMap((entry) => entry.attachmentIds || [])} filterItemId={reviewTimelineFilterItemId} onFilter={setReviewTimelineFilterItemId} onBack={() => selectView("checklist")} onChange={(entries, historyText) => onUpdate({ codeReviewTimeline: entries }, historyText)} onStatusChange={changeReviewTimelineStatus} onUndo={undoReviewTimelineEntry} onAttachmentsChange={refreshTimelineAttachments} onCleanupError={reportReviewAttachmentCleanupError} /></div>}
     {["tests", "tests-closed", "tests-history"].includes(activeView) && <div className={`code-review-checklist-view verification-checklist-view section-${activeView}`}><section className="task-review-checklist">
       <header><div><strong>{activeView === "tests-closed" ? "完了・対象外" : activeView === "tests-history" ? "過去の動作確認" : "現在の動作確認"}</strong><small>{activeView === "tests-closed" ? `${closedVerificationEntries.length}件` : activeView === "tests-history" ? `${scopedVerificationRuns.length}回` : activeVerificationEntries.length ? `${inProgressVerificationCount ? `確認中${inProgressVerificationCount}件・` : ""}${failedVerificationCount ? `問題あり${failedVerificationCount}件・` : ""}未実施${pendingVerificationCount}件` : "確認が必要な項目はありません"}</small></div>{activeView !== "tests-history" && <div className="review-checklist-header-actions"><button type="button" onClick={() => setVerificationSortOpen(true)}>↕ 並び替え <small>{verificationSortRules.length}条件</small></button></div>}</header>
       {activeView === "tests" && !!activeVerificationEntries.length && <div className="task-review-checklist-items current-review-items">{sortedActiveVerificationEntries.map(renderVerificationEntry)}</div>}

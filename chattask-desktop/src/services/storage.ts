@@ -196,14 +196,20 @@ export const normalizeTask = (source: Partial<Task> & Record<string, unknown>): 
       if (!rawEntry || typeof rawEntry !== "object") return [];
       const entry = rawEntry as unknown as Record<string, unknown>;
       const itemId = String(entry.itemId || "").trim();
-      if (!itemId) return [];
+      const kind = ["status", "note", "issue", "retest", "system", "reply"].includes(String(entry.kind))
+        ? String(entry.kind) as NonNullable<Task["codeReviewTimeline"]>[number]["kind"] : "note";
+      if (kind === "status" && !itemId) return [];
       const status = (value: unknown) => ["pending", "in-progress", "completed", "ignored"].includes(String(value))
         ? String(value) as NonNullable<Task["codeReviewTimeline"]>[number]["fromStatus"] : undefined;
       const category = ["as-designed", "false-positive", "accepted-risk", "out-of-scope", "separate-task", "other"].includes(String(entry.fromIgnoredReasonCategory))
         ? String(entry.fromIgnoredReasonCategory) as NonNullable<Task["codeReviewTimeline"]>[number]["fromIgnoredReasonCategory"] : undefined;
       return [{
         id: String(entry.id || generateId()), itemId, itemTitle: String(entry.itemTitle || ""),
-        kind: entry.kind === "status" ? "status" as const : "note" as const,
+        kind,
+        parentEntryId: entry.parentEntryId ? String(entry.parentEntryId) : undefined,
+        itemIds: Array.isArray(entry.itemIds) ? entry.itemIds.map(String).filter(Boolean) : itemId ? [itemId] : [],
+        itemTitles: Array.isArray(entry.itemTitles) ? entry.itemTitles.map(String).filter(Boolean) : entry.itemTitle ? [String(entry.itemTitle)] : [],
+        attachmentIds: Array.isArray(entry.attachmentIds) ? entry.attachmentIds.map(String).filter(Boolean) : [],
         text: String(entry.text || ""), fromStatus: status(entry.fromStatus), toStatus: status(entry.toStatus),
         fromCompletedAt: entry.fromCompletedAt ? String(entry.fromCompletedAt) : undefined,
         fromIgnoredReasonCategory: category,
