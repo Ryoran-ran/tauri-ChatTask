@@ -56,8 +56,14 @@ export interface TaskCodeReviewTimelineEntry {
   id: string;
   itemId: string;
   itemTitle: string;
-  kind: "status" | "note";
+  kind: "status" | "note" | "issue" | "retest" | "system" | "reply";
   text: string;
+  /** 返信元の記録。返信は1階層で表示する。 */
+  parentEntryId?: string;
+  /** 複数の指摘に関連付ける。itemId/itemTitleは旧データとの互換用。 */
+  itemIds?: string[];
+  itemTitles?: string[];
+  attachmentIds?: string[];
   fromStatus?: NonNullable<TaskChecklistItem["reviewStatus"]>;
   toStatus?: NonNullable<TaskChecklistItem["reviewStatus"]>;
   fromCompletedAt?: string;
