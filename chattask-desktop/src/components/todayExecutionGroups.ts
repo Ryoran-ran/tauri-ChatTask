@@ -6,6 +6,18 @@ export type ExecutionItem = { kind: "scheduled"; scheduled: ScheduledItem } | { 
 export type ExecutionGroup = { id: string; name: string; itemKeys: string[] };
 export type ExecutionUnit = { key: string; group?: ExecutionGroup; items: ExecutionItem[] };
 
+export function reorderExecutionGroupMembers(group: ExecutionGroup, visibleKeys: string[], sourceKey: string, targetKey: string): string[] | null {
+  const sourceIndex = visibleKeys.indexOf(sourceKey);
+  const targetIndex = visibleKeys.indexOf(targetKey);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return null;
+  const nextVisible = [...visibleKeys];
+  const [moving] = nextVisible.splice(sourceIndex, 1);
+  nextVisible.splice(targetIndex, 0, moving);
+  const visibleSet = new Set(visibleKeys);
+  let nextIndex = 0;
+  return group.itemKeys.map((key) => visibleSet.has(key) ? nextVisible[nextIndex++] : key);
+}
+
 // Reassign individual work items to a new, flat group. An item can only belong
 // to one group; remaining groups keep their own member order and stay contiguous.
 export function regroupExecutionItems(queueKeys: string[], groups: ExecutionGroup[], group: ExecutionGroup) {

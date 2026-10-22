@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readExecutionGroups, regroupExecutionItems, saveExecutionGroups, type ExecutionGroup } from "../components/todayExecutionGroups";
+import { readExecutionGroups, regroupExecutionItems, reorderExecutionGroupMembers, saveExecutionGroups, type ExecutionGroup } from "../components/todayExecutionGroups";
 
 const group = (id: string, itemKeys: string[]): ExecutionGroup => ({ id, name: id, itemKeys });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("今日の作業グループの繰り返し作成", () => {
+  it("グループ内の任意の位置へ移動し、非表示の作業の保存位置を保つ", () => {
+    const current = group("first", ["a", "completed", "b", "c"]);
+    expect(reorderExecutionGroupMembers(current, ["a", "b", "c"], "a", "c")).toEqual(["b", "completed", "c", "a"]);
+    expect(reorderExecutionGroupMembers(current, ["a", "b", "c"], "c", "a")).toEqual(["c", "completed", "a", "b"]);
+    expect(reorderExecutionGroupMembers(current, ["a", "b", "c"], "a", "missing")).toBeNull();
+    expect(current.itemKeys).toEqual(["a", "completed", "b", "c"]);
+  });
   it("2個目、3個目を作成しても既存グループと作業を保持する", () => {
     const queue = ["a", "b", "c", "d", "e", "f"];
     let result = regroupExecutionItems(queue, [], group("first", ["a", "b"]))!;

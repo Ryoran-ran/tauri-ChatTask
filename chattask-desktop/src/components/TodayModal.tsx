@@ -7,7 +7,7 @@ import { WorkDatePicker } from "./WorkDatePicker";
 import { EffortSummaryModal } from "./EffortSummaryModal";
 import { TagIcon } from "./TagIcon";
 import { HabitsPanel } from "./HabitsPanel";
-import { readExecutionGroups, regroupExecutionItems, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
+import { readExecutionGroups, regroupExecutionItems, reorderExecutionGroupMembers, saveExecutionGroups as persistExecutionGroups, type ExecutionGroup, type ExecutionItem, type ExecutionUnit, type Occurrence, type ScheduledItem } from "./todayExecutionGroups";
 import { historyWorkTitle } from "../historyEntry";
 import { TodayOrderAiDialog } from "./TodayOrderAiDialog";
 import { buildTodayOrderAiApplication, collectTodayOrderAiTaskContexts, type TodayOrderAiSnapshot } from "../services/todayOrderAi";
@@ -43,6 +43,8 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     if (date === todayValue()) localStorage.setItem(todayExecutionHoldingOpenKey, String(open));
   };
   const [dragOrderKey, setDragOrderKey] = useState("");
+  const [dragGroupMember, setDragGroupMember] = useState<{ groupId: string; key: string } | null>(null);
+  const [dragOverMemberKey, setDragOverMemberKey] = useState("");
   const [copiedCalendarKey, setCopiedCalendarKey] = useState("");
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Set<string>>(() => new Set());
   const [entryTarget, setEntryTarget] = useState<ScheduledItem | null>(null);
@@ -322,6 +324,9 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     setCarryHistoryTarget(null);
     setRecurrenceDetailTarget(null);
     setExpandedTaskKeys(new Set());
+    setDragOrderKey("");
+    setDragGroupMember(null);
+    setDragOverMemberKey("");
     setExecutionGroupsState({ date, groups: readExecutionGroups(date) });
     setExecutionGroupDialogOpen(false);
     setTodayOrderAiOpen(false);
@@ -965,20 +970,21 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
       ? activeExecutionGroups.filter((candidate) => candidate.id !== group.id)
       : activeExecutionGroups.map((candidate) => candidate.id === group.id ? { ...candidate, itemKeys } : candidate));
   };
-  const moveExecutionGroupMember = (unit: ExecutionUnit, key: string, difference: number) => {
+  const moveExecutionGroupMemberTo = (unit: ExecutionUnit, sourceKey: string, targetKey: string) => {
     if (finalized || !unit.group) return;
     const liveKeys = unit.items.map(executionItemKey);
-    const currentIndex = liveKeys.indexOf(key);
-    const otherKey = liveKeys[currentIndex + difference];
-    if (currentIndex < 0 || !otherKey) return;
-    const itemKeys = [...unit.group.itemKeys];
-    const currentStoredIndex = itemKeys.indexOf(key);
-    const otherStoredIndex = itemKeys.indexOf(otherKey);
-    [itemKeys[currentStoredIndex], itemKeys[otherStoredIndex]] = [itemKeys[otherStoredIndex], itemKeys[currentStoredIndex]];
+    const itemKeys = reorderExecutionGroupMembers(unit.group, liveKeys, sourceKey, targetKey);
+    if (!itemKeys) return;
     const updatedGroup = { ...unit.group, itemKeys };
     saveExecutionGroups(activeExecutionGroups.map((group) => group.id === updatedGroup.id ? updatedGroup : group));
     const updatedItems = itemKeys.map((itemKey) => executionItemMap.get(itemKey)).filter((item): item is ExecutionItem => Boolean(item));
     persistExecutionOrder(executionUnits.flatMap((candidate) => candidate.key === unit.key ? updatedItems : candidate.items));
+  };
+  const moveExecutionGroupMember = (unit: ExecutionUnit, key: string, difference: number) => {
+    const liveKeys = unit.items.map(executionItemKey);
+    const currentIndex = liveKeys.indexOf(key);
+    const targetKey = liveKeys[currentIndex + difference];
+    if (targetKey) moveExecutionGroupMemberTo(unit, key, targetKey);
   };
   const executionOrderRow = (item: ExecutionItem, orderLabel: string, tier: "active" | "next" | "later" | "holding", unit: ExecutionUnit, unitIndex: number, memberIndex?: number, held?: (typeof executionHolding)[number]) => {
     const key = executionItemKey(item);
@@ -987,10 +993,41 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     const plannedHours = item.kind === "scheduled" ? plannedRangeHoursForDate(item.scheduled.range, date, periods, workingDateOverrides) : Number(task.plannedHours) || 0;
     const kindLabel = item.kind === "recurring" ? "定期" : WAITING_STATUSES.includes(itemStatus(item.scheduled)) ? "待ち" : "作業";
     const grouped = Boolean(unit.group);
-    return <li key={key} className={`${dragOrderKey === unit.key ? "is-dragging" : ""} execution-tier-${tier} ${grouped ? "execution-group-member" : ""}`} draggable={!finalized && !grouped}
-      onDragStart={() => { setDragOrderKey(unit.key); if (laterExecutionUnits.length) updateExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => { if (grouped) return; event.preventDefault(); if (dragOrderKey && dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }}>
+    return <li key={key} className={`${dragOrderKey === unit.key || dragGroupMember?.key === key ? "is-dragging" : ""} ${dragOverMemberKey === key ? "is-drop-target" : ""} execution-tier-${tier} ${grouped ? "execution-group-member" : ""}`} draggable={!finalized && tier !== "holding"}
+      onDragStart={(event) => {
+        event.dataTransfer?.setData("text/plain", key);
+        if (grouped && unit.group) {
+          event.stopPropagation();
+          event.dataTransfer.effectAllowed = "move";
+          setDragOrderKey("");
+          setDragGroupMember({ groupId: unit.group.id, key });
+        } else {
+          setDragOrderKey(unit.key);
+          if (laterExecutionUnits.length) updateExecutionLaterOpen(true);
+        }
+      }}
+      onDragEnd={(event) => { if (grouped) event.stopPropagation(); setDragOrderKey(""); setDragGroupMember(null); setDragOverMemberKey(""); }}
+      onDragOver={(event) => {
+        if (grouped && dragGroupMember) {
+          event.stopPropagation();
+          if (dragGroupMember.groupId !== unit.group?.id || dragGroupMember.key === key) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          setDragOverMemberKey(key);
+        } else if (!grouped && dragOrderKey) event.preventDefault();
+      }}
+      onDragLeave={(event) => { if (grouped && !event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOverMemberKey((current) => current === key ? "" : current); }}
+      onDrop={(event) => {
+        if (grouped && dragGroupMember) {
+          event.stopPropagation();
+          event.preventDefault();
+          if (dragGroupMember.groupId === unit.group?.id) moveExecutionGroupMemberTo(unit, dragGroupMember.key, key);
+          setDragGroupMember(null);
+          setDragOverMemberKey("");
+          return;
+        }
+        if (!grouped && dragOrderKey) { event.preventDefault(); if (dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }
+      }}>
       <span className="execution-order-number">{orderLabel}</span>
       <span className={`priority priority-${task.priority}`}>{task.priority}</span>
       <button type="button" className="execution-order-main" onClick={() => openTask(task)}>
@@ -1016,8 +1053,8 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   const laterExecutionUnits = executionUnits.slice(4);
   const renderExecutionUnit = (unit: ExecutionUnit, unitIndex: number, tier: "active" | "next" | "later") => unit.group
     ? <li key={unit.key} className={`execution-work-group execution-tier-${tier} ${dragOrderKey === unit.key ? "is-dragging" : ""}`} draggable={!finalized}
-      onDragStart={() => { setDragOrderKey(unit.key); if (laterExecutionUnits.length) updateExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
-      onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (dragOrderKey && dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }}>
+      onDragStart={(event) => { event.dataTransfer?.setData("text/plain", unit.key); setDragOrderKey(unit.key); if (laterExecutionUnits.length) updateExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
+      onDragOver={(event) => { if (dragOrderKey) event.preventDefault(); }} onDrop={(event) => { if (!dragOrderKey) return; event.preventDefault(); if (dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }}>
       <header><span className="execution-order-number">{unitIndex + 1}</span><div><strong>{unit.group.name}</strong><small>残り {unit.items.length}件 / 全{unit.group.itemKeys.length}件</small></div><span className="execution-group-badge">並行作業</span><button type="button" className="execution-group-toggle" disabled={tier === "active"} onClick={() => setExpandedExecutionGroupIds((current) => { const next = new Set(current); if (next.has(unit.group!.id)) next.delete(unit.group!.id); else next.add(unit.group!.id); return next; })}>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "▲" : "▼"}<span>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "閉じる" : "開く"}</span></button><div className="execution-group-controls"><button type="button" title="一つ上へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, unitIndex - 1)}>↑</button><button type="button" title="一つ下へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, unitIndex + 1)}>↓</button><button type="button" disabled={finalized} onClick={() => dissolveExecutionGroup(unit.group!.id)}>グループ解除</button></div></header>
       {(tier === "active" || expandedExecutionGroupIds.has(unit.group.id)) && <ol className="execution-order-list">{unit.items.map((item, memberIndex) => executionOrderRow(item, `${unitIndex + 1}.${memberIndex + 1}`, tier, unit, unitIndex, memberIndex))}</ol>}
     </li>
@@ -1025,7 +1062,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   const executionOrderSection = () => <section className="today-section execution-order-section">
     <div className="execution-order-heading">
       {sectionHeading("今日の対応順", executionQueue.length + executionHolding.length)}
-      <div><small>グループもドラッグして順番を変更できます</small><button type="button" disabled={finalized || groupableExecutionItems.length < 2} onClick={openExecutionGroupDialog}>＋ 作業グループを作成</button></div>
+      <div><small>グループとグループ内の作業をドラッグして並べ替えできます</small><button type="button" disabled={finalized || groupableExecutionItems.length < 2} onClick={openExecutionGroupDialog}>＋ 作業グループを作成</button></div>
     </div>
     {executionUnits.length || executionHolding.length ? <div className="execution-priority-groups">
       {currentExecutionUnits.length > 0 && <section className="execution-focus-group">

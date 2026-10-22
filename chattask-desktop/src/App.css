@@ -4058,6 +4058,7 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-group-controls button:disabled { opacity: .35; cursor: not-allowed; }
 .execution-work-group > .execution-order-list { padding-left: 2.5rem; }
 .execution-order-list > li.execution-group-member { border-color: #e2e8f0; box-shadow: none; }
+.execution-order-list > li.execution-group-member[draggable="true"] { cursor: grab; }
 .execution-order-list > li.execution-group-member .execution-order-number { background: #64748b; font-size: .62rem; }
 .execution-order-list { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; counter-reset: none; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group) { display: grid; grid-template-columns: 2rem 1.35rem minmax(0, 1fr) auto auto auto; align-items: center; gap: .45rem; width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #dbeafe; border-radius: 8px; padding: .45rem; background: white; box-shadow: 0 1px 2px #0f172a0a; }
@@ -4070,6 +4071,7 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-holding:not(.execution-work-group) .execution-order-number { background: #d97706; font-size: .62rem; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group)[draggable="true"] { cursor: grab; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group).is-dragging { opacity: .45; border-style: dashed; }
+.execution-order-list > li.execution-group-member.is-drop-target { border-color: #60a5fa; background: #eff6ff; box-shadow: inset 0 0 0 1px #93c5fd; }
 .execution-order-number { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 7px; background: #2563eb; color: white; font-size: .8rem; font-weight: 800; }
 .execution-order-main { min-width: 0; border: 0; padding: .1rem; background: transparent; color: #1e293b; text-align: left; }
 .execution-order-main strong, .execution-order-main small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
