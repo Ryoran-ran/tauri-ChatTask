@@ -21,6 +21,19 @@
 html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+/* Keep a consistent fallback for controls without a dedicated button design. */
+:where(button) {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-weight: 650;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+}
+:where(button:not([class]):not([aria-label]), button[class=""]:not([aria-label])) { padding: .42rem .68rem; }
+:where(button:hover:not(:disabled)) { border-color: #93c5fd; background: #f8fbff; color: #1d4ed8; }
+:where(button:focus-visible) { outline: 3px solid #bfdbfe; outline-offset: 2px; }
 button:disabled { cursor: default; opacity: .35; }
 .code-review-test-delete-confirm{display:flex;align-items:center;gap:.4rem}.code-review-test-delete-confirm span{margin-right:.2rem;color:#64748b;font-size:.53rem}.code-review-test-delete-confirm button{min-height:27px!important;border:1px solid #dbe3ee!important;border-radius:6px!important;padding:.2rem .48rem!important;background:#fff!important;font-size:.52rem!important}.code-review-test-delete-confirm button.danger{border-color:#fecaca!important;background:#fff1f2!important;color:#dc2626!important}
 .code-review-test-run-list{flex:1;align-content:start;overscroll-behavior:contain}
@@ -1505,11 +1518,15 @@ textarea { resize: vertical; line-height: 1.55; }
 .gantt-controls { position: relative; z-index: 30; display: grid; gap: .5rem; width: 100%; min-width: 0; margin-bottom: .55rem; }.gantt-controls.project-picker-active { z-index: 80; }.gantt-filter-row { display: grid; grid-template-columns: minmax(110px, .65fr) minmax(170px, .9fr) minmax(220px, 1.6fr) minmax(130px, .8fr) minmax(130px, .8fr) minmax(150px, 1fr) auto auto; align-items: center; gap: .45rem; min-width: 0; }.gantt-controls label { display: flex; gap: .3rem; align-items: center; font-size: .7rem; white-space: nowrap; }.gantt-filter-row > :is(select, input, .gantt-project-picker) { width: 100%; min-width: 0; }.gantt-search { width: 100%; min-width: 0; }.gantt-action-row { display: grid; grid-template-columns: minmax(170px, 1fr) auto minmax(110px, 1fr); align-items: center; gap: .75rem; }.gantt-tree-actions, .gantt-navigation { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }.gantt-tree-actions button { min-height: 32px; padding: .35rem .7rem; }.gantt-period-label { border-radius: 999px; padding: .36rem .8rem; background: #eff6ff; color: #1d4ed8; font-size: .72rem; text-align: center; white-space: nowrap; }.gantt-navigation { justify-self: center; }.gantt-navigation button { min-height: 32px; padding: .35rem .55rem; font-size: .65rem; }.gantt-period-jump { width: 132px; min-height: 32px; border: 1px solid #bfdbfe; border-radius: 7px; padding: .3rem .5rem; background: #eff6ff; color: #1d4ed8; font-size: .68rem; font-weight: 750; text-align: center; }.gantt-export { position: relative; display: flex; align-items: center; justify-self: end; gap: .35rem; }.gantt-export > button { min-height: 32px; border: 1px solid #93c5fd; border-radius: 7px; padding: .35rem .65rem; background: white; color: #1d4ed8; font-size: .68rem; font-weight: 750; }.gantt-export > .gantt-consult-button { border-color: #a78bfa; background: #faf5ff; color: #6d28d9; }.gantt-export > .gantt-consult-button:hover { border-color: #7c3aed; background: #f5f3ff; }.gantt-export-menu { position: absolute; top: calc(100% + 5px); right: 0; z-index: 100; width: 240px; display: grid; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 9px; background: white; box-shadow: 0 12px 30px #0f172a2e; }.gantt-export-menu button { display: grid; gap: .1rem; border: 0; border-bottom: 1px solid #e2e8f0; border-radius: 0; padding: .65rem .75rem; background: white; text-align: left; }.gantt-export-menu button:last-child { border-bottom: 0; }.gantt-export-menu button:hover { background: #eff6ff; }.gantt-export-menu strong { color: #1e293b; font-size: .72rem; }.gantt-export-menu small { color: #64748b; font-size: .58rem; }
 .modal:has(.gantt-consultation-dialog) { width: min(900px, 94vw); height: min(780px, 92vh); }
 .modal:has(.gantt-consultation-dialog) > .modal-body { display: flex; min-height: 0; overflow: hidden; }
-.gantt-consultation-dialog { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: 100%; min-height: 0; gap: .75rem; }
+.gantt-consultation-dialog { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; width: 100%; min-height: 0; gap: .75rem; }
 .gantt-consultation-dialog > header { display: grid; gap: .3rem; border-bottom: 1px solid #e2e8f0; padding-bottom: .65rem; }
 .gantt-consultation-dialog > header > div { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
 .gantt-consultation-dialog > header strong { color: #1e293b; font-size: .8rem; }
 .gantt-consultation-dialog > header span, .gantt-consultation-dialog > header p { margin: 0; color: #64748b; font-size: .62rem; }
+.gantt-consultation-scope { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; }
+.gantt-consultation-scope label { display: flex; align-items: center; gap: .45rem; color: #334155; font-size: .68rem; font-weight: 750; }
+.gantt-consultation-scope select { min-height: 34px; font-size: .68rem; font-weight: 650; }
+.gantt-consultation-scope small { color: #64748b; font-size: .58rem; }
 .gantt-consultation-question { display: grid; gap: .35rem; color: #334155; font-size: .68rem; font-weight: 750; white-space: normal !important; }
 .gantt-consultation-question small { color: #94a3b8; font-size: .55rem; font-weight: 500; }
 .gantt-consultation-question textarea { width: 100%; box-sizing: border-box; resize: vertical; font-weight: 400; line-height: 1.5; }
@@ -7082,3 +7099,47 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
   .effort-review-overview .effort-review-missing small { width: 100%; margin-left: 0; }
   .effort-review-table-wrap { overflow-x: auto; }
 }
+
+/* Keep the closed controls consistent across WebKit, Chromium and Windows. */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2364758b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right .6rem center;
+  background-repeat: no-repeat;
+  background-size: .85rem;
+  cursor: pointer;
+}
+select:not([multiple]):not([size]):disabled { cursor: not-allowed; }
+
+input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  border: 1.5px solid #94a3b8;
+  border-radius: 4px;
+  padding: 0;
+  background: #fff;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+input[type="checkbox"]::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+input[type="checkbox"]:checked { border-color: #2563eb; background: #2563eb; }
+input[type="checkbox"]:checked::after { opacity: 1; }
+input[type="checkbox"]:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: .55; cursor: not-allowed; }
