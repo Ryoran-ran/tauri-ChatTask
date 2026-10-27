@@ -50,6 +50,7 @@ import { historyWorkTitle } from "./historyEntry";
 import { useAppPersistence } from "./useAppPersistence";
 import { SavingBeforeExit } from "./components/SavingBeforeExit";
 import { installUsageClickTracking, recordUsageSurface } from "./usageAnalytics";
+import { installGlobalFileDrop } from "./globalFileDrop";
 
 const PERSONAL_MODE_ACTIVE_DAYS: NonWorkingPeriod[] = [{ id: "personal-mode-active-days", startDate: "0001-01-01", endDate: "", type: "weekend", weekdays: [], note: "" }];
 const RESTORE_NOTICE_KEY = "chatTaskBackupRestoreNotice";
@@ -362,28 +363,20 @@ function App() {
       setDropNotice({ text, error });
       dropNoticeTimer.current = window.setTimeout(() => setDropNotice(null), 3200);
     };
-    const preventFileNavigation = (event: globalThis.DragEvent) => {
-      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
-    };
-    const handleGlobalDrop = (event: globalThis.DragEvent) => {
-      if (!event.dataTransfer?.types.includes("Files")) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const files = Array.from(event.dataTransfer.files);
-      if (!files.length) return showNotice("ドロップされたファイルを読み取れませんでした。", true);
-      if (!selectedTask) return showNotice("ファイルを登録するには、先にタスクを開いてください。", true);
-      window.dispatchEvent(new CustomEvent("chattask-global-files-dropped", { detail: { taskId: selectedTask.id, files } }));
-    };
+    const uninstallFileDrop = installGlobalFileDrop({
+      onFiles: (files) => {
+        if (!selectedTask) return showNotice("ファイルを登録するには、先にタスクを開いてください。", true);
+        window.dispatchEvent(new CustomEvent("chattask-global-files-dropped", { detail: { taskId: selectedTask.id, files } }));
+      },
+      onUnreadable: () => showNotice("ドロップされたファイルを読み取れませんでした。", true),
+    });
     const handleDropNotice = (event: Event) => {
       const detail = (event as CustomEvent<{ text: string; error?: boolean }>).detail;
       if (detail?.text) showNotice(detail.text, Boolean(detail.error));
     };
-    window.addEventListener("dragover", preventFileNavigation);
-    window.addEventListener("drop", handleGlobalDrop);
     window.addEventListener("chattask-drop-notice", handleDropNotice);
     return () => {
-      window.removeEventListener("dragover", preventFileNavigation);
-      window.removeEventListener("drop", handleGlobalDrop);
+      uninstallFileDrop();
       window.removeEventListener("chattask-drop-notice", handleDropNotice);
     };
   }, [selectedTask?.id]);
