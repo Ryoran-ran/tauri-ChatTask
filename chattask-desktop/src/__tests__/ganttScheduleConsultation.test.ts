@@ -9,6 +9,7 @@ describe("ガントチャートのスケジュール相談", () => {
       dailyCapacityHours: 6,
       periods: [],
       question: "来月の締切に間に合うか確認したい",
+      scope: "ガントチャートに表示中の項目（2026-10-01〜2026-10-31）",
       items: [{
         kind: "作業",
         title: "免許情報を更新する",
@@ -31,6 +32,7 @@ describe("ガントチャートのスケジュール相談", () => {
     expect(prompt).toContain("今回は相談だけを行います");
     expect(prompt).toContain("データを更新するJSON");
     expect(prompt).toContain("来月の締切に間に合うか確認したい");
+    expect(prompt).toContain('"scope": "ガントチャートに表示中の項目（2026-10-01〜2026-10-31）"');
     expect(prompt).toContain('"dailyCapacityHours": 6');
     expect(prompt).toContain("子項目と工数を二重計上しない");
     expect(prompt).toContain("一問一答で終了させず");
