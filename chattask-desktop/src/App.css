@@ -21,6 +21,19 @@
 html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+/* Keep a consistent fallback for controls without a dedicated button design. */
+:where(button) {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-weight: 650;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+}
+:where(button:not([class]):not([aria-label]), button[class=""]:not([aria-label])) { padding: .42rem .68rem; }
+:where(button:hover:not(:disabled)) { border-color: #93c5fd; background: #f8fbff; color: #1d4ed8; }
+:where(button:focus-visible) { outline: 3px solid #bfdbfe; outline-offset: 2px; }
 button:disabled { cursor: default; opacity: .35; }
 .code-review-test-delete-confirm{display:flex;align-items:center;gap:.4rem}.code-review-test-delete-confirm span{margin-right:.2rem;color:#64748b;font-size:.53rem}.code-review-test-delete-confirm button{min-height:27px!important;border:1px solid #dbe3ee!important;border-radius:6px!important;padding:.2rem .48rem!important;background:#fff!important;font-size:.52rem!important}.code-review-test-delete-confirm button.danger{border-color:#fecaca!important;background:#fff1f2!important;color:#dc2626!important}
 .code-review-test-run-list{flex:1;align-content:start;overscroll-behavior:contain}
@@ -7082,3 +7095,47 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
   .effort-review-overview .effort-review-missing small { width: 100%; margin-left: 0; }
   .effort-review-table-wrap { overflow-x: auto; }
 }
+
+/* Keep the closed controls consistent across WebKit, Chromium and Windows. */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2364758b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right .6rem center;
+  background-repeat: no-repeat;
+  background-size: .85rem;
+  cursor: pointer;
+}
+select:not([multiple]):not([size]):disabled { cursor: not-allowed; }
+
+input[type="checkbox"] {
+  appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  border: 1.5px solid #94a3b8;
+  border-radius: 4px;
+  padding: 0;
+  background: #fff;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+input[type="checkbox"]::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+input[type="checkbox"]:checked { border-color: #2563eb; background: #2563eb; }
+input[type="checkbox"]:checked::after { opacity: 1; }
+input[type="checkbox"]:focus-visible { outline: 3px solid #bfdbfe; outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: .55; cursor: not-allowed; }
