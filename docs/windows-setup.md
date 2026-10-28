@@ -1,5 +1,15 @@
 # WindowsでChatTaskを起動する
 
+## リリース版をインストール
+
+[GitHub Releases](https://github.com/Ryoran-ran/tauri-ChatTask/releases) から Windows 対応版（v0.3.1 以降）の公開済みリリースを開き、Assets の `*-setup.exe` をダウンロードして実行します。インストール後はスタートメニューから ChatTask を起動できます。インストーラーは x64 版です。コード署名は設定されていないため、Windows に発行元の警告が表示される場合があります。
+
+配布ファイルを確認する場合は、同じリリースの `SHA256SUMS-Windows.txt` もダウンロードし、PowerShell で `Get-FileHash .\*-setup.exe -Algorithm SHA256` を実行して表示された値と照合してください。
+
+更新する場合は、ChatTask の「設定」→「データ管理・バックアップ」で完全バックアップを作成し、アプリを終了してから新しい `*-setup.exe` を実行してください。
+
+以下はソースコードから開発・ビルドする場合の手順です。
+
 ## 必要な環境
 
 - [Node.js（LTS）](https://nodejs.org/) と npm
@@ -36,4 +46,6 @@ npm.cmd run tauri dev
 npm.cmd run tauri build -- --bundles nsis
 ```
 
-ビルド後、`src-tauri\target\release\bundle\nsis\` に生成された `*-setup.exe` を実行してインストールし、スタートメニューから ChatTask を起動します。このリポジトリの GitHub リリース下書きは macOS 版のみを作成するため、Windows 版は Windows 上でビルドしてください。
+ビルド後、`src-tauri\target\release\bundle\nsis\` に生成された `*-setup.exe` を実行してインストールし、スタートメニューから ChatTask を起動します。リリース下書きには Windows 版も添付されます。公開前にインストールと起動を確認してください。
+
+現在、添付ファイルをファイルとしてクリップボードへコピーする操作と、ローカルツールのフォルダ・HTML選択およびChrome起動はmacOS版のみ対応しています。

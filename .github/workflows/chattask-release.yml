@@ -98,20 +98,77 @@ jobs:
           lipo chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTask.app/Contents/MacOS/chattask-desktop -verify_arch x86_64
       - name: Create download checksums
         working-directory: chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg
-        run: shasum -a 256 ./*.dmg > SHA256SUMS.txt
+        run: shasum -a 256 ./*.dmg > SHA256SUMS-macOS.txt
       - name: Save release files
         uses: actions/upload-artifact@v4
         with:
           name: chattask-macos-release
           path: |
             chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/SHA256SUMS.txt
+            chattask-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/SHA256SUMS-macOS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    name: Test and build Windows installer
+    needs: prepare
+    if: needs.prepare.outputs.should_create == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chattask-desktop/package-lock.json
+      - name: Install dependencies
+        working-directory: chattask-desktop
+        run: npm ci
+      - name: Test and build frontend
+        working-directory: chattask-desktop
+        run: npm run check
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: chattask-desktop/src-tauri
+      - name: Test native backup and storage code
+        working-directory: chattask-desktop/src-tauri
+        run: cargo test --locked
+      - name: Build Windows NSIS installer
+        working-directory: chattask-desktop
+        run: npm run tauri build -- --ci --bundles nsis -- --locked
+      - name: Create download checksums
+        shell: pwsh
+        run: |
+          $bundleDir = 'chattask-desktop/src-tauri/target/release/bundle/nsis'
+          $installers = @(Get-ChildItem -LiteralPath $bundleDir -Filter '*-setup.exe' -File)
+          if ($installers.Count -ne 1) { throw "Expected one Windows installer, found $($installers.Count)." }
+          $hash = (Get-FileHash -LiteralPath $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $line = "$hash  $($installers[0].Name)" + [char]10
+          [System.IO.File]::WriteAllText((Join-Path $bundleDir 'SHA256SUMS-Windows.txt'), $line, [System.Text.Encoding]::ASCII)
+      - name: Save release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: chattask-windows-release
+          path: |
+            chattask-desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            chattask-desktop/src-tauri/target/release/bundle/nsis/SHA256SUMS-Windows.txt
           if-no-files-found: error
           retention-days: 14
 
   draft:
     name: Create release draft
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Build/dependency-install steps do not receive this write permission.
@@ -127,10 +184,16 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: chattask-macos-release
-          path: release-files
+          path: release-files/macos
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: chattask-windows-release
+          path: release-files/windows
       - name: Verify download checksums
-        working-directory: release-files
-        run: sha256sum --check SHA256SUMS.txt
+        run: |
+          (cd release-files/macos && sha256sum --check SHA256SUMS-macOS.txt)
+          (cd release-files/windows && sha256sum --check SHA256SUMS-Windows.txt)
       - name: Recheck release version before creating draft
         id: metadata
         uses: actions/github-script@v7
@@ -138,7 +201,7 @@ jobs:
           script: |
             const check = require('./.github/scripts/release-metadata.cjs');
             await check({ github, context, core });
-      - name: Create draft with DMG and generated release notes
+      - name: Create draft with macOS and Windows installers
         if: steps.metadata.outputs.should_create == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -147,7 +210,9 @@ jobs:
           RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          gh release create "$RELEASE_TAG" release-files/*.dmg release-files/SHA256SUMS.txt \
+          gh release create "$RELEASE_TAG" \
+            release-files/macos/*.dmg release-files/macos/SHA256SUMS-macOS.txt \
+            release-files/windows/*-setup.exe release-files/windows/SHA256SUMS-Windows.txt \
             --draft \
             --target "$RELEASE_COMMIT" \
             --title "ChatTask v$RELEASE_VERSION" \
@@ -158,6 +223,6 @@ jobs:
             echo ""
             echo "[Releasesを開く](https://github.com/$GH_REPO/releases)"
             echo ""
-            echo "DMGの動作と変更内容・データ互換性を確認し、下書きの公開前チェックを更新してから公開してください。"
+            echo "macOS版とWindows版のインストール・動作、変更内容・データ互換性を確認し、下書きの公開前チェックを更新してから公開してください。"
             echo "ビルド元コミット: $RELEASE_COMMIT"
           } >> "$GITHUB_STEP_SUMMARY"

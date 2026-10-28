@@ -2,7 +2,7 @@
 
 React、TypeScript、Tauriで作成したデスクトップ向けタスク管理アプリです。アプリ本体は `chattask-desktop` ディレクトリにあります。
 
-Windowsでのセットアップと起動は [Windows向け手順](docs/windows-setup.md) を参照してください。
+Windowsへのインストール、セットアップと起動は [Windows向け手順](docs/windows-setup.md) を参照してください。
 
 ## macOSで必要な環境
 
@@ -84,7 +84,7 @@ open src-tauri/target/release/bundle/macos/ChatTask.app
 
 ## GitHubでリリースの下書きを自動作成
 
-mainへのpush（Pull Requestのマージを含む）で「ChatTask release draft」が自動実行されます。`tauri.conf.json` のバージョンが未使用なら、テスト・macOS版のビルド・DMGの添付・変更履歴の生成・リリース下書きの作成まで自動で進みます。公開は手動です。同じバージョンのリリース（下書きを含む）またはタグが既にある場合は正常終了でスキップし、ビルドは行いません。
+mainへのpush（Pull Requestのマージを含む）で「ChatTask release draft」が自動実行されます。`tauri.conf.json` のバージョンが未使用なら、テスト・macOS版のDMGとWindows版のNSISインストーラーのビルド・添付、変更履歴の生成、リリース下書きの作成まで自動で進みます。公開は手動です。同じバージョンのリリース（下書きを含む）またはタグが既にある場合は正常終了でスキップし、ビルドは行いません。
 
 ### 初回の設定
 
@@ -95,10 +95,10 @@ mainへのpush（Pull Requestのマージを含む）で「ChatTask release draf
 
 ### 配布するたびの操作
 
-1. 配布する変更とともに、`chattask-desktop/src-tauri/tauri.conf.json` の `version` を `0.1.1` など新しい未使用の番号へ更新し、mainへpushまたはマージします。バージョン番号自体の更新は手動です。
+1. 配布する変更とともに、`chattask-desktop/src-tauri/tauri.conf.json` の `version` を新しい未使用の番号へ更新します。`package.json`・`package-lock.json`・`Cargo.toml`・`Cargo.lock` のアプリのバージョンも同じ番号へ揃え、mainへpushまたはマージします。バージョン番号自体の更新は手動です。
 2. 「Actions」→「ChatTask release draft」で自動実行の進捗を確認します。毎回「Run workflow」を押す必要はありません。
-3. 成功すると「Releases」に `ChatTask v0.1.0` のような下書きが作成され、Apple Silicon・Intel共通のDMGと `SHA256SUMS.txt` が添付されます。
-4. DMGをダウンロードして動作確認し、下書きの変更内容・データ互換性を補足します。「Publish release」で正式版として公開し、必要に応じて「Set as the latest release」を選択します。
+3. 成功すると「Releases」に `ChatTask v0.1.0` のような下書きが作成され、Apple Silicon・Intel共通のDMG、Windows x64用の `-setup.exe`、それぞれのチェックサムが添付されます。
+4. 両OSのインストーラーをダウンロードして動作確認し、下書きの変更内容・データ互換性を補足します。「Publish release」で正式版として公開し、必要に応じて「Set as the latest release」を選択します。
 
 下書きの間はアプリの「更新を確認」の対象になりません。リポジトリが公開されていて、正式リリースを公開した後に利用者が取得できます。初回の `0.1.0` は、同じ `0.1.0` を使用しているアプリには更新として案内されません。
 
@@ -110,7 +110,7 @@ mainへのpush（Pull Requestのマージを含む）で「ChatTask release draf
 
 現状は追加の証明書登録なしで動かせるアドホック署名を使用します。Apple Developer IDによる署名・公証は行わないため、ダウンロードしたアプリがmacOSで警告・起動制限の対象になる場合があります。一般向け配布でこれを解消するには、Apple Developerの証明書・公証用認証情報をGitHub Secretsへ登録してワークフローを拡張する必要があります。
 
-Windows・Linux版の生成、アプリ側の自動インストール・自動再起動はこのワークフローの対象外です。
+Linux版の生成、アプリ側の自動インストール・自動再起動はこのワークフローの対象外です。Windows版はコード署名を行っていないため、インストール時に発行元の警告が表示される場合があります。
 
 参考：[TauriのGitHub Actions配布ガイド](https://v2.tauri.app/distribute/pipelines/github/)、[macOS署名・公証](https://v2.tauri.app/distribute/sign/macos/)。
 
@@ -118,11 +118,11 @@ Windows・Linux版の生成、アプリ側の自動インストール・自動�
 
 現在の配布版はAppleの公証を受けていないため、DMGから`ChatTask.app`を「アプリケーション」フォルダへコピーした後、「開発元を確認できない」などの警告で起動が止まる場合があります。まず、ダウンロードしたアプリを一度開き、macOSの「システム設定」→「プライバシーとセキュリティ」→「このまま開く」で許可してください。[Appleの案内](https://support.apple.com/ja-jp/102445)
 
-ターミナルで対処する場合は、**このリポジトリのGitHub Releasesから取得したDMGであることを確認**してください。同じリリースのDMGと`SHA256SUMS.txt`を両方「ダウンロード」フォルダに置き、まず配布ファイルのチェックサムを照合します。
+ターミナルで対処する場合は、**このリポジトリのGitHub Releasesから取得したDMGであることを確認**してください。同じリリースのDMGと`SHA256SUMS-macOS.txt`を両方「ダウンロード」フォルダに置き、まず配布ファイルのチェックサムを照合します。
 
 ```bash
 cd "$HOME/Downloads"
-shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS-macOS.txt
 ```
 
 `OK`が表示された場合に限り、DMGからコピーしたアプリに対して次を実行します。`codesign`が失敗した場合は後続のコマンドを実行しません。アドホック署名では開発元の本人確認はできません。
@@ -171,7 +171,7 @@ npm ci
 
 ### 3. アプリのバージョンを更新
 
-配布する更新版では、`chattask-desktop/src-tauri/tauri.conf.json` の `version` を以前より大きい値に変更します。
+配布する更新版では、`chattask-desktop/src-tauri/tauri.conf.json` の `version` を以前より大きい値に変更し、`package.json`・`package-lock.json`・`Cargo.toml`・`Cargo.lock` のアプリのバージョンも揃えます。
 
 ```json
 {
