@@ -2,7 +2,9 @@
 
 既存のバニラJavaScript版をReact + TypeScript + Tauriへ移植したデスクトップ版です。
 
-## 開発
+Windows での初回セットアップと起動、インストーラー作成は [Windows向け手順](../docs/windows-setup.md) を参照してください。
+
+## 開発（macOS）
 
 ```bash
 source "$HOME/.cargo/env"
@@ -10,7 +12,7 @@ npm install
 npm run tauri dev
 ```
 
-## ビルド
+## ビルド（macOS）
 
 ```bash
 npm run build
