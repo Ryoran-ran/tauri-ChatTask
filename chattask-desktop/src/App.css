@@ -4065,6 +4065,7 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-work-group > header > div:nth-child(2) { display: grid; min-width: 0; gap: .08rem; }
 .execution-work-group > header > div:nth-child(2) strong { overflow: hidden; color: #1e3a5f; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .execution-work-group > header > div:nth-child(2) small { color: #64748b; font-size: .58rem; }
+.execution-group-title input { width: 100%; min-width: 0; max-width: 420px; min-height: 29px; padding: .28rem .45rem; font-size: .72rem; font-weight: 700; }
 .execution-group-badge { border-radius: 999px; padding: .14rem .42rem; background: #dbeafe; color: #1d4ed8; font-size: .56rem; font-weight: 800; white-space: nowrap; }
 .execution-work-group.execution-tier-active .execution-group-badge { background: #bbf7d0; color: #166534; }
 .execution-group-toggle { display: inline-flex; min-height: 27px; align-items: center; gap: .22rem; border: 1px solid #bfdbfe; border-radius: 6px; padding: .2rem .4rem; background: #fff; color: #2563eb; font-size: .58rem; font-weight: 700; }
@@ -4072,6 +4073,8 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-group-toggle span { font-size: .55rem; }
 .execution-group-controls { display: inline-flex; gap: .2rem; }
 .execution-group-controls button { min-height: 27px; border: 1px solid #cbd5e1; border-radius: 6px; padding: .2rem .4rem; background: #fff; color: #475569; font-size: .58rem; white-space: nowrap; }
+.execution-group-controls .execution-group-save { border-color: #2563eb; background: #2563eb; color: #fff; }
+.execution-group-controls .execution-group-save:hover:not(:disabled) { border-color: #1d4ed8; background: #1d4ed8; color: #fff; }
 .execution-group-controls button:disabled { opacity: .35; cursor: not-allowed; }
 .execution-work-group > .execution-order-list { padding-left: 2.5rem; }
 .execution-order-list > li.execution-group-member { border-color: #e2e8f0; box-shadow: none; }

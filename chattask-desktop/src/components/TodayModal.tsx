@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { STATUS_LABELS, WAITING_STATUSES, isTerminalStatus } from "../data/constants";
 import type { ActivityEvent, Goal, Habit, InboxItem, NonWorkingPeriod, PlannedRange, ProjectTag, RecurrenceRecord, Task, WorkspaceMode } from "../types";
 import { addDays, generateId, getNextWorkingDate, getNonWorkingPeriod, isPlannedRangeForDate, isRecurringDue, isTaskPlannedForDate, localDateValue, plannedHoursForDate, plannedRangeHoursForDate, recurrenceLabel, todayValue } from "../utils";
@@ -28,6 +28,8 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   const [todayView, setTodayView] = useState<"board" | "order">(() => localStorage.getItem("chatTaskTodayView") === "order" ? "order" : "board");
   const [executionGroupsState, setExecutionGroupsState] = useState(() => ({ date, groups: readExecutionGroups(date) }));
   const [executionGroupDialogOpen, setExecutionGroupDialogOpen] = useState(false);
+  const [editingExecutionGroupId, setEditingExecutionGroupId] = useState("");
+  const [executionGroupRenameDraft, setExecutionGroupRenameDraft] = useState("");
   const [todayOrderAiOpen, setTodayOrderAiOpen] = useState(false);
   const [executionGroupName, setExecutionGroupName] = useState("");
   const [selectedExecutionGroupKeys, setSelectedExecutionGroupKeys] = useState<Set<string>>(() => new Set());
@@ -329,6 +331,8 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     setDragOverMemberKey("");
     setExecutionGroupsState({ date, groups: readExecutionGroups(date) });
     setExecutionGroupDialogOpen(false);
+    setEditingExecutionGroupId("");
+    setExecutionGroupRenameDraft("");
     setTodayOrderAiOpen(false);
     setExecutionGroupName("");
     setSelectedExecutionGroupKeys(new Set());
@@ -963,6 +967,26 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     if (finalized) return;
     saveExecutionGroups(activeExecutionGroups.filter((group) => group.id !== groupId));
   };
+  const startRenamingExecutionGroup = (group: ExecutionGroup) => {
+    if (finalized) return;
+    setEditingExecutionGroupId(group.id);
+    setExecutionGroupRenameDraft(group.name);
+  };
+  const cancelRenamingExecutionGroup = () => {
+    setEditingExecutionGroupId("");
+    setExecutionGroupRenameDraft("");
+  };
+  const renameExecutionGroup = () => {
+    const name = executionGroupRenameDraft.trim();
+    if (finalized || !name || !executionGroups.some((group) => group.id === editingExecutionGroupId)) return;
+    saveExecutionGroups(executionGroups.map((group) => group.id === editingExecutionGroupId ? { ...group, name } : group));
+    cancelRenamingExecutionGroup();
+  };
+  const handleExecutionGroupRenameKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey) || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    renameExecutionGroup();
+  };
   const removeFromExecutionGroup = (group: ExecutionGroup, key: string) => {
     if (finalized) return;
     const itemKeys = group.itemKeys.filter((itemKey) => itemKey !== key);
@@ -1052,10 +1076,10 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
   const nextExecutionUnits = executionUnits.slice(1, 4);
   const laterExecutionUnits = executionUnits.slice(4);
   const renderExecutionUnit = (unit: ExecutionUnit, unitIndex: number, tier: "active" | "next" | "later") => unit.group
-    ? <li key={unit.key} className={`execution-work-group execution-tier-${tier} ${dragOrderKey === unit.key ? "is-dragging" : ""}`} draggable={!finalized}
+    ? <li key={unit.key} className={`execution-work-group execution-tier-${tier} ${dragOrderKey === unit.key ? "is-dragging" : ""}`} draggable={!finalized && editingExecutionGroupId !== unit.group.id}
       onDragStart={(event) => { event.dataTransfer?.setData("text/plain", unit.key); setDragOrderKey(unit.key); if (laterExecutionUnits.length) updateExecutionLaterOpen(true); }} onDragEnd={() => setDragOrderKey("")}
       onDragOver={(event) => { if (dragOrderKey) event.preventDefault(); }} onDrop={(event) => { if (!dragOrderKey) return; event.preventDefault(); if (dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }}>
-      <header><span className="execution-order-number">{unitIndex + 1}</span><div><strong>{unit.group.name}</strong><small>残り {unit.items.length}件 / 全{unit.group.itemKeys.length}件</small></div><span className="execution-group-badge">並行作業</span><button type="button" className="execution-group-toggle" disabled={tier === "active"} onClick={() => setExpandedExecutionGroupIds((current) => { const next = new Set(current); if (next.has(unit.group!.id)) next.delete(unit.group!.id); else next.add(unit.group!.id); return next; })}>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "▲" : "▼"}<span>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "閉じる" : "開く"}</span></button><div className="execution-group-controls"><button type="button" title="一つ上へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, unitIndex - 1)}>↑</button><button type="button" title="一つ下へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, unitIndex + 1)}>↓</button><button type="button" disabled={finalized} onClick={() => dissolveExecutionGroup(unit.group!.id)}>グループ解除</button></div></header>
+      <header><span className="execution-order-number">{unitIndex + 1}</span><div className="execution-group-title">{editingExecutionGroupId === unit.group.id ? <input autoFocus aria-label="新しいグループ名" value={executionGroupRenameDraft} onChange={(event) => setExecutionGroupRenameDraft(event.target.value)} onKeyDown={handleExecutionGroupRenameKeyDown} aria-keyshortcuts="Meta+Enter Control+Enter" /> : <strong>{unit.group.name}</strong>}<small>残り {unit.items.length}件 / 全{unit.group.itemKeys.length}件</small></div><span className="execution-group-badge">並行作業</span><button type="button" className="execution-group-toggle" disabled={tier === "active"} onClick={() => setExpandedExecutionGroupIds((current) => { const next = new Set(current); if (next.has(unit.group!.id)) next.delete(unit.group!.id); else next.add(unit.group!.id); return next; })}>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "▲" : "▼"}<span>{tier === "active" || expandedExecutionGroupIds.has(unit.group.id) ? "閉じる" : "開く"}</span></button><div className="execution-group-controls">{editingExecutionGroupId === unit.group.id ? <><button type="button" className="execution-group-save" title="⌘+Enter / Ctrl+Enter" disabled={!executionGroupRenameDraft.trim()} onClick={renameExecutionGroup}>保存</button><button type="button" onClick={cancelRenamingExecutionGroup}>キャンセル</button></> : <><button type="button" title="一つ上へ" disabled={finalized || unitIndex === 0} onClick={() => moveExecutionUnit(unit.key, unitIndex - 1)}>↑</button><button type="button" title="一つ下へ" disabled={finalized || unitIndex === executionUnits.length - 1} onClick={() => moveExecutionUnit(unit.key, unitIndex + 1)}>↓</button><button type="button" aria-label={`${unit.group.name}の名前を変更`} disabled={finalized} onClick={() => startRenamingExecutionGroup(unit.group!)}>名前変更</button><button type="button" disabled={finalized} onClick={() => dissolveExecutionGroup(unit.group!.id)}>グループ解除</button></>}</div></header>
       {(tier === "active" || expandedExecutionGroupIds.has(unit.group.id)) && <ol className="execution-order-list">{unit.items.map((item, memberIndex) => executionOrderRow(item, `${unitIndex + 1}.${memberIndex + 1}`, tier, unit, unitIndex, memberIndex))}</ol>}
     </li>
     : executionOrderRow(unit.items[0], String(unitIndex + 1), tier, unit, unitIndex);

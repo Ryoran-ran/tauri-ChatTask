@@ -84,3 +84,46 @@ describe("今日のグループ内ドラッグ", () => {
     expect(orderChange).toHaveBeenLastCalledWith([keys[2], keys[3], keys[0], keys[1]]);
   });
 });
+
+describe("今日の作業グループ名変更", () => {
+  it("名前だけを変更し、作業と順番を保ったまま再表示できる", () => {
+    const view = render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "最初の名前を変更" }));
+    expect(document.querySelector(".execution-work-group")?.getAttribute("draggable")).toBe("false");
+    fireEvent.change(screen.getByRole("textbox", { name: "新しいグループ名" }), { target: { value: "  新しいグループ  " } });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "新しいグループ名" }), { key: "Enter" });
+    expect(readExecutionGroups(date)[0].name).toBe("最初");
+    expect(screen.getByRole("textbox", { name: "新しいグループ名" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(readExecutionGroups(date)[0]).toEqual({ id: "first", name: "新しいグループ", itemKeys: keys.slice(0, 3) });
+    expect(orderChange).not.toHaveBeenCalled();
+    view.unmount();
+    render(<Harness />);
+    expect(screen.getByRole("button", { name: "新しいグループの名前を変更" })).toBeTruthy();
+    expect(titles()).toEqual(["作業0", "作業1", "作業2"]);
+  });
+
+  it.each(["metaKey", "ctrlKey"] as const)("%s+Enterで保存し、文字変換中は保存しない", (modifier) => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "最初の名前を変更" }));
+    const input = screen.getByRole("textbox", { name: "新しいグループ名" });
+    fireEvent.change(input, { target: { value: "変更後" } });
+    fireEvent.keyDown(input, { key: "Enter", [modifier]: true, isComposing: true });
+    expect(readExecutionGroups(date)[0].name).toBe("最初");
+    fireEvent.keyDown(input, { key: "Enter", [modifier]: true });
+    expect(readExecutionGroups(date)[0].name).toBe("変更後");
+    expect(screen.queryByRole("textbox", { name: "新しいグループ名" })).toBeNull();
+  });
+
+  it("空の名前は保存せず、キャンセルと確定済みの日を扱う", () => {
+    const view = render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "最初の名前を変更" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "新しいグループ名" }), { target: { value: "   " } });
+    expect(screen.getByRole("button", { name: "保存" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+    expect(readExecutionGroups(date)[0].name).toBe("最初");
+    view.unmount();
+    render(<Harness finalizedAt={`${date}T18:00:00Z`} />);
+    expect(screen.getByRole("button", { name: "最初の名前を変更" }).hasAttribute("disabled")).toBe(true);
+  });
+});
