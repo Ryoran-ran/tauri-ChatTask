@@ -2,7 +2,9 @@
 
 React、TypeScript、Tauriで作成したデスクトップ向けタスク管理アプリです。アプリ本体は `chattask-desktop` ディレクトリにあります。
 
-## 必要な環境
+Windowsでのセットアップと起動は [Windows向け手順](docs/windows-setup.md) を参照してください。
+
+## macOSで必要な環境
 
 macOSでビルドする場合は、次のツールが必要です。
 
@@ -22,7 +24,7 @@ Rustは[rustup](https://rustup.rs/)からインストールできます。イン
 source "$HOME/.cargo/env"
 ```
 
-## 初回セットアップ
+## macOSでの初回セットアップ
 
 リポジトリのルートから、アプリのディレクトリへ移動して依存パッケージをインストールします。
 
@@ -48,7 +50,7 @@ npm test
 npm run check
 ```
 
-## 開発モードで起動
+## macOSで開発モードを起動
 
 ```bash
 cd chattask-desktop
