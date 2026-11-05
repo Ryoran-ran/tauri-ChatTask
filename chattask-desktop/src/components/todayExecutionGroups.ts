@@ -50,6 +50,46 @@ export function regroupExecutionItems(queueKeys: string[], groups: ExecutionGrou
   return { groups: nextGroups, queueKeys: nextQueue };
 }
 
+// Edit a group's visible members while retaining members temporarily outside
+// today's active queue (for example, items on hold).
+export function editExecutionGroup(queueKeys: string[], groups: ExecutionGroup[], groupId: string, name: string, selectedKeys: string[]) {
+  const group = groups.find((candidate) => candidate.id === groupId);
+  const trimmedName = name.trim();
+  if (!group || !trimmedName) return null;
+
+  const activeKeys = new Set(queueKeys);
+  const selected = new Set(selectedKeys.filter((key) => activeKeys.has(key)));
+  const selectedActive = queueKeys.filter((key) => selected.has(key));
+  const retainedInactive = group.itemKeys.filter((key) => !activeKeys.has(key));
+  if (!selectedActive.length || selectedActive.length + retainedInactive.length < 2) return null;
+
+  let activeIndex = 0;
+  const itemKeys = group.itemKeys.flatMap((key) => {
+    if (!activeKeys.has(key)) return [key];
+    return activeIndex < selectedActive.length ? [selectedActive[activeIndex++]] : [];
+  });
+  itemKeys.push(...selectedActive.slice(activeIndex));
+
+  const nextGroups = groups.flatMap((candidate) => {
+    if (candidate.id === groupId) return [{ ...candidate, name: trimmedName, itemKeys }];
+    const remaining = candidate.itemKeys.filter((key) => !selected.has(key));
+    return remaining.length >= 2 ? [{ ...candidate, itemKeys: remaining }] : [];
+  });
+  const firstSelectedIndex = queueKeys.findIndex((key) => selected.has(key));
+  const unselected = queueKeys.filter((key) => !selected.has(key));
+  const reordered = [...unselected.slice(0, firstSelectedIndex), ...selectedActive, ...unselected.slice(firstSelectedIndex)];
+  const groupByKey = new Map(nextGroups.flatMap((candidate) => candidate.itemKeys.map((key) => [key, candidate] as const)));
+  const emitted = new Set<string>();
+  const nextQueue = reordered.flatMap((key) => {
+    const candidate = groupByKey.get(key);
+    if (!candidate) return [key];
+    if (emitted.has(candidate.id)) return [];
+    emitted.add(candidate.id);
+    return candidate.itemKeys.filter((itemKey) => activeKeys.has(itemKey));
+  });
+  return { groups: nextGroups, queueKeys: nextQueue };
+}
+
 const executionGroupsStorageKey = (date: string) => `chatTaskTodayExecutionGroups:${date}`;
 
 export const readExecutionGroups = (date: string): ExecutionGroup[] => {
