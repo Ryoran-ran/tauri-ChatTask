@@ -4080,10 +4080,12 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-order-list { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; counter-reset: none; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group) { display: grid; grid-template-columns: 2rem 1.35rem minmax(0, 1fr) auto auto auto; align-items: center; gap: .45rem; width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #dbeafe; border-radius: 8px; padding: .45rem; background: white; box-shadow: 0 1px 2px #0f172a0a; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-active:not(.execution-work-group) { border-color: #86efac; box-shadow: 0 3px 10px #15803d17; }
-:is(.execution-order-list, .execution-unit-list) > li.execution-tier-active:not(.execution-work-group) .execution-order-number { background: linear-gradient(135deg, #22c55e, #15803d); box-shadow: 0 3px 8px #15803d2e; }
+:is(.execution-order-list, .execution-unit-list) > li.execution-tier-active:not(.execution-work-group) .execution-order-number,
+.execution-work-group.execution-tier-active > header > .execution-order-number { background: linear-gradient(135deg, #22c55e, #15803d); box-shadow: 0 3px 8px #15803d2e; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-active:not(.execution-work-group) .execution-order-main strong { color: #14532d; font-size: .82rem; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-later:not(.execution-work-group) { border-color: #e2e8f0; box-shadow: none; }
-:is(.execution-order-list, .execution-unit-list) > li.execution-tier-later:not(.execution-work-group) .execution-order-number { background: #94a3b8; }
+:is(.execution-order-list, .execution-unit-list) > li.execution-tier-later:not(.execution-work-group) .execution-order-number,
+.execution-work-group.execution-tier-later > header > .execution-order-number { background: #94a3b8; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-holding:not(.execution-work-group) { border-color: #fde68a; background: #fffdf5; box-shadow: none; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-holding:not(.execution-work-group) .execution-order-number { background: #d97706; font-size: .62rem; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group)[draggable="true"] { cursor: grab; }
