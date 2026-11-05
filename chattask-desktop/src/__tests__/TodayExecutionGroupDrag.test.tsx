@@ -85,45 +85,83 @@ describe("今日のグループ内ドラッグ", () => {
   });
 });
 
-describe("今日の作業グループ名変更", () => {
+describe("今日の作業グループ編集", () => {
   it("名前だけを変更し、作業と順番を保ったまま再表示できる", () => {
     const view = render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "最初の名前を変更" }));
-    expect(document.querySelector(".execution-work-group")?.getAttribute("draggable")).toBe("false");
-    fireEvent.change(screen.getByRole("textbox", { name: "新しいグループ名" }), { target: { value: "  新しいグループ  " } });
-    fireEvent.keyDown(screen.getByRole("textbox", { name: "新しいグループ名" }), { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "最初を編集" }));
+    expect(screen.getByRole("dialog", { name: "作業グループを編集" })).toBeTruthy();
+    expect(screen.getByRole<HTMLInputElement>("checkbox", { name: /作業0/ }).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>("checkbox", { name: /作業3/ }).checked).toBe(false);
+    fireEvent.change(screen.getByRole("textbox", { name: "グループ名" }), { target: { value: "  新しいグループ  " } });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "グループ名" }), { key: "Enter" });
     expect(readExecutionGroups(date)[0].name).toBe("最初");
-    expect(screen.getByRole("textbox", { name: "新しいグループ名" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "変更を保存" }));
     expect(readExecutionGroups(date)[0]).toEqual({ id: "first", name: "新しいグループ", itemKeys: keys.slice(0, 3) });
     expect(orderChange).not.toHaveBeenCalled();
     view.unmount();
     render(<Harness />);
-    expect(screen.getByRole("button", { name: "新しいグループの名前を変更" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新しいグループを編集" })).toBeTruthy();
     expect(titles()).toEqual(["作業0", "作業1", "作業2"]);
   });
 
   it.each(["metaKey", "ctrlKey"] as const)("%s+Enterで保存し、文字変換中は保存しない", (modifier) => {
     render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "最初の名前を変更" }));
-    const input = screen.getByRole("textbox", { name: "新しいグループ名" });
+    fireEvent.click(screen.getByRole("button", { name: "最初を編集" }));
+    const input = screen.getByRole("textbox", { name: "グループ名" });
     fireEvent.change(input, { target: { value: "変更後" } });
     fireEvent.keyDown(input, { key: "Enter", [modifier]: true, isComposing: true });
     expect(readExecutionGroups(date)[0].name).toBe("最初");
     fireEvent.keyDown(input, { key: "Enter", [modifier]: true });
     expect(readExecutionGroups(date)[0].name).toBe("変更後");
-    expect(screen.queryByRole("textbox", { name: "新しいグループ名" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "作業グループを編集" })).toBeNull();
   });
 
   it("空の名前は保存せず、キャンセルと確定済みの日を扱う", () => {
     const view = render(<Harness />);
-    fireEvent.click(screen.getByRole("button", { name: "最初の名前を変更" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "新しいグループ名" }), { target: { value: "   " } });
-    expect(screen.getByRole("button", { name: "保存" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "最初を編集" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "グループ名" }), { target: { value: "   " } });
+    expect(screen.getByRole("button", { name: "変更を保存" }).hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
     expect(readExecutionGroups(date)[0].name).toBe("最初");
     view.unmount();
     render(<Harness finalizedAt={`${date}T18:00:00Z`} />);
-    expect(screen.getByRole("button", { name: "最初の名前を変更" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "最初を編集" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("作業の追加と除外を同時に保存し、所属と対応順を更新する", () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "最初を編集" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /作業1/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /作業3/ }));
+    fireEvent.click(screen.getByRole("button", { name: "変更を保存" }));
+    expect(readExecutionGroups(date)).toEqual([{ id: "first", name: "最初", itemKeys: [keys[0], keys[2], keys[3]] }]);
+    expect(orderChange).toHaveBeenLastCalledWith([keys[0], keys[2], keys[3], keys[1]]);
+    expect(titles()).toEqual(["作業0", "作業2", "作業3"]);
+  });
+
+  it("名前変更と別グループからの移動を一度に保存する", () => {
+    saveExecutionGroups(date, [
+      { id: "first", name: "最初", itemKeys: keys.slice(0, 2) },
+      { id: "second", name: "次", itemKeys: keys.slice(2) },
+    ]);
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "最初を編集" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "グループ名" }), { target: { value: "まとめ" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /作業3/ }));
+    fireEvent.click(screen.getByRole("button", { name: "変更を保存" }));
+    expect(readExecutionGroups(date)).toEqual([{ id: "first", name: "まとめ", itemKeys: [keys[0], keys[1], keys[3]] }]);
+    expect(orderChange).toHaveBeenLastCalledWith([keys[0], keys[1], keys[3], keys[2]]);
+    expect(screen.getByRole("button", { name: "まとめを編集" })).toBeTruthy();
+  });
+
+  it("2件未満になる変更は保存できず、キャンセルで選択を破棄する", () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "最初を編集" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /作業0/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /作業1/ }));
+    expect(screen.getByRole("button", { name: "変更を保存" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+    expect(readExecutionGroups(date)[0].itemKeys).toEqual(keys.slice(0, 3));
+    expect(orderChange).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readExecutionGroups, regroupExecutionItems, reorderExecutionGroupMembers, saveExecutionGroups, type ExecutionGroup } from "../components/todayExecutionGroups";
+import { editExecutionGroup, readExecutionGroups, regroupExecutionItems, reorderExecutionGroupMembers, saveExecutionGroups, type ExecutionGroup } from "../components/todayExecutionGroups";
 
 const group = (id: string, itemKeys: string[]): ExecutionGroup => ({ id, name: id, itemKeys });
 afterEach(() => vi.unstubAllGlobals());
@@ -83,5 +83,38 @@ describe("今日の作業グループの繰り返し作成", () => {
     saveExecutionGroups("2026-10-15", result.groups);
     expect(readExecutionGroups("2026-10-15")).toEqual([group("old", ["a", "b"]), group("new", ["c", "d"])]);
     expect(readExecutionGroups("2026-10-14")).toEqual(previous);
+  });
+});
+
+describe("今日の作業グループの編集", () => {
+  it("名前だけの編集は所属と順番を保つ", () => {
+    const groups = [group("first", ["a", "b"]), group("second", ["c", "d"])];
+    const result = editExecutionGroup(["a", "b", "c", "d"], groups, "first", "  新しい名前  ", ["a", "b"]);
+    expect(result).toEqual({ groups: [{ id: "first", name: "新しい名前", itemKeys: ["a", "b"] }, group("second", ["c", "d"])], queueKeys: ["a", "b", "c", "d"] });
+    expect(groups).toEqual([group("first", ["a", "b"]), group("second", ["c", "d"])]);
+  });
+
+  it("別グループから追加し、残り1件の元グループを解除する", () => {
+    const result = editExecutionGroup(["a", "b", "c", "d", "e"], [group("first", ["a", "b"]), group("second", ["c", "d"])], "first", "first", ["a", "c", "e"]);
+    expect(result).toEqual({ groups: [group("first", ["a", "c", "e"])], queueKeys: ["a", "c", "e", "b", "d"] });
+  });
+
+  it("移動元グループの一時待ち項目を消さない", () => {
+    const result = editExecutionGroup(["a", "b", "c", "d"], [group("first", ["a", "b"]), group("second", ["c", "holding", "d"])], "first", "first", ["a", "b", "c"]);
+    expect(result?.groups).toEqual([group("first", ["a", "b", "c"]), group("second", ["holding", "d"])]);
+    expect(result?.queueKeys).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("一時待ちなど一覧外の所属作業を保ち、対象から外した作業は単独に戻す", () => {
+    const result = editExecutionGroup(["a", "b", "c", "d"], [group("first", ["a", "holding", "b", "c"])], "first", "first", ["a", "c", "d"]);
+    expect(result).toEqual({ groups: [group("first", ["a", "holding", "c", "d"])], queueKeys: ["a", "c", "d", "b"] });
+  });
+
+  it("存在しないグループや空の名前、1件以下の所属を拒否する", () => {
+    const groups = [group("first", ["a", "b"])];
+    expect(editExecutionGroup(["a", "b"], groups, "missing", "名前", ["a", "b"])).toBeNull();
+    expect(editExecutionGroup(["a", "b"], groups, "first", "  ", ["a", "b"])).toBeNull();
+    expect(editExecutionGroup(["a", "b"], groups, "first", "名前", ["a"])).toBeNull();
+    expect(groups).toEqual([group("first", ["a", "b"])]);
   });
 });
