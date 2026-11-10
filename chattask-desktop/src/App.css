@@ -626,7 +626,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .task-schedule-quick-notice { display: grid; gap: .15rem; border-left: 3px solid #60a5fa; padding: .55rem .7rem; background: #eff6ff; color: #475569; font-size: .68rem; }
 .task-schedule-quick-notice strong { color: #1d4ed8; }
 .task-schedule-quick-content { display: grid; min-width: 0; min-height: 0; gap: .8rem; overflow: hidden; }
-.task-schedule-quick-list-pane { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); align-content: stretch; gap: .7rem; overflow: hidden; }
+.task-schedule-quick-list-pane { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); align-content: stretch; gap: .7rem; overflow: hidden; container: schedule-list / inline-size; }
 .task-schedule-quick-form { display: grid; gap: .65rem; border: 1px solid #bfdbfe; border-radius: 10px; padding: .8rem; background: #f8fbff; }
 .task-schedule-quick-form label { display: grid; gap: .25rem; color: #475569; font-size: .66rem; font-weight: 750; }
 .task-schedule-quick-form-main { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(110px, .65fr) minmax(120px, .7fr); gap: .55rem; }
@@ -645,7 +645,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .task-schedule-quick-item strong { color: #1e293b; font-size: .78rem; }
 .task-schedule-quick-item span { color: #475569; font-size: .66rem; font-weight: 700; }
 .task-schedule-quick-item small { color: #64748b; font-size: .62rem; }
-.task-schedule-effort { display: flex !important; width: fit-content; max-width: 100%; align-items: center; gap: .25rem !important; margin-top: .3rem; border-radius: 6px; padding: .22rem .3rem; background: #f1f5f9; }
+.task-schedule-effort { display: flex !important; width: fit-content; max-width: 100%; box-sizing: border-box; flex-wrap: wrap; align-items: center; gap: .25rem !important; margin-top: .3rem; border-radius: 6px; padding: .22rem .3rem; background: #f1f5f9; }
 .task-schedule-effort > span { display: flex; align-items: baseline; gap: .18rem; border-right: 1px solid #cbd5e1; padding: 0 .35rem 0 .2rem; overflow: visible !important; }
 .task-schedule-effort > span:last-child { border-right: 0; padding-right: .2rem; }
 .task-schedule-effort small { color: #64748b; font-size: .55rem; font-weight: 700; }
@@ -681,6 +681,14 @@ textarea { resize: vertical; line-height: 1.55; }
 .schedule-status-overdue .task-schedule-project-status { background: #fee2e2; color: #b91c1c !important; }
 .task-schedule-project-action { color: #2563eb !important; font-weight: 800 !important; }
 .task-schedule-project-link.is-unlinked .task-schedule-project-action { color: #94a3b8 !important; }
+@container schedule-list (max-width: 1100px) {
+  .task-schedule-quick-item.is-editable { grid-template-columns: auto minmax(0, 1fr); }
+  .task-schedule-quick-item-actions { grid-column: 2; flex-wrap: wrap; justify-content: flex-start; }
+}
+@container schedule-list (max-width: 680px) {
+  .task-schedule-quick-head { flex-wrap: wrap; }
+  .task-schedule-quick-head > .task-schedule-quick-head-actions { flex-wrap: wrap; }
+}
 .task-schedule-quick-empty { display: grid; place-items: center; gap: .25rem; min-height: 130px; border: 1px dashed #cbd5e1; border-radius: 9px; padding: 1rem; color: #94a3b8; text-align: center; }
 .task-schedule-quick-empty strong { color: #64748b; }
 .task-schedule-quick-empty span { font-size: .68rem; }
