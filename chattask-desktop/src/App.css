@@ -4087,6 +4087,7 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-order-list > li.execution-group-member .execution-order-number { background: #64748b; font-size: .62rem; }
 .execution-order-list { display: grid; gap: .4rem; margin: 0; padding: 0; list-style: none; counter-reset: none; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group) { display: grid; grid-template-columns: 2rem 1.35rem minmax(0, 1fr) auto auto auto; align-items: center; gap: .45rem; width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid #dbeafe; border-radius: 8px; padding: .45rem; background: white; box-shadow: 0 1px 2px #0f172a0a; }
+.execution-order-carry-select { grid-column: 1 / -1; justify-self: start; margin-bottom: 0; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-active:not(.execution-work-group) { border-color: #86efac; box-shadow: 0 3px 10px #15803d17; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-active:not(.execution-work-group) .execution-order-number,
 .execution-work-group.execution-tier-active > header > .execution-order-number { background: linear-gradient(135deg, #22c55e, #15803d); box-shadow: 0 3px 8px #15803d2e; }
@@ -4096,6 +4097,7 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-work-group.execution-tier-later > header > .execution-order-number { background: #94a3b8; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-holding:not(.execution-work-group) { border-color: #fde68a; background: #fffdf5; box-shadow: none; }
 :is(.execution-order-list, .execution-unit-list) > li.execution-tier-holding:not(.execution-work-group) .execution-order-number { background: #d97706; font-size: .62rem; }
+:is(.execution-order-list, .execution-unit-list) > li.is-carry-selected:not(.execution-work-group) { border-color: #f97316; background: #fff7ed; box-shadow: 0 0 0 2px #fed7aa; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group)[draggable="true"] { cursor: grab; }
 :is(.execution-order-list, .execution-unit-list) > li:not(.execution-work-group).is-dragging { opacity: .45; border-style: dashed; }
 .execution-order-list > li.execution-group-member.is-drop-target { border-color: #60a5fa; background: #eff6ff; box-shadow: inset 0 0 0 1px #93c5fd; }
@@ -4118,6 +4120,10 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .execution-tier-holding .execution-order-controls button:last-child { color: #475569; }
 .execution-tier-holding .execution-order-controls .execution-resume-active { border-color: #60a5fa; background: #eff6ff; color: #1d4ed8; }
 .execution-order-controls button:disabled { opacity: .3; cursor: not-allowed; }
+@media (max-width: 1000px) {
+  .execution-order-task-actions { grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-start; }
+  .execution-order-controls { grid-column: 1 / -1; justify-self: end; }
+}
 .execution-order-unset { margin-top: .7rem; border-top: 1px dashed #cbd5e1; padding-top: .55rem; }
 .execution-order-unset h4 { margin: 0 0 .4rem; color: #64748b; font-size: .7rem; }
 .execution-order-unset h4 small { font-weight: 400; }

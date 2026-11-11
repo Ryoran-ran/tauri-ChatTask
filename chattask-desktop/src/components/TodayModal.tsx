@@ -641,6 +641,12 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     if (!confirm(confirmation)) return;
     targetsByTask.forEach((items) => carryTaskItems(items[0].task, items));
   };
+  const setCarryItemSelected = (key: string, selected: boolean) => setSelectedCarryTaskIds((current) => {
+    const next = new Set(current);
+    if (selected) next.add(key);
+    else next.delete(key);
+    return next;
+  });
   const updateDailyActual = (task: Task, value: number, planKey = date) => {
     if (finalized) return;
     const hours = Math.max(0, value || 0);
@@ -727,12 +733,6 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     const carrySelectionKey = carryItemKey(item);
     const carryChoiceVisible = carrySelectable && carrySelectionMode && carryableItemKeys.has(carrySelectionKey);
     const carrySelected = selectedCarryTaskIds.has(carrySelectionKey);
-    const toggleCarrySelection = (checked: boolean) => setSelectedCarryTaskIds((current) => {
-      const next = new Set(current);
-      if (checked) next.add(carrySelectionKey);
-      else next.delete(carrySelectionKey);
-      return next;
-    });
     return <article key={cardKey} className={`today-card ${expanded ? "is-expanded" : "is-compact"} ${dailyAchieved ? "today-card-achieved" : ""} ${taskDone ? "today-card-completed" : ""} ${historicalCarry ? "today-card-carried-history" : ""} ${carryChoiceVisible ? "is-carry-selectable" : ""} ${carrySelected ? "is-carry-selected" : ""}`}>
       <div className="today-card-summary">
         {range.advancedFromStartDate && !finalized && !historicalCarry && !taskDone && !dailyAchieved && <details className="today-advance-menu">
@@ -745,7 +745,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
             <button type="button" onClick={() => carryTasks(false, [item])}><span aria-hidden="true">→</span><span>次の営業日へ持ち越す<small>{carryDestination}</small></span></button>
           </div>
         </details>}
-        {carryChoiceVisible && <label className="today-carry-select today-carry-select-summary"><input type="checkbox" checked={carrySelected} disabled={finalized} onChange={(event) => toggleCarrySelection(event.target.checked)} /><span>次の営業日に回す</span></label>}
+        {carryChoiceVisible && <label className="today-carry-select today-carry-select-summary"><input type="checkbox" checked={carrySelected} disabled={finalized} onChange={(event) => setCarryItemSelected(carrySelectionKey, event.target.checked)} /><span>次の営業日に回す</span></label>}
         <button className="today-task-title" onClick={() => openTask(task)}>{scheduleTitle(task, range)}</button>
         {scheduleTitle(task, range) !== task.title && <small className="today-source-task" title={task.title}>関連Task：{task.title}</small>}
         {!expanded && dailyPlanText && dailyPlanText !== (range.description || range.note) && <p className="today-plan-preview" title={`その日のメモ：${dailyPlanText}`}>{dailyPlanText}</p>}
@@ -1021,7 +1021,10 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
     const plannedHours = item.kind === "scheduled" ? plannedRangeHoursForDate(item.scheduled.range, date, periods, workingDateOverrides) : Number(task.plannedHours) || 0;
     const kindLabel = item.kind === "recurring" ? "定期" : WAITING_STATUSES.includes(itemStatus(item.scheduled)) ? "待ち" : "作業";
     const grouped = Boolean(unit.group);
-    return <li key={key} className={`${dragOrderKey === unit.key || dragGroupMember?.key === key ? "is-dragging" : ""} ${dragOverMemberKey === key ? "is-drop-target" : ""} execution-tier-${tier} ${grouped ? "execution-group-member" : ""}`} draggable={!finalized && tier !== "holding"}
+    const carrySelectionKey = item.kind === "scheduled" ? carryItemKey(item.scheduled) : "";
+    const carryChoiceVisible = item.kind === "scheduled" && carrySelectionMode && carryableItemKeys.has(carrySelectionKey);
+    const carrySelected = selectedCarryTaskIds.has(carrySelectionKey);
+    return <li key={key} className={`${dragOrderKey === unit.key || dragGroupMember?.key === key ? "is-dragging" : ""} ${dragOverMemberKey === key ? "is-drop-target" : ""} execution-tier-${tier} ${grouped ? "execution-group-member" : ""} ${carryChoiceVisible ? "is-carry-selectable" : ""} ${carrySelected ? "is-carry-selected" : ""}`} draggable={!finalized && tier !== "holding"}
       onDragStart={(event) => {
         event.dataTransfer?.setData("text/plain", key);
         if (grouped && unit.group) {
@@ -1056,6 +1059,7 @@ export function TodayModal({ workspaceMode, tasks, habits, projects, tags, inbox
         }
         if (!grouped && dragOrderKey) { event.preventDefault(); if (dragOrderKey !== unit.key) moveExecutionUnit(dragOrderKey, unitIndex); setDragOrderKey(""); }
       }}>
+      {carryChoiceVisible && <label className="today-carry-select today-carry-select-summary execution-order-carry-select"><input type="checkbox" checked={carrySelected} disabled={finalized} onChange={(event) => setCarryItemSelected(carrySelectionKey, event.target.checked)} /><span>次の営業日に回す</span></label>}
       <span className="execution-order-number">{orderLabel}</span>
       <span className={`priority priority-${task.priority}`}>{task.priority}</span>
       <button type="button" className="execution-order-main" onClick={() => openTask(task)}>
