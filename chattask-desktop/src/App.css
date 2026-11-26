@@ -6087,6 +6087,10 @@ body:has(> .work-context-layer) > .work-schedule-transfer {
 .task-today-shortcut.collapsed .task-tag-group-top { border-color: transparent; border-bottom-color: #dbe3ee; border-radius: 0; background: transparent; }
 .task-today-shortcut-icon { width: 17px; height: 17px; border-radius: 5px; background: #dbeafe; color: #2563eb; }
 .task-today-shortcut .task-tag-group-header strong { color: #334155; }
+.task-waiting-shortcut .task-today-shortcut-icon { background: #ede9fe; color: #7c3aed; }
+.task-waiting-shortcut .task-waiting-review-date { color: #7c3aed; font-weight: 700; }
+.density-minimal .task-waiting-shortcut .task-meta { display: flex; }
+.density-minimal .task-waiting-shortcut .task-meta > :not(.task-waiting-review-date) { display: none; }
 .advanced-filter-builder { display: grid; gap: 1rem; }
 .advanced-filter-builder > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .advanced-filter-builder > header p { margin: .25rem 0 0; color: #64748b; font-size: .85rem; }

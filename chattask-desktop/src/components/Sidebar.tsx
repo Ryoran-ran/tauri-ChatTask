@@ -135,7 +135,7 @@ export function Sidebar(props: Props) {
     ...props.advancedFilter.conditions.map(conditionLabel),
     ...(props.search.trim() ? [`キーワード：${props.search.trim()}`] : []),
   ];
-  const renderTask = (task: Task, grouped = false, flat = false) => {
+  const renderTask = (task: Task, grouped = false, flat = false, showWaitingReviewDate = false) => {
     const progress = summarizeTaskProgress(task.id, props.tasks);
     const parent = props.tasks.find((item) => item.id === task.parentTaskId);
     const depth = flat ? 0 : grouped && parent?.projectTagId !== task.projectTagId ? 0 : depthFor(task, props.tasks);
@@ -152,22 +152,26 @@ export function Sidebar(props: Props) {
       ancestorDepth -= 1;
     }
     const projectContexts = taskProjectContexts(props.projects, task.id);
-    return <TaskCard key={task.id} task={task} tag={props.tags.find((tag) => tag.id === task.projectTagId)} projectContexts={projectContexts} completedProjectWorkIds={completedProjectWorkIds} periods={props.periods} hasTodayDescendant={!flat && hasTodayDescendant(task.id)} selected={task.id === props.selectedId} progress={flat ? { ...progress, childCount: 0 } : progress} depth={depth} isLastChild={isLastChild} ancestorContinuationDepths={ancestorContinuationDepths} collapsed={!flat && props.collapsedIds.has(task.id)} onSelect={() => props.onSelect(task.id)} onToggle={() => props.onToggleCollapse(task.id)} onQuick={(action) => props.onQuick(task.id, action)} onOpenProject={props.onOpenProject} onSaveTemplate={() => props.onSaveTemplate(task)} />;
+    return <TaskCard key={task.id} task={task} showWaitingReviewDate={showWaitingReviewDate} tag={props.tags.find((tag) => tag.id === task.projectTagId)} projectContexts={projectContexts} completedProjectWorkIds={completedProjectWorkIds} periods={props.periods} hasTodayDescendant={!flat && hasTodayDescendant(task.id)} selected={task.id === props.selectedId} progress={flat ? { ...progress, childCount: 0 } : progress} depth={depth} isLastChild={isLastChild} ancestorContinuationDepths={ancestorContinuationDepths} collapsed={!flat && props.collapsedIds.has(task.id)} onSelect={() => props.onSelect(task.id)} onToggle={() => props.onToggleCollapse(task.id)} onQuick={(action) => props.onQuick(task.id, action)} onOpenProject={props.onOpenProject} onSaveTemplate={() => props.onSaveTemplate(task)} />;
   };
   const groups = props.groupByTag ? [
     ...props.tags.filter((tag) => tag.visible).map((tag) => ({ id: tag.id, name: tag.name, color: tag.color || "#3b82f6", tasks: visibleTasks.filter((task) => task.projectTagId === tag.id) })),
     ...Array.from(new Set(visibleTasks.filter((task) => task.projectTagId && !props.tags.some((tag) => tag.id === task.projectTagId)).map((task) => task.projectTagId))).map((id) => ({ id, name: "削除済みの案件タグ", color: "#64748b", tasks: visibleTasks.filter((task) => task.projectTagId === id) })),
     { id: "", name: "タグなし", color: "#94a3b8", tasks: visibleTasks.filter((task) => !task.projectTagId) },
   ] : [];
-  const todayShortcutKey = "today-shortcut";
   // The today shortcut is a task-level view. It must not inherit the regular
   // tree's indentation or disappear when an ancestor is collapsed.
   const todayShortcutTasks = props.tasks.filter((task) =>
     !isTerminalStatus(task.status)
     && (hasIncompletePlanForDate(task, today, completedProjectWorkIds)
-      || isRecurringDue(task, today, props.periods)
-      || Boolean(task.waitingFollowUp?.reviewDate && task.waitingFollowUp.reviewDate <= today)));
-  const todayShortcutCollapsed = collapsedTagGroups.has(todayShortcutKey);
+      || isRecurringDue(task, today, props.periods)));
+  const waitingReviewTasks = props.tasks.filter((task) => !isTerminalStatus(task.status)
+    && Boolean(task.waitingFollowUp?.reviewDate && task.waitingFollowUp.reviewDate <= today))
+    .sort((a, b) => a.waitingFollowUp!.reviewDate.localeCompare(b.waitingFollowUp!.reviewDate));
+  const shortcuts = [
+    { key: "today-shortcut", title: "今日すること", icon: "✓", tasks: todayShortcutTasks, waiting: false, empty: "今日することはありません" },
+    { key: "waiting-review-shortcut", title: "今日確認する待ち", icon: "◷", tasks: waitingReviewTasks, waiting: true, empty: "今日確認する待ちタスクはありません" },
+  ];
   return (
     <aside className={`sidebar ${props.narrow ? "sidebar-narrow" : ""} density-${props.density}`}>
       <div className="sidebar-tools">
@@ -219,20 +223,23 @@ export function Sidebar(props: Props) {
         <button data-usage-id="sidebar.today" className="sidebar-today-open" onClick={props.onToday}><span aria-hidden="true">○</span>{props.workspaceMode === "personal" ? "今日の暮らし" : "今日のページ"}<b aria-hidden="true">›</b></button>
       </div>
       <div className="task-list">
-        {props.groupByTag && <section className={`task-tag-group task-today-shortcut ${todayShortcutCollapsed ? "collapsed" : ""}`}>
-          <div className="task-tag-group-top">
-            <button type="button" className="task-tag-group-header" aria-expanded={!todayShortcutCollapsed} onClick={() => toggleTagGroup(todayShortcutKey)}>
-              <span className="task-tag-group-arrow" aria-hidden="true">{todayShortcutCollapsed ? "▶" : "▼"}</span>
-              <span className="task-today-shortcut-icon" aria-hidden="true">✓</span>
-              <strong>今日すること</strong>
-              <small>{todayShortcutTasks.length}件</small>
-            </button>
-          </div>
-          {!todayShortcutCollapsed && <div className="task-tag-group-items">
-            {todayShortcutTasks.map((task) => renderTask(task, false, true))}
-            {!todayShortcutTasks.length && <p className="task-today-shortcut-empty">今日することはありません</p>}
-          </div>}
-        </section>}
+        {props.groupByTag && shortcuts.map((shortcut) => {
+          const collapsed = collapsedTagGroups.has(shortcut.key);
+          return <section key={shortcut.key} aria-label={shortcut.title} className={`task-tag-group task-today-shortcut ${shortcut.waiting ? "task-waiting-shortcut" : ""} ${collapsed ? "collapsed" : ""}`}>
+            <div className="task-tag-group-top">
+              <button type="button" className="task-tag-group-header" aria-expanded={!collapsed} onClick={() => toggleTagGroup(shortcut.key)}>
+                <span className="task-tag-group-arrow" aria-hidden="true">{collapsed ? "▶" : "▼"}</span>
+                <span className="task-today-shortcut-icon" aria-hidden="true">{shortcut.icon}</span>
+                <strong>{shortcut.title}</strong>
+                <small>{shortcut.tasks.length}件</small>
+              </button>
+            </div>
+            {!collapsed && <div className="task-tag-group-items">
+              {shortcut.tasks.map((task) => renderTask(task, false, true, shortcut.waiting))}
+              {!shortcut.tasks.length && <p className="task-today-shortcut-empty">{shortcut.empty}</p>}
+            </div>}
+          </section>;
+        })}
         {props.groupByTag ? groups.map((group) => {
           const groupKey = group.id || "untagged";
           const collapsed = collapsedTagGroups.has(groupKey);

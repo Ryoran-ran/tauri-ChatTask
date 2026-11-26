@@ -9,6 +9,7 @@ type QuickAction = "doing" | "waiting" | "done" | "today" | "tomorrow" | "log";
 
 interface Props {
   task: Task;
+  showWaitingReviewDate?: boolean;
   tag?: ProjectTag;
   projectContexts: TaskProjectContext[];
   completedProjectWorkIds: ReadonlySet<string>;
@@ -27,7 +28,7 @@ interface Props {
   onSaveTemplate: () => void;
 }
 
-export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, periods, hasTodayDescendant, selected, progress, depth, isLastChild, ancestorContinuationDepths, collapsed, onSelect, onToggle, onOpenProject }: Props) {
+export function TaskCard({ task, showWaitingReviewDate = false, tag, projectContexts, completedProjectWorkIds, periods, hasTodayDescendant, selected, progress, depth, isLastChild, ancestorContinuationDepths, collapsed, onSelect, onToggle, onOpenProject }: Props) {
   const today = todayValue();
   const waiting = WAITING_STATUSES.includes(task.status);
   const waitingReviewDue = Boolean(waiting && task.waitingFollowUp?.reviewDate && task.waitingFollowUp.reviewDate <= today);
@@ -68,6 +69,7 @@ export function TaskCard({ task, tag, projectContexts, completedProjectWorkIds, 
         <span className={`task-status-mark ${visualStatus}`} role="img" aria-label={STATUS_LABELS[task.status]} title={`ステータス：${STATUS_LABELS[task.status]}`}><svg viewBox="0 0 24 24" aria-hidden="true">{statusIcon}</svg></span>
       </div>
       <div className="task-meta">
+        {showWaitingReviewDate && task.waitingFollowUp?.reviewDate && <span className="task-waiting-review-date">確認日 {task.waitingFollowUp.reviewDate.replace(/-/g, "/")}{task.waitingFollowUp.reviewDate < today ? "（超過）" : "（今日）"}</span>}
         <span className={`status status-${task.status}`}>{STATUS_LABELS[task.status]}</span>
         {tag && <span className="tag-chip tag-chip-colored" style={{ borderColor: `${tag.color || "#64748b"}55`, backgroundColor: `${tag.color || "#64748b"}18`, color: tag.color || "#64748b" }}><TagIcon tag={tag} className="tag-chip-icon" />{tag.name}</span>}
         {progress.childCount > 0 && <span className="task-card-wbs-progress" title={`子タスクの進捗（${progress.progressBasis === "effort" ? "予定工数で加重" : "件数で計算"}）`}><i><b style={{ width: `${progress.progressPercent}%` }} /></i>子 {progress.completedCount}/{progress.childCount}・{progress.progressPercent}%</span>}
